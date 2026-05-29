@@ -1,0 +1,1 @@
+../../../.agents/skills/staff-document/SKILL.md

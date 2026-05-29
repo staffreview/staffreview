@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+          - os: macos-13
+            target: darwin-x64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run --filter @staffreview/staff build:binary:${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staff-${{ matrix.target }}
+          path: apps/staffreview/dist/staff-${{ matrix.target }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Compute checksums
+        run: |
+          cd artifacts
+          for f in staff-*; do
+            shasum -a 256 "$f" | tee -a SHA256SUMS
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/staff-*
+            artifacts/SHA256SUMS
+          generate_release_notes: true

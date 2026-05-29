@@ -1,0 +1,276 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+/* Class-based dark mode: applying `.dark` on <html> (or an ancestor)
+ * activates the dark color tokens below and unlocks Tailwind's `dark:`
+ * modifier. We toggle the class from the App based on the persisted
+ * theme + the OS preference for `theme: "system"`. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* shadcn/ui "new-york" + neutral base color palette. */
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-muted: oklch(0.97 0 0);
+  --color-muted-foreground: oklch(0.556 0 0);
+  --color-border: oklch(0.922 0 0);
+  --color-input: oklch(0.922 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0 0);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0 0);
+  --color-primary: oklch(0.205 0 0);
+  --color-primary-foreground: oklch(0.985 0 0);
+  --color-secondary: oklch(0.97 0 0);
+  --color-secondary-foreground: oklch(0.205 0 0);
+  --color-accent: oklch(0.97 0 0);
+  --color-accent-foreground: oklch(0.205 0 0);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-destructive-foreground: oklch(0.985 0 0);
+  --color-ring: oklch(0.708 0 0);
+  --color-success: oklch(0.62 0.16 150);
+  --color-warning: oklch(0.72 0.15 80);
+
+  --radius: 0.5rem;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* shadcn/ui "new-york" + neutral dark palette. Active when <html> has
+ * the `dark` class (driven by the theme picker in the gear menu). */
+.dark {
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.269 0 0);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-input: oklch(1 0 0 / 15%);
+  --color-card: oklch(0.205 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-popover: oklch(0.205 0 0);
+  --color-popover-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.922 0 0);
+  --color-primary-foreground: oklch(0.205 0 0);
+  --color-secondary: oklch(0.269 0 0);
+  --color-secondary-foreground: oklch(0.985 0 0);
+  --color-accent: oklch(0.269 0 0);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-destructive: oklch(0.704 0.191 22.216);
+  --color-destructive-foreground: oklch(0.985 0 0);
+  --color-ring: oklch(0.556 0 0);
+  /* Brighter success on dark so badges (Live, Fixed) don't get
+   * swallowed by the dark canvas. */
+  --color-success: oklch(0.78 0.18 150);
+  --color-warning: oklch(0.78 0.15 80);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  pre, code {
+    font-family: var(--font-mono);
+    font-feature-settings: "calt", "liga";
+  }
+}
+
+/* react-diff-viewer-continued reset to match our theme */
+/* Mono + diff font size only on actual diff rows. Composer-host rows
+ * inherit the app's sans font so embedded UI (buttons, textareas) matches
+ * the rest of the app. */
+.staff-diff table tbody tr:not([data-composer-host="true"]) > td {
+  font-family: var(--font-mono) !important;
+  font-size: var(--staff-diff-font-size, 14px) !important;
+  line-height: 1.55 !important;
+  font-feature-settings: "calt", "liga" !important;
+}
+
+/* Line numbers act as anchor links (they update the URL hash). Cursor
+ * affordance only — the "+" composer button is rendered as a real React
+ * element on hover. */
+.staff-diff table tbody tr:not([data-composer-host="true"]) {
+  cursor: pointer;
+}
+
+/* Anchored row — the line referenced by `#<file>:R<line>`. We can't
+ * use react-diff-viewer's own `highlightLines` for this because in
+ * split view it only highlights cells on the side that matches the
+ * prefix (R-2 lights up the new-side cells only), leaving the other
+ * half of the row visually unstyled. Instead we paint the full row
+ * ourselves with `!important` so both sides match, regardless of
+ * whether they have diff-added / diff-removed / empty-gutter / empty-
+ * line classes from the library.
+ *
+ * The leftmost cell additionally stacks a 3px gradient on top for the
+ * URL-anchor accent. Per-word <ins>/<del> backgrounds are deliberately
+ * left alone so the substring-level diff highlights stay visible on
+ * top of the yellow tint. */
+.staff-diff table tbody tr[data-anchored="true"] > td {
+  background: color-mix(in oklch, var(--color-warning) 22%, transparent) !important;
+}
+.staff-diff table tbody tr[data-anchored="true"] > td:first-child {
+  background:
+    linear-gradient(to right, var(--color-warning) 3px, transparent 3px) no-repeat,
+    color-mix(in oklch, var(--color-warning) 22%, transparent) !important;
+}
+
+/* react-diff-viewer's `empty-gutter:hover` ties on specificity with
+ * `gutter.diff-added`/`gutter.diff-removed` and is defined later in
+ * the stylesheet, so on hover an empty gutter cell of an
+ * added/deleted row washes back to the muted gray hover color
+ * instead of staying tinted. Restore the diff color on those cells.
+ * (Mostly visible in unified view, where a row's "blank" gutter still
+ * carries the diff class.) Scoped to non-anchored rows so it doesn't
+ * fight the yellow anchored override on hover. */
+.staff-diff table tbody tr:not([data-anchored="true"]) td[class*="empty-gutter"][class*="diff-added"]:hover {
+  background: color-mix(in oklch, var(--color-success) 22%, transparent) !important;
+}
+.staff-diff table tbody tr:not([data-anchored="true"]) td[class*="empty-gutter"][class*="diff-removed"]:hover {
+  background: color-mix(in oklch, var(--color-destructive) 22%, transparent) !important;
+}
+.dark .staff-diff table tbody tr:not([data-anchored="true"]) td[class*="empty-gutter"][class*="diff-added"]:hover {
+  background: color-mix(in oklch, var(--color-success) 40%, transparent) !important;
+}
+.dark .staff-diff table tbody tr:not([data-anchored="true"]) td[class*="empty-gutter"][class*="diff-removed"]:hover {
+  background: color-mix(in oklch, var(--color-destructive) 40%, transparent) !important;
+}
+
+/* Markdown comment bodies (rendered by <Markdown>) and the WYSIWYG
+ * editor (TipTap) share these prose styles. The base size is tied to
+ * the diff font-size setting so comments read at the same scale as the
+ * code they're about (the `--staff-diff-font-size` var is set on the
+ * app root, so it cascades here). */
+.staff-md {
+  font-size: var(--staff-diff-font-size, 14px);
+  line-height: 1.6;
+}
+.staff-md > :first-child { margin-top: 0; }
+.staff-md > :last-child { margin-bottom: 0; }
+.staff-md p { margin: 0.5em 0; }
+.staff-md h1, .staff-md h2, .staff-md h3, .staff-md h4 {
+  margin: 0.8em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.staff-md h1 { font-size: 1.3em; }
+.staff-md h2 { font-size: 1.2em; }
+.staff-md h3 { font-size: 1.1em; }
+.staff-md h4 { font-size: 1em; }
+.staff-md ul, .staff-md ol { margin: 0.5em 0; padding-left: 1.4em; }
+.staff-md ul { list-style: disc; }
+.staff-md ol { list-style: decimal; }
+.staff-md li { margin: 0.2em 0; }
+.staff-md li > ul, .staff-md li > ol { margin: 0.2em 0; }
+.staff-md a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.staff-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.staff-md pre {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.staff-md pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.staff-md blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.8em;
+  margin: 0.6em 0;
+  color: var(--color-muted-foreground);
+}
+.staff-md img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0.4em 0;
+  display: block;
+}
+.staff-md table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.95em;
+  display: block;
+  overflow-x: auto;
+}
+.staff-md th, .staff-md td {
+  border: 1px solid var(--color-border);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.staff-md th { background: var(--color-muted); font-weight: 600; }
+.staff-md hr { border: 0; border-top: 1px solid var(--color-border); margin: 0.8em 0; }
+.staff-md input[type="checkbox"] { margin-right: 0.4em; vertical-align: middle; }
+.staff-md ul:has(> li > input[type="checkbox"]) { list-style: none; padding-left: 0.2em; }
+
+/* TipTap WYSIWYG editor (MarkdownEditor). The editable area reuses
+ * `.staff-md` typography so formatting looks like the rendered comment
+ * while you type. */
+.ProseMirror { outline: none; white-space: pre-wrap; word-break: break-word; }
+.ProseMirror:focus { outline: none; }
+/* Placeholder (from @tiptap/extension-placeholder) on the empty doc. */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+/* Selected image node outline. */
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-ring);
+}
+
+/* Center the per-hunk code-fold expand icon within the line-number
+ * gutter so it lines up with the line numbers above/below it (the
+ * library renders it flush-left otherwise). */
+.staff-diff tr[class*="code-fold"] > td[class*="code-fold-gutter"]:first-child {
+  text-align: center;
+  padding: 0;
+}
+.staff-diff tr[class*="code-fold"] > td[class*="code-fold-gutter"]:first-child svg {
+  display: inline-block;
+}
+
+/* react-diff-viewer renders an expand/fold-all button in its summary row.
+ * It only does something when unchanged context is folded (showDiffOnly).
+ * In "Expanded" mode the whole file is shown, so the button is inert —
+ * hide it to avoid the dead control, while keeping the change count.
+ * (Emotion includes the css `label` in the class name, so the substring
+ * match is stable.) */
+.staff-diff-expanded [class*="all-expand-button"] {
+  display: none;
+}
+
+/* Align the file-level expand-all icon (in the summary row) with the
+ * per-hunk code-fold icons, which are centered on the line-number
+ * column. The summary's left padding (~13px) plus a 26px-wide button
+ * lands the icon center on the gutter column. */
+.staff-diff [class*="all-expand-button"] {
+  width: 26px;
+}
+
+/* scrollbar polish */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }

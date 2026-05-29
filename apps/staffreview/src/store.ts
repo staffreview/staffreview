@@ -1,0 +1,221 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import type { Diff, DiffTarget, Comment, Resolution } from "./types.ts";
+import { slugForDiff } from "./git.ts";
+
+export function staffDir(cwd = process.cwd()) {
+  return join(cwd, ".staffreview");
+}
+
+export function diffsDir(cwd = process.cwd()) {
+  return join(staffDir(cwd), "diffs");
+}
+
+export function libraryDir(cwd = process.cwd()) {
+  return join(staffDir(cwd), "library");
+}
+
+export function attachmentsDir(cwd = process.cwd()) {
+  return join(staffDir(cwd), "attachments");
+}
+
+export function activePointerPath(cwd = process.cwd()) {
+  return join(staffDir(cwd), "active.json");
+}
+
+export function diffPath(slug: string, cwd = process.cwd()) {
+  return join(diffsDir(cwd), `${slug}.json`);
+}
+
+export async function ensureDirs(cwd = process.cwd()) {
+  await mkdir(diffsDir(cwd), { recursive: true });
+  await mkdir(libraryDir(cwd), { recursive: true });
+  await mkdir(attachmentsDir(cwd), { recursive: true });
+}
+
+export async function loadDiff(slug: string, cwd = process.cwd()): Promise<Diff | null> {
+  const file = Bun.file(diffPath(slug, cwd));
+  if (!(await file.exists())) return null;
+  return JSON.parse(await file.text()) as Diff;
+}
+
+export async function saveDiff(c: Diff, cwd = process.cwd()): Promise<void> {
+  await ensureDirs(cwd);
+  c.updatedAt = new Date().toISOString();
+  await Bun.write(diffPath(c.slug, cwd), JSON.stringify(c, null, 2));
+}
+
+export async function loadOrCreateDiff(
+  base: DiffTarget,
+  head: DiffTarget,
+  cwd = process.cwd(),
+): Promise<Diff> {
+  const slug = slugForDiff(base, head);
+  const existing = await loadDiff(slug, cwd);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const c: Diff = {
+    slug,
+    base,
+    head,
+    comments: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  await saveDiff(c, cwd);
+  return c;
+}
+
+export async function listDiffs(cwd = process.cwd()): Promise<Diff[]> {
+  await ensureDirs(cwd);
+  const dir = diffsDir(cwd);
+  const glob = new Bun.Glob("*.json");
+  const out: Diff[] = [];
+  for await (const file of glob.scan({ cwd: dir })) {
+    try {
+      const c = JSON.parse(await Bun.file(join(dir, file)).text()) as Diff;
+      out.push(c);
+    } catch {}
+  }
+  return out;
+}
+
+export async function setActiveDiff(slug: string, cwd = process.cwd()): Promise<void> {
+  await ensureDirs(cwd);
+  await Bun.write(activePointerPath(cwd), JSON.stringify({ slug }, null, 2));
+}
+
+export async function getActiveDiffSlug(cwd = process.cwd()): Promise<string | null> {
+  const file = Bun.file(activePointerPath(cwd));
+  if (!(await file.exists())) return null;
+  try {
+    const data = JSON.parse(await file.text()) as { slug?: string };
+    return data.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function newId() {
+  return crypto.randomUUID();
+}
+
+export async function addComment(
+  slug: string,
+  partial: Omit<Comment, "id" | "createdAt" | "threadId"> & { threadId?: string },
+  cwd = process.cwd(),
+): Promise<Comment> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  const id = newId();
+  const threadId = partial.threadId ?? (partial.parentId
+    ? c.comments.find((x) => x.id === partial.parentId)?.threadId ?? id
+    : id);
+  const comment: Comment = {
+    id,
+    threadId,
+    parentId: partial.parentId,
+    file: partial.file,
+    line: partial.line,
+    endLine: partial.endLine,
+    side: partial.side,
+    body: partial.body,
+    author: partial.author,
+    createdAt: new Date().toISOString(),
+  };
+  c.comments.push(comment);
+  await saveDiff(c, cwd);
+  return comment;
+}
+
+function findThread(c: Diff, threadIdOrPrefix: string): Comment | undefined {
+  const exact = c.comments.find(
+    (x) => x.id === threadIdOrPrefix || x.threadId === threadIdOrPrefix,
+  );
+  if (exact) return exact;
+  return c.comments.find(
+    (x) => x.id.startsWith(threadIdOrPrefix) || x.threadId.startsWith(threadIdOrPrefix),
+  );
+}
+
+export async function resolveThread(
+  slug: string,
+  threadId: string,
+  res: Omit<Resolution, "at">,
+  cwd = process.cwd(),
+): Promise<Diff> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  const resolution: Resolution = { ...res, at: new Date().toISOString() };
+  const root = findThread(c, threadId);
+  if (!root) throw new Error(`thread not found: ${threadId}`);
+  const realThreadId = root.threadId;
+  for (const cm of c.comments) {
+    if (cm.threadId === realThreadId && !cm.parentId) {
+      cm.resolution = resolution;
+      // The thread is now resolved — the documentation request (if any)
+      // has been fulfilled, so clear the pending flag.
+      cm.documentRequested = undefined;
+    }
+  }
+  await saveDiff(c, cwd);
+  return c;
+}
+
+export async function unresolveThread(slug: string, threadId: string, cwd = process.cwd()): Promise<Diff> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  const root = findThread(c, threadId);
+  if (!root) throw new Error(`thread not found: ${threadId}`);
+  const realThreadId = root.threadId;
+  for (const cm of c.comments) {
+    if (cm.threadId === realThreadId && !cm.parentId) {
+      cm.resolution = undefined;
+    }
+  }
+  await saveDiff(c, cwd);
+  return c;
+}
+
+export async function setDocumentRequested(
+  slug: string,
+  threadId: string,
+  requested: boolean,
+  cwd = process.cwd(),
+): Promise<Diff> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  const root = findThread(c, threadId);
+  if (!root) throw new Error(`thread not found: ${threadId}`);
+  const realThreadId = root.threadId;
+  for (const cm of c.comments) {
+    if (cm.threadId === realThreadId && !cm.parentId) {
+      cm.documentRequested = requested || undefined;
+    }
+  }
+  await saveDiff(c, cwd);
+  return c;
+}
+
+export async function updateComment(
+  slug: string,
+  id: string,
+  body: string,
+  cwd = process.cwd(),
+): Promise<Diff> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  const target = c.comments.find((x) => x.id === id);
+  if (!target) throw new Error(`comment not found: ${id}`);
+  target.body = body;
+  await saveDiff(c, cwd);
+  return c;
+}
+
+export async function deleteComment(slug: string, id: string, cwd = process.cwd()): Promise<Diff> {
+  const c = await loadDiff(slug, cwd);
+  if (!c) throw new Error(`diff not found: ${slug}`);
+  c.comments = c.comments.filter((x) => x.id !== id && x.parentId !== id);
+  await saveDiff(c, cwd);
+  return c;
+}
