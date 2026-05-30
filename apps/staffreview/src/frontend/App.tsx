@@ -439,11 +439,16 @@ export function App() {
 
   return (
     <div
-      className="min-h-full flex flex-col"
+      // On desktop the page is a fixed-height column (header + two panes) that
+      // doesn't scroll itself — the diff and the sidebar each scroll
+      // independently (see <main>), so the diff's scrollbar sits between the
+      // two panes and the sidebar gets its own on the right. On mobile it falls
+      // back to a normal scrolling page.
+      className="min-h-full lg:h-full flex flex-col lg:overflow-hidden"
       style={{ "--staff-diff-font-size": `${diffFontSize}px` } as React.CSSProperties}
     >
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="w-full px-4 py-3 flex items-center gap-3 overflow-x-auto">
+      <header className="shrink-0 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="w-full px-4 pt-3 pb-2 flex items-center gap-3 overflow-x-auto">
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-mono font-semibold truncate" title={info?.root}>
               {info?.root}
@@ -745,11 +750,22 @@ export function App() {
 
       <main
         className={cn(
-          "w-full px-4 py-5 grid grid-cols-1 gap-5 flex-1",
+          // pr-2.5 on desktop so the sidebar's scrollbar has the same 10px to
+          // the screen edge as it does to the sidebar content (matching the
+          // diff scrollbar's even spacing).
+          "w-full px-4 pt-2 pb-5 lg:pr-2.5 grid grid-cols-1 gap-5 flex-1",
+          // Desktop: clip <main> and size the single row to the available
+          // height so each pane below can own its own scrollbar. The column
+          // gap is moved onto the diff pane (pr + mr below) so the diff's
+          // scrollbar sits with equal space on either side.
+          "lg:min-h-0 lg:overflow-hidden lg:gap-0 lg:grid-rows-[minmax(0,1fr)]",
           sidebarOpen ? "lg:grid-cols-[1fr_360px]" : "lg:grid-cols-[1fr_32px]",
         )}
       >
-        <div className="space-y-6 min-w-0">
+        <div
+          className="space-y-6 min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pr-2.5 lg:mr-2.5"
+          data-testid="diff-scroll"
+        >
           {error && (
             <div className="rounded-md border border-destructive bg-destructive/10 text-destructive px-3 py-2 text-sm">
               {error}
@@ -776,11 +792,13 @@ export function App() {
         <aside
           data-testid="review-sidebar"
           data-state={sidebarOpen ? "open" : "collapsed"}
-          // top-[77px] = header (57px) + main pt-5 (20px). Matching the natural
-          // flow position prevents the visible jump-up when scrolling starts.
+          // Desktop: its own scroll pane, so a long thread list scrolls here
+          // (scrollbar on the right) instead of scrolling the whole page.
           className={cn(
-            "lg:sticky lg:top-[77px] lg:self-start",
-            sidebarOpen ? "space-y-5" : "flex flex-col items-end gap-2",
+            "lg:min-h-0",
+            // pr-2.5 keeps the thread list off its own scrollbar (matches the
+            // diff pane's right padding).
+            sidebarOpen ? "space-y-5 lg:overflow-y-auto lg:pr-2.5" : "flex flex-col items-end gap-2",
           )}
         >
           {sidebarOpen

@@ -40,6 +40,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
   // Local-only expand of a resolved (fixed/skipped) card — lets the user
   // read the content without reopening the thread.
   const [collapsedExpanded, setCollapsedExpanded] = useState(false);
+  // Collapse for a non-resolved/documented card — defaults to expanded.
+  // (Fixed/skipped cards have their own collapse below, via collapsedExpanded.)
+  const [collapsed, setCollapsed] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState(() => loadDraft(replyDraftKey));
   const documentRequested = !!root.documentRequested;
@@ -145,13 +148,21 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
         <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">{context}</div>
       )}
       <div className="divide-y divide-border">
-        <CommentBubble comment={root} slug={slug} onChange={onChange} />
-        {replies.map((r) => (
-          <CommentBubble key={r.id} comment={r} slug={slug} indent onChange={onChange} />
-        ))}
+        <CommentBubble
+          comment={root}
+          slug={slug}
+          onChange={onChange}
+          collapsible
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((v) => !v)}
+        />
+        {!collapsed &&
+          replies.map((r) => (
+            <CommentBubble key={r.id} comment={r} slug={slug} indent onChange={onChange} />
+          ))}
       </div>
 
-      {resolution && (
+      {!collapsed && resolution && (
         <div className="border-t border-border bg-background px-3 py-2 flex items-center gap-2 text-xs">
           {statusBadge(resolution.status)}
           <span className="text-muted-foreground">— {resolution.body}</span>
@@ -165,7 +176,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
         </div>
       )}
 
-      {!resolution && (
+      {!collapsed && !resolution && (
         <div className="border-t border-border px-3 py-2 flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -218,7 +229,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
         </div>
       )}
 
-      {replyOpen && !resolution && (
+      {!collapsed && replyOpen && !resolution && (
         <div className="border-t border-border bg-background p-2">
           <MarkdownEditor
             value={replyText}
@@ -257,11 +268,19 @@ function CommentBubble({
   slug,
   indent,
   onChange,
+  collapsible,
+  collapsed,
+  onToggleCollapse,
 }: {
   comment: Comment;
   slug: string;
   indent?: boolean;
   onChange?: () => void;
+  // When set, the author row gets a chevron that collapses/expands the whole
+  // thread. Only the root bubble of a card is collapsible.
+  collapsible?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const editDraftKey = `edit:${slug}:${comment.id}`;
   const [editing, setEditing] = useState(false);
@@ -302,12 +321,32 @@ function CommentBubble({
 
   return (
     <div className={cn("p-3", indent && "pl-6 bg-background")}>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+      {/* Fixed row height (matches the icon-xs action buttons) so collapsing —
+          which hides those buttons — doesn't reflow the header and shift the
+          chevron/author. */}
+      <div className={cn("flex min-h-6 items-center gap-2 text-xs text-muted-foreground", !collapsed && "mb-1")}>
+        {collapsible && (
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand thread" : "Collapse thread"}
+            title={collapsed ? "Expand" : "Collapse"}
+            onClick={onToggleCollapse}
+            data-testid="thread-collapse-toggle"
+            className="-ml-1 flex items-center text-muted-foreground hover:text-foreground"
+          >
+            {collapsed ? (
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            ) : (
+              <ChevronDown className="h-3 w-3 shrink-0" />
+            )}
+          </button>
+        )}
         <span className="font-medium text-foreground">{comment.author}</span>
         <span>·</span>
         <span>{formatTime(comment.createdAt)}</span>
         <div className="ml-auto flex items-center gap-0.5">
-          {!editing && (
+          {!editing && !collapsed && (
             <>
               <Button
                 variant="ghost"
@@ -334,7 +373,7 @@ function CommentBubble({
           )}
         </div>
       </div>
-      {editing ? (
+      {collapsed ? null : editing ? (
         <div className="space-y-2">
           <MarkdownEditor
             value={draft}

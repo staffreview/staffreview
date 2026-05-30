@@ -33,27 +33,18 @@ test("inline comments appear in the sidebar and clicking scrolls to them", async
   // The body lives in the sibling CommentThread rendered by the sidebar.
   await expect(page.getByTestId("review-sidebar")).toContainText("sidebar-link-target");
 
-  // Force the page tall so we can observe a scroll change.
-  await page.evaluate(() => {
-    const spacer = document.createElement("div");
-    spacer.style.height = "2000px";
-    document.body.appendChild(spacer);
-    window.scrollTo(0, 1500);
+  // Scroll the diff pane (the diff is its own scroll container now) so the
+  // anchored line is out of view, then click the sidebar link and confirm it
+  // scrolls the inline thread back into the viewport.
+  const diffPane = page.getByTestId("diff-scroll");
+  await diffPane.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
   });
-  const yBefore = await page.evaluate(() => window.scrollY);
+  await page.waitForTimeout(50);
 
   await link.click();
 
-  // The thread element should be scrolled into the visible viewport.
-  const yAfter = await page.evaluate(() => window.scrollY);
-  expect(yAfter).not.toBe(yBefore);
-
-  const threadEl = page.locator(`[data-thread-id="${comment.threadId}"]`);
-  const inView = await threadEl.evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  });
-  expect(inView).toBe(true);
+  await expect(page.locator(`[data-thread-id="${comment.threadId}"]`)).toBeInViewport();
 });
 
 // Note: collapsed-expand-then-scroll has a known timing race because

@@ -137,3 +137,34 @@ test("Reply adds a child comment to the thread", async ({ page }) => {
   const reply = diff.comments.find((c: any) => c.parentId);
   expect(reply.body).toBe("Reply text.");
 });
+
+test("an open (unresolved) thread can be collapsed and expanded via its chevron", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /new comment/i }).click();
+  await fillEditor(page.getByTestId("comment-editor"), "Body to collapse.");
+  await page.getByRole("button", { name: /^Comment$/ }).click();
+  await expect(page.getByText("Body to collapse.")).toBeVisible();
+
+  // The collapse chevron is now on every card, not just resolved ones.
+  const toggle = page.getByTestId("thread-collapse-toggle");
+  await expect(toggle).toBeVisible();
+
+  // Collapsing must not shift the header — the chevron stays put.
+  const before = await toggle.boundingBox();
+  if (!before) throw new Error("no bounding box");
+
+  // Collapse → body and the Resolve footer hide; the chevron stays.
+  await toggle.click();
+  const after = await toggle.boundingBox();
+  if (!after) throw new Error("no bounding box");
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
+  await expect(page.getByText("Body to collapse.")).toHaveCount(0);
+  await expect(page.getByTestId("thread-resolve")).toHaveCount(0);
+  await expect(toggle).toBeVisible();
+
+  // Expand → both come back.
+  await toggle.click();
+  await expect(page.getByText("Body to collapse.")).toBeVisible();
+  await expect(page.getByTestId("thread-resolve")).toBeVisible();
+});

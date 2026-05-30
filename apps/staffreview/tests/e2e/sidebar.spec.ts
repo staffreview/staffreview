@@ -82,32 +82,24 @@ test("collapsed strip buttons share an X column with the header's gear button", 
   expect(Math.abs(gearBox.x + gearBox.width - (plusBox.x + plusBox.width))).toBeLessThanOrEqual(2);
 });
 
-test("sidebar does not visibly shift when the page scrolls", async ({ page }) => {
+test("the diff and sidebar are independent scroll panes; the page itself doesn't scroll", async ({ page }) => {
   await page.goto("/");
-  // Pick a comparison with enough diff to make the page scrollable.
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
 
-  // Force the page to be tall enough to scroll, then capture top before/after.
-  await page.evaluate(() => {
-    const spacer = document.createElement("div");
-    spacer.style.height = "2000px";
-    document.body.appendChild(spacer);
-  });
+  // Desktop layout is fixed to the viewport — the page (document) itself does
+  // not scroll; each pane owns its own scrollbar instead. This is what keeps
+  // the diff's scrollbar between the panes and the sidebar's on the right.
+  const pageScrolls = await page.evaluate(
+    () => document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+  );
+  expect(pageScrolls).toBe(false);
 
-  const sidebar = page.getByTestId("review-sidebar");
-  const before = await sidebar.boundingBox();
-  if (!before) throw new Error("no bounding box");
-
-  await page.evaluate(() => window.scrollTo(0, 300));
-  await page.waitForTimeout(50);
-  const after = await sidebar.boundingBox();
-  if (!after) throw new Error("no bounding box");
-
-  // The sticky sidebar's top should be at the same viewport-relative y as
-  // before scrolling — no jump.
-  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+  const overflowY = (testId: string) =>
+    page.getByTestId(testId).evaluate((el) => getComputedStyle(el).overflowY);
+  expect(await overflowY("diff-scroll")).toMatch(/auto|scroll/);
+  expect(await overflowY("review-sidebar")).toMatch(/auto|scroll/);
 });
 
 test("Storage card and Review heading are gone from the sidebar", async ({ page }) => {
