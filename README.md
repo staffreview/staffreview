@@ -18,9 +18,9 @@ staff main..WT           # open “main vs. working tree” in your browser
 
 - **🔍 Review any diff, locally, in seconds.** Compare a branch, a commit, a range, your staged changes, or your uncommitted working tree — `main..WT`, `<sha>..<sha>`, `release..main`, anything. A clean split/unified diff opens in your browser with inline comments, replies, and resolutions. Catch issues *before* you push, with no GitHub PR required.
 
-- **🤖 A thorough automated review from any harness or model.** Staff Review ships editable **skills** that drive a Principal‑engineer‑level review: trace every changed hunk through its edge cases, read the callers and tests, and leave concrete, actionable comments. Use Claude Code out of the box, or any agent that can read a `SKILL.md` and run a shell command — and point it at whichever model you like.
+- **🤖 A thorough automated review from any harness or model.** Staff Review ships editable **skills** that drive a staff‑engineer‑level review: trace every changed hunk through its edge cases, read the callers and tests, and leave concrete, actionable comments. Use Claude Code out of the box, or any agent that can read a `SKILL.md` and run a shell command — and point it at whichever model you like.
 
-- **📚 Capture project‑specific concerns so they’re never missed again.** Hit **Document** on a comment and it becomes a library entry under `.staffreview/library/`. Every future review cross‑checks the diff against that library, so the gotcha your team keeps re‑learning gets caught automatically. Commit the library and the whole team benefits.
+- **📚 Capture project‑specific concerns so they’re never missed again.** Flag a comment with **Document**, then run `/staff-resolve` — the agent writes it up as a library entry under `.staffreview/library/`. Every future review cross‑checks the diff against that library, so the gotcha your team keeps re‑learning gets caught automatically. Commit the library and the whole team benefits.
 
 - **🔁 Loop review → resolve for higher‑quality results.** `/staff-loop` runs the review and the fixes in isolated subagents, round after round, until a fresh review finds nothing new (or a cap you set). Each round’s fixes get re‑reviewed, so regressions and missed issues surface on their own.
 
@@ -30,7 +30,9 @@ staff main..WT           # open “main vs. working tree” in your browser
 
 ## Install
 
-You’ll need [**Bun**](https://bun.sh) and **git**. macOS and Linux are supported.
+macOS and Linux are supported. All you need on the machine is **git** — the
+released binary is **self‑contained** (it bundles its own runtime), so there’s
+nothing else to install to run it.
 
 ### Homebrew (prebuilt binary)
 
@@ -41,11 +43,13 @@ staff --version
 
 ### From source
 
+Building (or running) from source additionally needs [**Bun**](https://bun.sh):
+
 ```bash
 git clone https://github.com/staffreview/staffreview.git
 cd staffreview
 bun install
-cd apps/staffreview && bun run build:binary   # produces ./dist/staff
+cd apps/staffreview && bun run build:binary   # compiles a standalone ./dist/staff
 
 # put it on your PATH
 ln -s "$PWD/dist/staff" ~/.local/bin/staff
@@ -95,7 +99,7 @@ staff                       # just open the UI on the active diff
 
 - Click a line number to anchor a comment; **drag** or **shift‑click** to select a range.
 - Hover a line and click the **+** to comment; **reply** to build a thread.
-- **Resolve** a thread as *Fixed* or *Skipped*, or hit **Document** to capture it as a reusable lesson.
+- **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so `/staff-resolve` captures it as a reusable lesson.
 - The diff and the comment sidebar scroll independently, with light/dark themes, split/unified view, and syntax highlighting in the gear menu.
 
 **The skills** are how agents review. `staff install` writes five of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands):
@@ -120,7 +124,7 @@ They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune
 
 - **Review against your working tree.** Use a `…​..WT` diff (e.g. `main..WT`) so that fixes from `/staff-resolve` flow into the next review. This is *required* for `/staff-loop` to converge — point it at the working tree, not a fixed commit range.
 - **Make the skills yours.** They’re Markdown in `.agents/skills/`. Add your conventions, your “don’t do X here,” your preferred test framework. A review is only as good as the standard you hand it.
-- **Build the library early.** The first time *anyone* — a human or an agent — flags something project‑specific, click **Document**. From then on it’s checked on every review. Commit `.staffreview/library/` so the team shares one memory.
+- **Build the library early.** The first time *anyone* — a human or an agent — flags something project‑specific, click **Document** and let `/staff-resolve` write it up. From then on it’s checked on every review. Commit `.staffreview/library/` so the team shares one memory.
 - **Label your models.** The skills pass `--author "<model name>"` so the UI shows who said what. Mix models (e.g. one to review, another to resolve) and compare.
 - **Keep diffs focused.** Reviews are sharper on smaller changes; a 30‑file diff dilutes attention. Review feature‑by‑feature.
 - **`/staff-loop` edits your working tree.** It’s unattended and powerful, but it leaves changes uncommitted on purpose — read the diff before you commit. Lower `loopMaxRounds` to cap cost, raise it for thoroughness.
@@ -147,8 +151,8 @@ Settings (theme, split/unified, font size, syntax theme, review‑loop cap) live
 
 ## Requirements
 
-- [Bun](https://bun.sh) and git
-- macOS or Linux
+- **git** and macOS or Linux — that’s it to run the prebuilt binary
+- [Bun](https://bun.sh) only if you build or run from source
 - An AI coding agent for the automated review (Claude Code works out of the box; any harness that can read a `SKILL.md` and run shell commands works too)
 
 ## Contributing
@@ -157,4 +161,6 @@ Issues and PRs welcome. The app lives in `apps/staffreview` — `bun run dev` ru
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE) — permissive (use, modify, embed, even commercially) with an explicit patent grant.
+
+**Trademark:** “Staff Review” and its branding are project marks of the maintainers. Forks and redistribution are welcome under the license, but please don’t use the name or logo in a way that implies affiliation or endorsement.

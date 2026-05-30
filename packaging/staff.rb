@@ -1,23 +1,23 @@
 class Staff < Formula
   desc "Staff Review — a local code review tool with AI-coding-agent skills"
-  homepage "https://github.com/ianwalter/staffreview"
+  homepage "https://github.com/staffreview/staffreview"
   version "0.1.0"
-  license "MIT"
+  license "Apache-2.0"
 
   if OS.mac?
     if Hardware::CPU.arm?
-      url "https://github.com/ianwalter/staffreview/releases/download/v#{version}/staff-darwin-arm64"
+      url "https://github.com/staffreview/staffreview/releases/download/v#{version}/staff-darwin-arm64"
       sha256 "REPLACE_WITH_SHA256_DARWIN_ARM64"
     else
-      url "https://github.com/ianwalter/staffreview/releases/download/v#{version}/staff-darwin-x64"
+      url "https://github.com/staffreview/staffreview/releases/download/v#{version}/staff-darwin-x64"
       sha256 "REPLACE_WITH_SHA256_DARWIN_X64"
     end
   elsif OS.linux?
     if Hardware::CPU.arm?
-      url "https://github.com/ianwalter/staffreview/releases/download/v#{version}/staff-linux-arm64"
+      url "https://github.com/staffreview/staffreview/releases/download/v#{version}/staff-linux-arm64"
       sha256 "REPLACE_WITH_SHA256_LINUX_ARM64"
     else
-      url "https://github.com/ianwalter/staffreview/releases/download/v#{version}/staff-linux-x64"
+      url "https://github.com/staffreview/staffreview/releases/download/v#{version}/staff-linux-x64"
       sha256 "REPLACE_WITH_SHA256_LINUX_X64"
     end
   end
