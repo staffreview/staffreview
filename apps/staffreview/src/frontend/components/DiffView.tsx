@@ -413,76 +413,126 @@ export function DiffFile({
     }
     const container = diffRef.current;
     if (!container) return;
-    const desired = new Set(inlineLines.map(([k]) => k));
 
-    for (const [key, host] of Array.from(hostsRef.current.entries())) {
-      if (desired.has(key)) continue;
-      const tr = host.parentElement as HTMLElement | null;
-      if (tr) {
-        const targetTr = tr.previousElementSibling as HTMLElement | null;
-        if (targetTr?.dataset) delete targetTr.dataset.composing;
-        tr.remove();
-      }
-      hostsRef.current.delete(key);
-    }
+    // Place a host row after every wanted line and tear down stale ones.
+    // `findRowForLine` only sees currently-rendered rows. A host can be missing
+    // because the row isn't rendered yet (react-diff-viewer renders, and
+    // expands files via `hasLineComments`, across several async frames) OR
+    // because a re-render swapped in fresh <tr> nodes and orphaned a host we
+    // injected. Treat a disconnected host the same as a missing one and
+    // recreate it — otherwise the thread's portal points at a detached <td>
+    // and the comment shows only in the sidebar. We retry on a frame budget
+    // (below) until everything is placed and connected.
+    const placeHosts = (): boolean => {
+      const desired = new Set(inlineLines.map(([k]) => k));
+      let changed = false;
+      let allPlaced = true;
 
-    for (const [key, target] of inlineLines) {
-      let host = hostsRef.current.get(key);
-      let targetTr: HTMLElement | null;
-      const hostLine = target.endLine ?? target.line;
-      if (host) {
-        targetTr = host.parentElement?.previousElementSibling as HTMLElement | null;
-      } else {
-        targetTr = findRowForLine(container, { line: hostLine, side: target.side });
-        if (!targetTr) continue;
-        const tr = document.createElement("tr");
-        tr.dataset.composerHost = "true";
-        const td = document.createElement("td");
-        td.colSpan = targetTr.children.length;
-        td.style.setProperty("padding", "0", "important");
-        td.style.background = "var(--color-muted)";
-        td.style.borderTop = "1px solid var(--color-border)";
-        td.style.borderBottom = "1px solid var(--color-border)";
-        tr.appendChild(td);
-        targetTr.after(tr);
-        host = td;
-        hostsRef.current.set(key, td);
+      for (const [key, host] of Array.from(hostsRef.current.entries())) {
+        if (desired.has(key)) continue;
+        const tr = host.parentElement as HTMLElement | null;
+        if (tr) {
+          const targetTr = tr.previousElementSibling as HTMLElement | null;
+          if (targetTr?.dataset) delete targetTr.dataset.composing;
+          tr.remove();
+        }
+        hostsRef.current.delete(key);
+        changed = true;
       }
-      // Keep the source-row `composing` attribute in sync with whether a
-      // composer is *currently* open on this line — hosts can outlive
-      // composers (because of existing threads on the same line).
-      if (targetTr) {
-        if (composingLines.some((t) => t.line === target.line && t.side === target.side)) {
-          targetTr.dataset.composing = target.side;
+
+      for (const [key, target] of inlineLines) {
+        let host = hostsRef.current.get(key);
+        let targetTr: HTMLElement | null = null;
+        const hostLine = target.endLine ?? target.line;
+        if (host?.isConnected) {
+          targetTr = host.parentElement?.previousElementSibling as HTMLElement | null;
         } else {
-          delete targetTr.dataset.composing;
+          targetTr = findRowForLine(container, { line: hostLine, side: target.side });
+          if (!targetTr) {
+            allPlaced = false;
+            continue;
+          }
+          const tr = document.createElement("tr");
+          tr.dataset.composerHost = "true";
+          const td = document.createElement("td");
+          td.colSpan = targetTr.children.length;
+          td.style.setProperty("padding", "0", "important");
+          td.style.background = "var(--color-muted)";
+          td.style.borderTop = "1px solid var(--color-border)";
+          td.style.borderBottom = "1px solid var(--color-border)";
+          tr.appendChild(td);
+          targetTr.after(tr);
+          host = td;
+          hostsRef.current.set(key, td); // replaces any orphaned host for this key
+          changed = true;
+        }
+        // Keep the source-row `composing` attribute in sync with whether a
+        // composer is *currently* open on this line — hosts can outlive
+        // composers (because of existing threads on the same line).
+        if (targetTr) {
+          if (composingLines.some((t) => t.line === target.line && t.side === target.side)) {
+            targetTr.dataset.composing = target.side;
+          } else {
+            delete targetTr.dataset.composing;
+          }
         }
       }
-    }
 
-    bumpHostsVersion();
+      if (changed) bumpHostsVersion();
+      return allPlaced;
+    };
+
+    placeHosts();
+    // Nothing to anchor → no need to keep polling.
+    if (inlineLines.length === 0) return;
+
+    // Re-run on a frame budget so hosts land once the library finishes its
+    // async (re)render — and get re-placed if a later render orphans them
+    // (e.g. the expand triggered by hasLineComments swaps the rows out). Once
+    // everything is placed and connected, `placeHosts` is a passive no-op, so
+    // this doesn't fight the library's own row rendering the way a live
+    // MutationObserver did. ~3s matches scrollToLine's polling budget.
+    let raf = 0;
+    let stable = 0;
+    const deadline = performance.now() + 3000;
+    const tick = () => {
+      raf = 0;
+      // Stop once placement has held steady for a few frames (enough to absorb
+      // the library's async render / expand) — or the budget runs out. A
+      // re-placement (a late detach) resets the counter so it still gets
+      // repaired within the window instead of burning the whole 3s every time.
+      stable = placeHosts() ? stable + 1 : 0;
+      if (stable < 10 && performance.now() < deadline) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [collapsed, inlineLines, composingLines, splitView, file.oldContent, file.newContent]);
 
   // Track the currently anchored range — driven by the URL hash. Browser
   // navigation fires `hashchange`; our own `setLineHash` helper
   // additionally dispatches `staff:hashchange` because
   // `history.replaceState` is silent. `startLine === endLine` for a
-  // single-line anchor. Declared here (before `highlightLines`) so we
-  // can feed the range into react-diff-viewer's own highlighter.
+  // single-line anchor. This anchored range is the *only* thing that gets a
+  // line highlight (painted via `data-anchored` below, on click/drag or a URL
+  // anchor) — a comment on a line must NOT light it up.
   const [anchored, setAnchored] = useState<
     { side: "old" | "new"; startLine: number; endLine: number } | null
   >(null);
 
-  const highlightLines = useMemo(() => {
-    const out: string[] = [];
-    for (const t of threads) {
-      const r = t.find((c) => !c.parentId);
-      if (!r?.line) continue;
-      const prefix = r.side === "old" ? "L" : "R";
-      out.push(`${prefix}-${r.line}`);
-    }
-    return out;
-  }, [threads]);
+  // Does this file have any line-anchored comment thread? If so we render it
+  // fully expanded (see `showDiffOnly` below) instead of folding unchanged
+  // context. Folding hides the rows a comment is anchored to, and with them
+  // the inline thread's host row — leaving the comment visible only in the
+  // sidebar, even after the user unfolds by hand. react-diff-viewer's own
+  // `alwaysShowLines` would be the surgical fix, but in this version toggling
+  // it at runtime corrupts the virtualized render (the file goes blank), so we
+  // expand the whole file instead — coarser, but reliable.
+  const hasLineComments = useMemo(
+    () => threads.some((t) => t.find((c) => !c.parentId)?.line != null),
+    [threads],
+  );
 
   /**
    * Resolve a click anywhere in a diff row to a (line, side) pair, sharing
@@ -879,10 +929,11 @@ export function DiffFile({
             // regions to just the changed hunks (+3 context lines). That
             // makes react-diff-viewer's expand/fold-all button in the
             // summary row functional. Fully-expanded mode shows the whole
-            // file (and the button has nothing to do).
-            showDiffOnly={!expandedByDefault}
+            // file (and the button has nothing to do). We also force-expand
+            // any file that has line comments so none of them are hidden in a
+            // fold (see `hasLineComments`).
+            showDiffOnly={!expandedByDefault && !hasLineComments}
             extraLinesSurroundingDiff={3}
-            highlightLines={highlightLines}
             renderContent={renderContent}
             styles={diffStyles as any}
           />

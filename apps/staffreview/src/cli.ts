@@ -4,18 +4,21 @@ import { join } from "node:path";
 import { startServer } from "./server.ts";
 import * as store from "./store.ts";
 import * as git from "./git.ts";
+import * as settings from "./settings.ts";
 import type { DiffTarget, ResolutionStatus } from "./types.ts";
 
 import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
 import skillDocument from "../skills/staff-document.md" with { type: "text" };
 import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
+import skillLoop from "../skills/staff-loop.md" with { type: "text" };
 
 const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
   "staff-comment": skillComment,
   "staff-document": skillDocument,
   "staff-resolve": skillResolve,
+  "staff-loop": skillLoop,
 };
 
 const VERSION = "0.1.0";
@@ -89,12 +92,21 @@ USAGE
   staff comment add  [--slug <s>] [--file <p>] [--line <n>] [--end-line <n>]
                      [--side new|old] [--body <text>] [--reply-to <id>] [--author <name>]
                      (--line + --end-line anchors the comment to a line range)
+                     (prints the new comment's JSON, including its id)
+  staff comment edit   --id <id> [--body <text>] [--slug <s>]
+                       (revise the body of a comment you posted)
+  staff comment delete --id <id> [--slug <s>]
+                       (remove a comment you posted; also removes its replies)
   staff comment list [--slug <s>] [--open] [--json]
   staff comment resolve --thread <id> --status <fixed|skipped|documented>
                         --body <text> [--documented-as <name>] [--slug <s>]
   staff comment unresolve --thread <id> [--slug <s>]
 
-  staff install                 Set up the repo: write the four /staff-* skills to
+  staff settings [--json]       Print global settings (with defaults applied).
+  staff settings get <key>      Print one setting's value (e.g. loopMaxRounds,
+                                 the /staff-loop round cap; defaults to ${settings.DEFAULT_LOOP_ROUNDS}).
+
+  staff install                 Set up the repo: write the five /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 
@@ -136,7 +148,7 @@ async function main(argv: string[]) {
   // a specific diff targeted. A slug isn't a known subcommand and always
   // contains the ".." separator (e.g. `main..WT`, `<sha>..WT`).
   const KNOWN_COMMANDS = new Set([
-    "serve", "active", "diff", "files", "comment", "install", "version", "help",
+    "serve", "active", "diff", "files", "comment", "settings", "install", "version", "help",
   ]);
   const first = positional[0] ?? "serve";
   const firstIsSlug = !KNOWN_COMMANDS.has(first) && first.includes("..");
@@ -351,6 +363,35 @@ async function main(argv: string[]) {
         return;
       }
 
+      if (sub === "edit") {
+        const id = typeof flags.id === "string" ? flags.id : undefined;
+        if (!id) throw new Error("--id is required (the comment id from `comment add`)");
+        let body = typeof flags.body === "string" ? flags.body : "";
+        if (!body) body = await readBodyFromStdin();
+        if (!body.trim()) throw new Error("--body is required (or pipe via stdin)");
+        const diff = await store.updateComment(slug, id, body, cwd);
+        const updated = diff.comments.find((x) => x.id === id);
+        console.log(JSON.stringify(updated, null, 2));
+        return;
+      }
+
+      if (sub === "delete") {
+        const id = typeof flags.id === "string" ? flags.id : undefined;
+        if (!id) throw new Error("--id is required (the comment id from `comment add`)");
+        const before = await store.loadDiff(slug, cwd);
+        if (!before) throw new Error(`diff not found: ${slug}`);
+        // Error rather than silently no-op on an unknown id.
+        if (!before.comments.some((x) => x.id === id)) throw new Error(`comment not found: ${id}`);
+        // deleteComment removes the whole reply subtree; derive the count from
+        // the before/after sizes so it stays accurate regardless of nesting.
+        const after = await store.deleteComment(slug, id, cwd);
+        const removed = before.comments.length - after.comments.length;
+        const replies = removed - 1;
+        if (flags.json) console.log(JSON.stringify({ deleted: id, removed }, null, 2));
+        else console.log(`deleted comment ${id.slice(0, 8)}${replies > 0 ? ` (+${replies} repl${replies === 1 ? "y" : "ies"})` : ""}`);
+        return;
+      }
+
       if (sub === "list") {
         const c = await store.loadDiff(slug, cwd);
         if (!c) throw new Error("diff not found");
@@ -422,6 +463,28 @@ async function main(argv: string[]) {
       }
 
       throw new Error(`Unknown subcommand: comment ${sub}`);
+    }
+
+    case "settings": {
+      // Settings are global (per-user config dir), not per-repo. Apply the
+      // loop-cap default so `/staff-loop` always reads a concrete number.
+      const resolved: Record<string, unknown> = {
+        loopMaxRounds: settings.DEFAULT_LOOP_ROUNDS,
+        ...(await settings.readSettings()),
+      };
+      if (positional[1] === "get") {
+        const key = positional[2];
+        if (!key) throw new Error("usage: staff settings get <key>");
+        const value = resolved[key];
+        if (value === undefined) {
+          console.error(`\x1b[33mnote:\x1b[0m setting not set: ${key}`);
+          return;
+        }
+        console.log(flags.json ? JSON.stringify(value) : String(value));
+        return;
+      }
+      console.log(JSON.stringify(resolved, null, 2));
+      return;
     }
 
     default:

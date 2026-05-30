@@ -6,6 +6,10 @@ import { spawn } from "node:child_process";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const SCRATCH_DIR = join(__dirname, ".tmp", "repo");
 export const TEST_PORT = 4823;
+// Isolated global-settings dir, shared by the test server (start.ts) and the
+// CLI helper (helpers.ts) so both read/write the same settings file rather than
+// the developer's real ~/.config/staffreview.
+export const STAFF_CONFIG_DIR = join(SCRATCH_DIR, ".config-test");
 
 const FILE_A_OLD = `export function add(a: number, b: number): number {
   return a + b;

@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { Diff, DiffTarget, FileDiff, GitRefInfo } from "../types.ts";
+import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "../loop-config.ts";
 import { api, openSocket, type ColorScheme, type WSEvent } from "./lib/api.ts";
 import {
   DARK_SYNTAX_THEMES,
@@ -109,6 +110,9 @@ export function App() {
   // with react-diff-viewer's expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
   const [filesExpandedByDefault, setFilesExpandedByDefaultState] = useState(false);
+  // Hard cap on review→resolve rounds for the /staff-loop skill. Default and
+  // bounds come from loop-config.ts, shared with the server (settings.ts).
+  const [loopMaxRounds, setLoopMaxRoundsState] = useState<number>(DEFAULT_LOOP_ROUNDS);
   // Load preferences from the global settings file at startup, then
   // persist any user-driven change through the server so they survive
   // ports and projects.
@@ -140,6 +144,11 @@ export function App() {
         if (typeof settings.filesExpandedByDefault === "boolean") {
           setFilesExpandedByDefaultState(settings.filesExpandedByDefault);
         }
+        if (typeof settings.loopMaxRounds === "number") {
+          setLoopMaxRoundsState(
+            Math.min(MAX_LOOP_ROUNDS, Math.max(MIN_LOOP_ROUNDS, settings.loopMaxRounds)),
+          );
+        }
       } catch {}
     })();
   }, []);
@@ -159,6 +168,11 @@ export function App() {
   const setFilesExpandedByDefault = useCallback((next: boolean) => {
     setFilesExpandedByDefaultState(next);
     api.setSettings({ filesExpandedByDefault: next }).catch(() => {});
+  }, []);
+  const setLoopMaxRounds = useCallback((next: number) => {
+    const clamped = Math.min(MAX_LOOP_ROUNDS, Math.max(MIN_LOOP_ROUNDS, next));
+    setLoopMaxRoundsState(clamped);
+    api.setSettings({ loopMaxRounds: clamped }).catch(() => {});
   }, []);
   const setSyntaxTheme = useCallback(
     async (mode: "light" | "dark", name: string) => {
@@ -685,6 +699,45 @@ export function App() {
                   </div>
                 );
               })()}
+              <DropdownMenuLabel>Review loop</DropdownMenuLabel>
+              <div className="px-2 py-1 flex items-center gap-2">
+                <div className="inline-flex h-8 items-center rounded-md border border-input bg-background shadow-xs">
+                  <button
+                    type="button"
+                    aria-label="Decrease /staff-loop round cap"
+                    title="Fewer rounds"
+                    onClick={() => setLoopMaxRounds(loopMaxRounds - 1)}
+                    disabled={loopMaxRounds <= MIN_LOOP_ROUNDS}
+                    data-testid="loop-rounds-decrease"
+                    className={cn(
+                      "inline-flex h-full w-8 items-center justify-center rounded-l-md",
+                      "transition-colors hover:bg-accent hover:text-accent-foreground",
+                      "disabled:pointer-events-none disabled:opacity-40",
+                    )}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <div className="border-l border-input" />
+                  <button
+                    type="button"
+                    aria-label="Increase /staff-loop round cap"
+                    title="More rounds"
+                    onClick={() => setLoopMaxRounds(loopMaxRounds + 1)}
+                    disabled={loopMaxRounds >= MAX_LOOP_ROUNDS}
+                    data-testid="loop-rounds-increase"
+                    className={cn(
+                      "inline-flex h-full w-8 items-center justify-center rounded-r-md",
+                      "transition-colors hover:bg-accent hover:text-accent-foreground",
+                      "disabled:pointer-events-none disabled:opacity-40",
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground" data-testid="loop-rounds-value">
+                  {loopMaxRounds} {loopMaxRounds === 1 ? "round" : "rounds"} max
+                </span>
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

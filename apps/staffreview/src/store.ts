@@ -215,7 +215,20 @@ export async function updateComment(
 export async function deleteComment(slug: string, id: string, cwd = process.cwd()): Promise<Diff> {
   const c = await loadDiff(slug, cwd);
   if (!c) throw new Error(`diff not found: ${slug}`);
-  c.comments = c.comments.filter((x) => x.id !== id && x.parentId !== id);
+  // Remove the comment and its entire reply subtree (replies, replies-to-
+  // replies, …). Filtering only direct children would orphan deeper replies,
+  // leaving comments whose `parentId` points at a now-deleted comment.
+  const removeIds = new Set<string>([id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const cm of c.comments) {
+      if (cm.parentId && removeIds.has(cm.parentId) && !removeIds.has(cm.id)) {
+        removeIds.add(cm.id);
+        grew = true;
+      }
+    }
+  }
+  c.comments = c.comments.filter((x) => !removeIds.has(x.id));
   await saveDiff(c, cwd);
   return c;
 }

@@ -1,13 +1,8 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import setup, { SCRATCH_DIR, TEST_PORT } from "./setup.ts";
+import setup, { SCRATCH_DIR, STAFF_CONFIG_DIR, TEST_PORT } from "./setup.ts";
 
 await setup();
-
-// Isolate the global settings file under the scratch repo so tests can't
-// pollute the developer's real ~/.config/staffreview.
-const STAFF_CONFIG_DIR = join(SCRATCH_DIR, ".config-test");
 
 const child = spawn(
   "bun",

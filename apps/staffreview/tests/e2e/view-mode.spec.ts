@@ -1,14 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
-import { SCRATCH_DIR } from "./setup.ts";
+import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
   // Reset the per-test isolated global settings so each test starts from
   // the default (split view).
-  await rm(join(SCRATCH_DIR, ".config-test"), { recursive: true, force: true });
+  await rm(STAFF_CONFIG_DIR, { recursive: true, force: true });
 });
 
 async function openGear(page: import("@playwright/test").Page) {

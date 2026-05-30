@@ -67,7 +67,34 @@ staff comment add --author "Opus 4.8" --body "Overall looks good once tests pass
 staff comment add --reply-to <commentId> --author "Opus 4.8" --body "Good catch — see also lines 80-86."
 ```
 
-The CLI prints the new comment's JSON to stdout. Capture the `id` and `threadId` if you want to follow up.
+The CLI prints the new comment's JSON to stdout — including its `id` and
+`threadId`. **Capture the `id`**: it's the handle you need to revise or delete
+the comment later (see below), and `--reply-to <id>` threads a follow-up onto it.
+
+## Edit or delete a comment you posted
+
+If you posted something you want to revise or take back, use the `id` from the
+`comment add` output.
+
+**Revise** the body (the anchor, author, and thread stay the same):
+
+```bash
+staff comment edit --id <commentId> --body "Corrected: it's an off-by-one only when the list is empty."
+```
+
+`edit` prints the updated comment's JSON. The body can also be piped via stdin.
+
+**Delete** the comment outright:
+
+```bash
+staff comment delete --id <commentId>
+```
+
+Deleting a comment also removes any replies anchored to it. The command errors
+if no comment matches the `id`, so a typo won't silently no-op. Both `edit` and
+`delete` operate on the active diff by default; pass `--slug <slug>` to override.
+
+Only edit or delete comments **you** posted — don't rewrite a human's review.
 
 ## Resolve a thread
 

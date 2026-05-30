@@ -2,7 +2,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { readdir, rm, stat } from "node:fs/promises";
-import { SCRATCH_DIR } from "./setup.ts";
+import { SCRATCH_DIR, STAFF_CONFIG_DIR } from "./setup.ts";
 
 /**
  * The slice of a Playwright Locator we use to type into the editor. We
@@ -37,6 +37,10 @@ export async function staff(args: string[], opts: { stdin?: string } = {}): Prom
   return new Promise((resolve, reject) => {
     const child = spawn("bun", [CLI, "--repo", SCRATCH_DIR, ...args], {
       stdio: ["pipe", "pipe", "pipe"],
+      // Point the CLI at the same isolated global-settings dir the test server
+      // uses (STAFF_CONFIG_DIR from setup.ts), so `staff settings …` reads/writes
+      // the same file as the UI, not the developer's real ~/.config/staffreview.
+      env: { ...process.env, STAFF_CONFIG_DIR },
     });
     let stdout = "";
     let stderr = "";
