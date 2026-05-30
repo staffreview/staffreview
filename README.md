@@ -37,7 +37,7 @@ nothing else to install to run it.
 ### Homebrew (prebuilt binary)
 
 ```bash
-brew install staffreview/tap/staff      # or: brew install ./packaging/staff.rb
+brew install staffreview/tap/staff
 staff --version
 ```
 
