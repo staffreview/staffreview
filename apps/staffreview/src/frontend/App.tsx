@@ -453,9 +453,9 @@ export function App() {
           <img
             src={logoUrl}
             alt="Staff Review"
-            width={28}
-            height={28}
-            className="h-7 w-7 shrink-0"
+            width={36}
+            height={36}
+            className="h-9 w-9 shrink-0"
           />
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-mono font-semibold truncate" title={info?.root}>

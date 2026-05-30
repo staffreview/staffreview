@@ -30,6 +30,10 @@ staff main..WT           # open “main vs. working tree” in your browser
 
 > Staff Review itself is **100% local** — a small web server reading your local git history. (Your agent still talks to whatever model you choose; pick a local one if you want zero data to leave the machine.)
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Staff Review — an AI agent's inline review on a diff, with the comment thread anchored to the changed line and the review sidebar alongside" width="900" />
+</p>
+
 ---
 
 ## Install
