@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { Diff, DiffTarget, FileDiff, GitRefInfo } from "../types.ts";
+import logoUrl from "./logo.png";
 import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "../loop-config.ts";
 import { api, openSocket, type ColorScheme, type WSEvent } from "./lib/api.ts";
 import {
@@ -448,7 +449,14 @@ export function App() {
       style={{ "--staff-diff-font-size": `${diffFontSize}px` } as React.CSSProperties}
     >
       <header className="shrink-0 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="w-full px-4 pt-3 pb-2 flex items-center gap-3 overflow-x-auto">
+        <div className="w-full px-4 lg:pr-2.5 pt-3 pb-2 flex items-center gap-3 overflow-x-auto">
+          <img
+            src={logoUrl}
+            alt="Staff Review"
+            width={28}
+            height={28}
+            className="h-7 w-7 shrink-0"
+          />
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-mono font-semibold truncate" title={info?.root}>
               {info?.root}

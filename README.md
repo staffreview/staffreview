@@ -1,4 +1,8 @@
-# Staff Review
+<p align="center">
+  <img src="docs/icon.png" alt="Staff Review" width="128" height="128" />
+</p>
+
+<h1 align="center">Staff Review</h1>
 
 **A local, staff‑engineer‑grade code review — for your working tree, before anyone else sees it.**
 
