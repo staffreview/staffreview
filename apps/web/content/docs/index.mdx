@@ -1,0 +1,48 @@
+---
+title: Introduction
+description: A local, staff-engineer-grade code review for your working tree — before anyone else sees it.
+---
+
+**Staff Review** opens a GitHub-style review of *any* diff in your browser and
+lets **any AI coding agent** leave a thorough, inline review on it — then fix,
+document, or skip each comment. No PR, no cloud service, no waiting on a
+teammate. It all runs on your machine, over your local git repo.
+
+```bash
+staff install            # set up the repo (writes the /staff-* skills)
+staff main..WT           # open “main vs. working tree” in your browser
+# then, in your agent:  /staff-review main..WT   →   /staff-resolve
+```
+
+<Callout title="100% local">
+  Staff Review itself is a small web server reading your local git history.
+  Your agent still talks to whatever model you choose — pick a local one if you
+  want zero data to leave the machine.
+</Callout>
+
+## Why you’ll want it
+
+- **🔍 Review any diff, locally, in seconds.** Compare a branch, a commit, a
+  range, your staged changes, or your uncommitted working tree. A clean
+  split/unified diff opens in your browser with inline comments, replies, and
+  resolutions. Catch issues *before* you push, with no GitHub PR required.
+- **🤖 A thorough automated review from any harness or model.** Editable
+  **skills** drive a staff-engineer-level review: trace every changed hunk
+  through its edge cases, read the callers and tests, and leave concrete,
+  actionable comments. Claude Code works out of the box; so does any agent that
+  can read a `SKILL.md` and run a shell command.
+- **📚 Capture project-specific concerns so they’re never missed again.** Flag a
+  comment with **Document** and the agent saves it as a library entry. Every
+  future review cross-checks the diff against that library.
+- **🔁 Loop review → resolve for higher-quality results.** `/staff-loop` runs
+  the review and the fixes in isolated subagents, round after round, until a
+  fresh review finds nothing new.
+
+## Next steps
+
+<Cards>
+  <Card title="Installation" href="/docs/installation" description="Install the prebuilt binary with Homebrew, or build from source." />
+  <Card title="Quickstart" href="/docs/quickstart" description="Open your first review in about 60 seconds." />
+  <Card title="How it works" href="/docs/how-it-works" description="Slugs, the web UI, skills, the library, and the loop." />
+  <Card title="CLI reference" href="/docs/cli-reference" description="Every staff subcommand at a glance." />
+</Cards>

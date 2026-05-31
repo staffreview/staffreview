@@ -1,0 +1,67 @@
+---
+title: CLI reference
+description: Every staff subcommand at a glance.
+---
+
+```text
+staff [serve] [<slug>]                 Open the web UI (default). <slug> like main..WT.
+staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
+staff files [--json]                   List the file-level changes for a diff.
+staff comment add|edit|delete|list|resolve|unresolve
+                                       Post and manage review comments (used by the skills).
+staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
+staff install                          Write the skills + initialize the .staffreview/ store.
+staff --help                           Full usage.
+```
+
+## Diffs
+
+```bash
+staff main..WT                         # open the UI on main → working tree
+staff diff main..WT --json             # create/load the diff, print its JSON
+staff diff --base HEAD --head working-tree --json
+staff active --json                    # the currently active diff
+staff files --json                     # { path, status, oldContent, newContent } per file
+```
+
+A slug is `<base>..<head>`, where each side is `WT` (working tree), `STAGED`, or
+a git ref (branch, tag, or SHA).
+
+## Comments
+
+```bash
+# Inline (anchored to a file + line); add --end-line for a range
+staff comment add --file path/to/file.ts --line 42 --side new \
+  --author "Opus 4.8" --priority P1 --body "Off-by-one: misses the last element."
+
+# Top-level (no --file/--line)
+staff comment add --author "Opus 4.8" --body "Overall looks good once tests pass."
+
+# Reply, edit, delete
+staff comment add --reply-to <id> --author "Opus 4.8" --body "Good catch."
+staff comment edit --id <id> --body "Corrected wording."
+staff comment delete --id <id>
+
+# List
+staff comment list --json
+staff comment list --open --json
+
+# Resolve / unresolve a thread
+staff comment resolve --thread <id> --author "Opus 4.8" --status fixed   --body "Reordered the loop, added a test."
+staff comment resolve --thread <id> --author "Opus 4.8" --status skipped --body "Intentional — see ADR-0007."
+staff comment resolve --thread <id> --author "Opus 4.8" --status documented --body "Saved." --documented-as error-handling.md
+staff comment unresolve --thread <id>
+```
+
+`--priority` (`P1`/`P2`/`P3`) is an agent-only severity for triage — **P1 is the
+most urgent**. Humans don’t set it; leave it off for purely informational
+top-level comments.
+
+## Settings
+
+```bash
+staff settings get loopMaxRounds       # read a single global setting
+```
+
+Settings (theme, split/unified, font size, syntax theme, review-loop cap) live
+in the gear menu and persist globally.

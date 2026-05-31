@@ -1,0 +1,26 @@
+---
+title: Tips
+description: Get the most out of Staff Review.
+---
+
+- **Review against your working tree.** Use a `…..WT` diff (e.g. `main..WT`) so
+  fixes from `/staff-resolve` flow into the next review. This is *required* for
+  `/staff-loop` to converge — point it at the working tree, not a fixed commit
+  range.
+- **Make the skills yours.** They’re Markdown in `.agents/skills/`. Add your
+  conventions, your “don’t do X here,” your preferred test framework. A review
+  is only as good as the standard you hand it.
+- **Build the library early.** The first time anyone flags something
+  project-specific, click **Document** and let `/staff-resolve` write it up.
+  From then on it’s checked on every review. Commit `.staffreview/library/` so
+  the team shares one memory.
+- **Label your models.** The skills pass `--author "<model name>"` so the UI
+  shows who said what. Mix models — one to review, another to resolve — and
+  compare.
+- **Keep diffs focused.** Reviews are sharper on smaller changes; a 30-file diff
+  dilutes attention. Review feature-by-feature.
+- **`/staff-loop` edits your working tree.** It’s unattended and powerful, but it
+  leaves changes uncommitted on purpose — read the diff before you commit. Lower
+  `loopMaxRounds` to cap cost, raise it for thoroughness.
+- **No GitHub required.** This works on any local repo with no remote — review
+  your own work before it ever becomes a PR.

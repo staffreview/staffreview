@@ -1,0 +1,57 @@
+---
+title: How it works
+description: Diffs are slugs, the web UI is a GitHub-style review, and skills are how agents review.
+---
+
+## Diffs are slugs
+
+A diff is `base..head`, where each side is a git ref, `WT` (working tree), or
+`STAGED`:
+
+```bash
+staff main..WT              # current main → uncommitted working tree
+staff abc1234..HEAD         # a specific commit → HEAD
+staff main..STAGED          # main → what you’ve git-added
+staff                       # just open the UI on the active diff
+```
+
+The slug is also how the skills reference a diff: `/staff-review main..WT`
+targets (and if needed creates) that exact diff and makes it active.
+
+## The web UI
+
+A GitHub-style review of the active diff:
+
+- Click a line number to anchor a comment; **drag** or **shift-click** to select
+  a range.
+- Hover a line and click the **+** to comment; **reply** to build a thread.
+- **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so
+  `/staff-resolve` captures it as a reusable lesson.
+- The diff and the comment sidebar scroll independently, with light/dark themes,
+  split/unified view, and syntax highlighting — all in the gear menu.
+
+Comments are stored under `.staffreview/diffs/<slug>.json`; the running UI picks
+up changes over a WebSocket and re-renders live as the agent posts.
+
+## The skills
+
+`staff install` writes five skills to `.agents/skills/` (symlinked into
+`.claude/skills/` so Claude Code picks them up as slash commands). They’re just
+Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your
+team’s standards. See the [Skills reference](/docs/skills) for what each one
+does.
+
+## The library
+
+`.staffreview/library/` is your team’s captured review wisdom. `/staff-review`
+reads it on every pass and re-flags any recurrence of a documented mistake. The
+library is meant to be **committed**; the session data
+(`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored
+automatically. See [The library](/docs/library).
+
+## The loop
+
+`/staff-loop` chains review and resolution in subagents until a review surfaces
+nothing new, capped by the `loopMaxRounds` setting (default **5**, adjustable in
+the gear menu). It’s the “set it going and come back to a higher-quality result”
+button.

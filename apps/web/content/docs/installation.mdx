@@ -1,0 +1,50 @@
+---
+title: Installation
+description: Install the self-contained binary with Homebrew, or build it from source with Bun.
+---
+
+macOS and Linux are supported. All you need on the machine is **git** — the
+released binary is **self-contained** (it bundles its own runtime), so there’s
+nothing else to install to run it.
+
+## Homebrew (prebuilt binary)
+
+The fastest path. Installs a standalone `staff` binary:
+
+```bash
+brew install staffreview/tap/staff
+staff --version
+```
+
+## From source
+
+Building (or running) from source additionally needs [**Bun**](https://bun.sh):
+
+```bash
+git clone https://github.com/staffreview/staffreview.git
+cd staffreview
+bun install
+cd apps/staffreview && bun run build:binary   # compiles a standalone ./dist/staff
+
+# put it on your PATH
+ln -s "$PWD/dist/staff" ~/.local/bin/staff
+staff --version
+```
+
+Prefer not to build? Run straight from source:
+
+```bash
+bun run apps/staffreview/src/cli.ts <args>
+```
+
+## Requirements
+
+- **git** and macOS or Linux — that’s all you need to run the prebuilt binary.
+- [**Bun**](https://bun.sh) only if you build or run from source.
+- An **AI coding agent** for the automated review. Claude Code works out of the
+  box; any harness that can read a `SKILL.md` and run shell commands works too.
+
+<Callout type="info">
+  Once installed, run `staff install` inside a git repo to write the skills and
+  initialize the local store. See the [Quickstart](/docs/quickstart).
+</Callout>

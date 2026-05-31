@@ -1,0 +1,68 @@
+---
+title: Skills
+description: The five /staff-* skills that drive the review, and how to make them your own.
+---
+
+`staff install` writes five skills to `.agents/skills/`, symlinked into
+`.claude/skills/` so Claude Code exposes them as slash commands. They’re just
+Markdown — edit them to encode your team’s standards.
+
+| Skill | What it does |
+| --- | --- |
+| `/staff-review` | Reviews the active diff from first principles and leaves inline comments. |
+| `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
+| `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
+| `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/library/` example. |
+| `/staff-loop` | Runs `/staff-review` → `/staff-resolve` in subagents, round after round, until it converges. |
+
+## /staff-review
+
+Conducts a staff-engineer-level review of the active diff: it reads every
+changed file plus enough surrounding context (callers, tests, sibling modules),
+traces each hunk through its edge cases, then cross-checks the diff against the
+[review library](/docs/library). Findings are posted as inline comments as they’re
+found, each with a **priority** (`P1` must-fix, `P2` should-fix, `P3` minor) so
+you can triage.
+
+```text
+/staff-review main..WT
+```
+
+## /staff-resolve
+
+Works through every open thread. For each one it picks exactly one action —
+**fix** the code, **document** it as a library entry, or **skip** it with a
+justification — replies in-thread with what it did, then records the resolution.
+It does not commit; you review and commit the changes.
+
+```text
+/staff-resolve
+```
+
+## /staff-comment
+
+The thin CLI wrapper the other skills use to add, edit, delete, list, and
+resolve comments via the `staff` CLI. You rarely invoke it directly.
+
+## /staff-document
+
+Imports a GitHub PR review comment by URL and turns it into a structured
+`.staffreview/library/` example — a way to seed the library from review wisdom
+that already lives on GitHub.
+
+## /staff-loop
+
+Runs `/staff-review` then `/staff-resolve` in isolated subagents, round after
+round, until a fresh review finds nothing new or it hits the `loopMaxRounds` cap
+(default **5**). Point it at a working-tree diff so each round’s fixes feed the
+next review.
+
+```text
+/staff-loop main..WT
+```
+
+<Callout title="Make the skills yours">
+  They’re Markdown in `.agents/skills/`. Add your conventions, your “don’t do X
+  here,” your preferred test framework. A review is only as good as the standard
+  you hand it.
+</Callout>

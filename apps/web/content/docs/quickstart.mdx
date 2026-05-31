@@ -1,0 +1,55 @@
+---
+title: Quickstart
+description: From zero to your first AI review in about 60 seconds.
+---
+
+From inside the git repo you want to review:
+
+## 1. One-time setup
+
+Writes the five `/staff-*` skills, creates the `.staffreview/` store, and
+gitignores the per-machine bits.
+
+```bash
+staff install
+```
+
+## 2. Open a diff in the browser
+
+`WT` is the working tree; `STAGED` is the index.
+
+```bash
+staff main..WT
+```
+
+## 3. Review and resolve in your agent
+
+In your AI agent (e.g. Claude Code, from the same repo):
+
+```text
+/staff-review main..WT      # leaves inline comments — they show up live in the UI
+/staff-resolve              # fixes / documents / skips each open comment
+```
+
+Watch the comments stream into the browser as the agent posts them. Triage in
+the UI, reply, resolve threads yourself, or let `/staff-resolve` work through
+them. That’s the whole loop.
+
+<Callout title="Review against your working tree">
+  Use a `…..WT` diff (like `main..WT`) so that fixes from `/staff-resolve` flow
+  into the next review. This is *required* for [`/staff-loop`](/docs/skills) to
+  converge — point it at the working tree, not a fixed commit range.
+</Callout>
+
+## Hands-off: let the loop run
+
+Once you trust the setup, chain review and resolution automatically:
+
+```text
+/staff-loop main..WT
+```
+
+`/staff-loop` runs `/staff-review` → `/staff-resolve` in subagents, round after
+round, until a fresh review surfaces nothing new (or it hits the
+`loopMaxRounds` cap — default **5**, adjustable in the gear menu). It edits your
+working tree but never commits, so you read the diff before committing.
