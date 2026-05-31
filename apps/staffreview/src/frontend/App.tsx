@@ -401,8 +401,13 @@ export function App() {
     setDiff(d.diff);
   }, []);
 
-  useEffect(() => {
-    const close = openSocket((ev: WSEvent) => {
+  // The live-update event handler. It closes over `reloadFilesQuiet` (whose
+  // identity changes with base/head/info), so it can't go straight into the
+  // socket effect's deps — that would reopen the WebSocket on every target
+  // change, and any event arriving during the reconnect gap would be lost
+  // (the cause of comments/resolutions not showing up until a manual refresh).
+  const handleWsEvent = useCallback(
+    (ev: WSEvent) => {
       if (ev.type === "hello") {
         setWsHello(true);
         return;
@@ -431,9 +436,30 @@ export function App() {
       if (ev.type === "repo:changed") {
         reloadFilesQuiet();
       }
-    });
+    },
+    [refreshDiffOnly, reloadFilesQuiet],
+  );
+
+  // Always-current pointer to the handler, so the socket effect below can stay
+  // mounted for the component's life and still call the latest logic.
+  const handleWsEventRef = useRef(handleWsEvent);
+  useEffect(() => {
+    handleWsEventRef.current = handleWsEvent;
+  }, [handleWsEvent]);
+
+  // Open the socket exactly once. It must NOT depend on any changing value, or
+  // it churns the connection and drops live events mid-reconnect.
+  useEffect(() => {
+    const close = openSocket((ev) => handleWsEventRef.current(ev));
     return close;
-  }, [refreshDiffOnly, reloadFilesQuiet]);
+  }, []);
+
+  // Reflect the project being reviewed in the tab title,
+  // e.g. "Staff Review: staffreview".
+  useEffect(() => {
+    const project = info?.root ? baseName(info.root) : "";
+    document.title = project ? `Staff Review: ${project}` : "Staff Review";
+  }, [info]);
 
   const comments = diff?.comments ?? [];
   const fileComments = useMemo(() => comments.filter((c) => c.file), [comments]);

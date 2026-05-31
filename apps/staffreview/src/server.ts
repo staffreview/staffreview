@@ -221,7 +221,13 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
         },
         POST: async (req) => {
           const body = await readJson<{ base: DiffTarget; head: DiffTarget; setActive?: boolean }>(req);
-          const c = await store.loadOrCreateDiff(body.base, body.head, cwd);
+          // Pin any moving refs (`HEAD`, a branch/tag name) to concrete commits
+          // before persisting, exactly like the `staff diff` CLI path does. The
+          // frontend usually pins via `defaultTargets`, but its branch-not-in-refs
+          // fallback and the shared-link slug fallback can still POST an unpinned
+          // ref — anchor it here so no creation path stores a moving base.
+          const { base, head } = await git.resolveTargets(body.base, body.head, cwd);
+          const c = await store.loadOrCreateDiff(base, head, cwd);
           if (body.setActive !== false) await store.setActiveDiff(c.slug, cwd);
           broadcast({ type: "diff:created", slug: c.slug });
           return json({ diff: c });

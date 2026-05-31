@@ -129,43 +129,77 @@ export function targetsForSlug(slug: string): { base: DiffTarget; head: DiffTarg
 }
 
 /**
- * Like `targetsForSlug`, but resolves named refs to a pinned commit —
- * `main..WT` becomes `{kind:"commit", ref:<main's sha>, label:"main"}..WT`
- * so the diff uses the branch's *current* commit (and the stale-base
- * banner can tell when it later advances), mirroring what the target
- * picker does when you choose a branch. WT/STAGED are left alone; a bare
- * SHA or other rev is peeled to its commit; anything unresolvable is
- * left as a literal ref.
+ * Pin a single target to a concrete commit:
+ * - bare `HEAD` → the *current branch's* commit, labelled with the branch name
+ *   (or, when detached, the bare HEAD commit). Never stored as the literal
+ *   "HEAD", which is a moving pointer.
+ * - a branch/tag/remote name → that ref's commit, keeping the name as `label`
+ *   so the stale-base banner can tell when it later advances.
+ * - a bare SHA or rev like `HEAD~2` → peeled to the commit it points at.
+ * WT/STAGED, already-pinned commits, and anything unresolvable are returned
+ * unchanged.
  */
+async function resolveTarget(
+  t: DiffTarget,
+  refs: GitRefInfo[],
+  cwd: string,
+): Promise<DiffTarget> {
+  if (t.kind !== "ref" || !t.ref) return t;
+
+  const peel = async (rev: string): Promise<string> =>
+    (
+      await run(["git", "rev-parse", "--verify", "--quiet", `${rev}^{commit}`], {
+        cwd,
+        allowFail: true,
+      })
+    ).trim();
+
+  if (t.ref === "HEAD") {
+    const branch = await currentBranch(cwd);
+    const branchRef = branch
+      ? refs.find((r) => r.kind === "branch" && r.name === branch)
+      : undefined;
+    if (branchRef?.sha) return { kind: "commit", ref: branchRef.sha, label: branchRef.name };
+    const sha = await peel("HEAD");
+    return sha ? { kind: "commit", ref: sha } : t;
+  }
+
+  // Prefer branch > remote > tag when a name is ambiguous (later sets win).
+  const named = new Map<string, GitRefInfo>();
+  for (const kind of ["tag", "remote", "branch"] as const) {
+    for (const r of refs) if (r.kind === kind && r.sha) named.set(r.name, r);
+  }
+  const hit = named.get(t.ref);
+  if (hit?.sha) return { kind: "commit", ref: hit.sha, label: hit.name };
+
+  const sha = await peel(t.ref);
+  return sha ? { kind: "commit", ref: sha } : t;
+}
+
+/**
+ * Pin a base/head pair to concrete commits (see `resolveTarget`). Call this
+ * whenever a diff is created from user-supplied targets so the stored diff and
+ * its slug are anchored to a real commit instead of a moving ref like HEAD.
+ */
+export async function resolveTargets(
+  base: DiffTarget,
+  head: DiffTarget,
+  cwd = process.cwd(),
+): Promise<{ base: DiffTarget; head: DiffTarget }> {
+  const refs = await listRefs(cwd);
+  return {
+    base: await resolveTarget(base, refs, cwd),
+    head: await resolveTarget(head, refs, cwd),
+  };
+}
+
 export async function resolveSlugTargets(
   slug: string,
   cwd = process.cwd(),
 ): Promise<{ base: DiffTarget; head: DiffTarget } | null> {
   const parsed = targetsForSlug(slug);
   if (!parsed) return null;
-
-  const refs = await listRefs(cwd);
-  // Prefer branch > remote > tag when a name is ambiguous (later sets win).
-  const named = new Map<string, GitRefInfo>();
-  for (const kind of ["tag", "remote", "branch"] as const) {
-    for (const r of refs) if (r.kind === kind && r.sha) named.set(r.name, r);
-  }
-
-  const resolve = async (t: DiffTarget): Promise<DiffTarget> => {
-    if (t.kind !== "ref" || !t.ref) return t;
-    const hit = named.get(t.ref);
-    if (hit?.sha) return { kind: "commit", ref: hit.sha, label: hit.name };
-    // Bare SHA or a rev like HEAD~2 — peel to the commit it points at.
-    const sha = (
-      await run(["git", "rev-parse", "--verify", "--quiet", `${t.ref}^{commit}`], {
-        cwd,
-        allowFail: true,
-      })
-    ).trim();
-    return sha ? { kind: "commit", ref: sha } : t;
-  };
-
-  return { base: await resolve(parsed.base), head: await resolve(parsed.head) };
+  return resolveTargets(parsed.base, parsed.head, cwd);
 }
 
 function gitRefForTarget(t: DiffTarget): string | null {

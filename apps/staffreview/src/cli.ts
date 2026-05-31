@@ -321,8 +321,15 @@ async function main(argv: string[]) {
         base = targets.base;
         head = targets.head;
       } else {
-        base = parseTarget(typeof flags.base === "string" ? flags.base : undefined);
-        head = parseTarget(typeof flags.head === "string" ? flags.head : "working-tree");
+        // Pin refs (esp. the default `HEAD`) to concrete commits so the diff
+        // and its slug are anchored — never `HEAD..WT`, which moves on commit.
+        const resolved = await git.resolveTargets(
+          parseTarget(typeof flags.base === "string" ? flags.base : undefined),
+          parseTarget(typeof flags.head === "string" ? flags.head : "working-tree"),
+          cwd,
+        );
+        base = resolved.base;
+        head = resolved.head;
       }
       const c = await store.loadOrCreateDiff(base, head, cwd);
       if (flags["no-set-active"] !== true) {
