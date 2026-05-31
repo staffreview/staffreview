@@ -2,6 +2,7 @@
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { startServer } from "./server.ts";
+import { resolvePort, PORT_RANGE_START } from "./port.ts";
 import * as store from "./store.ts";
 import * as git from "./git.ts";
 import * as settings from "./settings.ts";
@@ -75,7 +76,8 @@ USAGE
   staff [serve] [<slug>]        Start the web UI (default). Pass a diff slug
                                  (e.g. main..WT or <sha>..WT) to open the UI on
                                  that diff, creating it from the slug if needed.
-    --port <n>                   Port (default: random open port).
+    --port <n>                   Port (default: $PORT, else the first free
+                                 port at or above ${PORT_RANGE_START}).
     --no-open                    Don't open a browser.
     --repo <dir>                 Repository to review (default: current directory).
 
@@ -173,7 +175,7 @@ async function main(argv: string[]) {
 
   switch (cmd) {
     case "serve": {
-      const port = typeof flags.port === "string" ? Number(flags.port) : 0;
+      const port = resolvePort(flags.port);
 
       // If a slug was passed, make it the active diff so the UI opens on
       // it. Load the existing diff file if present; otherwise reconstruct
@@ -200,7 +202,19 @@ async function main(argv: string[]) {
         }
       }
 
-      const server = await startServer({ port, cwd });
+      let server: Awaited<ReturnType<typeof startServer>>;
+      try {
+        server = await startServer({ port, cwd });
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        if (port !== undefined) {
+          console.error(`\x1b[31merror:\x1b[0m could not bind port ${port}: ${msg}`);
+          console.error("  Pass a different --port (or $PORT), or omit it to auto-pick a free port.");
+        } else {
+          console.error(`\x1b[31merror:\x1b[0m could not start the server: ${msg}`);
+        }
+        process.exit(1);
+      }
       const base = server.url.toString();
       const url = activeSlug ? `${base}?diff=${encodeURIComponent(activeSlug)}` : base;
       console.log(`\x1b[1m  Staff Review\x1b[0m  ${url}`);

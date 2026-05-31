@@ -7,6 +7,7 @@ import * as git from "./git.ts";
 import * as store from "./store.ts";
 import * as settings from "./settings.ts";
 import type { DiffTarget } from "./types.ts";
+import { listenOnRange } from "./port.ts";
 
 /** Extension → mime for the handful of image types we accept. */
 const ATTACHMENT_TYPES: Record<string, string> = {
@@ -185,8 +186,8 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   }
 
   const isDev = process.env.STAFF_BUILD !== "binary";
-  const server = Bun.serve<WSData, {}>({
-    port: opts.port ?? 0,
+  const makeServer = (port: number) => Bun.serve<WSData, {}>({
+    port,
     development: isDev ? { hmr: true, console: true } : false,
     routes: {
       "/": indexHtml,
@@ -410,6 +411,8 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
       return new Response(`Internal error: ${e.message}`, { status: 500 });
     },
   });
+
+  const server = listenOnRange(makeServer, opts.port);
 
   return server;
 }

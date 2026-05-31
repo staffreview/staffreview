@@ -10,6 +10,7 @@
   "files": ["dist"],
   "scripts": {
     "dev": "bun --hot src/cli.ts",
+    "test": "bun test src/",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium",
