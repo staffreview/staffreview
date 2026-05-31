@@ -238,24 +238,26 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             onSubmit={() => { if (replyText.trim()) postReply(); }}
             placeholder="Reply… (⌘↩ to submit, paste or drop images)"
             minHeightClass="min-h-[60px]"
+            actions={
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setReplyOpen(false); clearDraft(replyDraftKey); setReplyText(""); }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={postReply}
+                  disabled={!replyText.trim()}
+                  data-testid="reply-submit"
+                >
+                  Reply
+                </Button>
+              </>
+            }
           />
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setReplyOpen(false); clearDraft(replyDraftKey); setReplyText(""); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={postReply}
-              disabled={!replyText.trim()}
-              data-testid="reply-submit"
-            >
-              Reply
-            </Button>
-          </div>
         </div>
       )}
 
@@ -374,32 +376,32 @@ function CommentBubble({
         </div>
       </div>
       {collapsed ? null : editing ? (
-        <div className="space-y-2">
-          <MarkdownEditor
-            value={draft}
-            onChange={setDraft}
-            draftKey={editDraftKey}
-            onSubmit={saveEdit}
-            autoFocus
-            minHeightClass="min-h-[60px]"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                clearDraft(editDraftKey);
-                setEditing(false);
-                setDraft(comment.body);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.trim()}>
-              Save
-            </Button>
-          </div>
-        </div>
+        <MarkdownEditor
+          value={draft}
+          onChange={setDraft}
+          draftKey={editDraftKey}
+          onSubmit={saveEdit}
+          autoFocus
+          minHeightClass="min-h-[60px]"
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  clearDraft(editDraftKey);
+                  setEditing(false);
+                  setDraft(comment.body);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" onClick={saveEdit} disabled={saving || !draft.trim()}>
+                Save
+              </Button>
+            </>
+          }
+        />
       ) : (
         <Markdown>{comment.body}</Markdown>
       )}
@@ -471,15 +473,17 @@ export function NewCommentEditor({
             ? `Comment on ${file}:${rangeSuffix} — ⌘↩ to submit, paste or drop images`
             : "Top-level comment… ⌘↩ to submit, paste or drop images"
         }
+        actions={
+          <>
+            {onCancel && (
+              <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+            )}
+            <Button size="sm" onClick={post} disabled={posting || !text.trim()}>
+              Comment
+            </Button>
+          </>
+        }
       />
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        )}
-        <Button size="sm" onClick={post} disabled={posting || !text.trim()}>
-          Comment
-        </Button>
-      </div>
     </div>
   );
 }

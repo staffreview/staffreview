@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ImagePlus, Loader2 } from "lucide-react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -32,6 +32,7 @@ export function MarkdownEditor({
   onSubmit,
   className,
   minHeightClass = "min-h-[80px]",
+  actions,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -41,6 +42,9 @@ export function MarkdownEditor({
   onSubmit?: () => void;
   className?: string;
   minHeightClass?: string;
+  /** Submit/cancel buttons rendered in the footer, to the right of the
+   * attach-image control. */
+  actions?: ReactNode;
 }) {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -140,48 +144,56 @@ export function MarkdownEditor({
   }
 
   return (
-    <div
-      className={cn("relative rounded-md border border-input bg-background", className)}
-      onDragOver={(e) => {
-        if (Array.from(e.dataTransfer?.items ?? []).some((i) => i.kind === "file")) {
-          e.preventDefault();
-          setDragging(true);
-        }
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragging(false);
-      }}
-    >
-      <EditorContent editor={editor} />
-
-      <button
-        type="button"
-        data-testid="md-attach"
-        title="Attach image"
-        aria-label="Attach image"
-        onClick={() => fileInputRef.current?.click()}
-        className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-      >
-        {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-      </button>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          void uploadFiles(files);
-          e.target.value = "";
+    <div className={className}>
+      <div
+        className="relative rounded-md border border-input bg-background"
+        onDragOver={(e) => {
+          if (Array.from(e.dataTransfer?.items ?? []).some((i) => i.kind === "file")) {
+            e.preventDefault();
+            setDragging(true);
+          }
         }}
-      />
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragging(false);
+        }}
+      >
+        <EditorContent editor={editor} />
 
-      {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-ring bg-background/80 text-xs font-medium text-muted-foreground">
-          Drop image to attach
-        </div>
-      )}
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-ring bg-background/80 text-xs font-medium text-muted-foreground">
+            Drop image to attach
+          </div>
+        )}
+      </div>
+
+      {/* Footer: the attach control lives here (out of the text area, so it
+          can't overlap the comment text), with submit/cancel on the right. */}
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="md-attach"
+          title="Attach image"
+          aria-label="Attach image"
+          onClick={() => fileInputRef.current?.click()}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            void uploadFiles(files);
+            e.target.value = "";
+          }}
+        />
+        <div className="flex-1" />
+        {actions}
+      </div>
     </div>
   );
 }
