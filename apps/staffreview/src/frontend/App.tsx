@@ -41,7 +41,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "./components/ui/popover.tsx";
-import { cn } from "./lib/utils.ts";
+import { cn, baseName, shortenSlug } from "./lib/utils.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { TargetPicker } from "./components/TargetPicker.tsx";
@@ -459,7 +459,7 @@ export function App() {
           />
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-mono font-semibold truncate" title={info?.root}>
-              {info?.root}
+              {info?.root ? baseName(info.root) : ""}
             </div>
             {info?.branch && (
               <Badge className="font-mono shrink-0">{info.branch}</Badge>
@@ -485,18 +485,20 @@ export function App() {
             >
               <button
                 type="button"
-                title={slugCopied ? "Slug copied" : "Click to copy slug"}
+                title={slugCopied ? "Slug copied" : `Click to copy · ${diff.slug}`}
                 onClick={async () => {
                   try {
+                    // Copy the FULL slug even though we show the short one.
                     await navigator.clipboard.writeText(diff.slug);
                     setSlugCopied(true);
                     window.setTimeout(() => setSlugCopied(false), 1200);
                   } catch {}
                 }}
                 data-testid="diff-slug"
+                data-full-slug={diff.slug}
                 className="font-mono flex items-center gap-1"
               >
-                <span data-testid="diff-slug-text">{diff.slug}</span>
+                <span data-testid="diff-slug-text">{shortenSlug(diff.slug)}</span>
                 {slugCopied && (
                   <Check
                     className="h-3 w-3 text-success"

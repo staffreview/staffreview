@@ -29,15 +29,18 @@ test("loading the page with ?diff=<slug> opens that diff", async ({ page }) => {
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
-  const slug = await page.getByTestId("diff-slug").textContent();
-  expect(slug).toBeTruthy();
+  // The badge shows the abbreviated slug; the full slug (for the share link)
+  // is on the data-full-slug attribute.
+  const fullSlug = (await page.getByTestId("diff-slug").getAttribute("data-full-slug"))!;
+  const shownSlug = (await page.getByTestId("diff-slug-text").textContent())!;
+  expect(fullSlug).toBeTruthy();
 
   // Now simulate a recipient opening the share link in a fresh tab.
   // Use a separate context so localStorage doesn't carry over.
   const recipient = await page.context().browser()!.newContext();
   const tab = await recipient.newPage();
-  await tab.goto(`http://localhost:4823/?diff=${encodeURIComponent(slug!)}`);
+  await tab.goto(`http://localhost:4823/?diff=${encodeURIComponent(fullSlug)}`);
   await expect(tab.getByText("math.ts", { exact: true }).first()).toBeVisible();
-  await expect(tab.getByTestId("diff-slug")).toHaveText(slug!);
+  await expect(tab.getByTestId("diff-slug-text")).toHaveText(shownSlug);
   await recipient.close();
 });

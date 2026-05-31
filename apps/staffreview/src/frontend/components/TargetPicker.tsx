@@ -5,7 +5,7 @@ import { Button } from "./ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command.tsx";
 import { Badge } from "./ui/badge.tsx";
-import { cn } from "../lib/utils.ts";
+import { cn, shortSha } from "../lib/utils.ts";
 
 type Special = { id: string; label: string; target: DiffTarget };
 
@@ -17,7 +17,15 @@ const SPECIALS: Special[] = [
 function targetLabel(t: DiffTarget) {
   if (t.kind === "working-tree") return "Working tree";
   if (t.kind === "staged") return "Staged";
-  return t.ref ?? "(none)";
+  // Commit-pinned targets keep a 40-char SHA in `ref`; show it abbreviated to
+  // save header space (the full ref + branch name are in the hover title).
+  return shortSha(t.ref ?? "(none)");
+}
+
+/** Full value for the hover tooltip — the branch/tag name plus the SHA. */
+function targetTitle(t: DiffTarget) {
+  if (t.kind === "working-tree" || t.kind === "staged") return targetLabel(t);
+  return t.label && t.ref && t.label !== t.ref ? `${t.label} · ${t.ref}` : (t.ref ?? "");
 }
 
 function iconForKind(kind: GitRefInfo["kind"]) {
@@ -99,13 +107,13 @@ export function TargetPicker({
         }}
       >
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="min-w-[220px] justify-between font-mono text-xs" data-testid={`target-picker-${label}-button`} aria-label={`${label} target`}>
+          <Button variant="outline" size="sm" className="min-w-0 justify-between gap-2 font-mono text-xs" data-testid={`target-picker-${label}-button`} aria-label={`${label} target`} title={targetTitle(value)}>
             <span className="flex items-center gap-2 truncate">
               {value.kind === "working-tree" || value.kind === "staged" ? (
                 <Badge variant="outline" className="font-sans">{targetLabel(value)}</Badge>
               ) : (
                 <>
-                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="truncate">{targetLabel(value)}</span>
                 </>
               )}
