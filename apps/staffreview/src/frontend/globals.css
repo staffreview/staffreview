@@ -30,6 +30,12 @@
   --color-ring: oklch(0.708 0 0);
   --color-success: oklch(0.62 0.16 150);
   --color-warning: oklch(0.72 0.15 80);
+  /* Line-anchor highlight (click/drag/URL) — a brighter, yellower tint than
+   * `warning` so it reads clearly without recoloring the warning badges.
+   * `--color-anchor` is the solid 3px edge accent; `--color-anchor-fill`
+   * bakes in the row-tint opacity (tuned per theme). */
+  --color-anchor: oklch(0.86 0.17 98);
+  --color-anchor-fill: oklch(0.86 0.17 98 / 0.32);
 
   --radius: 0.5rem;
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -62,6 +68,11 @@
    * swallowed by the dark canvas. */
   --color-success: oklch(0.78 0.18 150);
   --color-warning: oklch(0.78 0.15 80);
+  /* On dark, a low-opacity yellow over the near-black bg muddies to olive
+   * ("mustard"). A brighter source with a bit more opacity reads as a cleaner,
+   * lighter yellow — yellower *and* airier than the dark, muddy version. */
+  --color-anchor: oklch(0.92 0.2 100);
+  --color-anchor-fill: oklch(0.92 0.2 100 / 0.4);
 }
 
 @layer base {
@@ -114,12 +125,12 @@
  * left alone so the substring-level diff highlights stay visible on
  * top of the yellow tint. */
 .staff-diff table tbody tr[data-anchored="true"] > td {
-  background: color-mix(in oklch, var(--color-warning) 22%, transparent) !important;
+  background: var(--color-anchor-fill) !important;
 }
 .staff-diff table tbody tr[data-anchored="true"] > td:first-child {
   background:
-    linear-gradient(to right, var(--color-warning) 3px, transparent 3px) no-repeat,
-    color-mix(in oklch, var(--color-warning) 22%, transparent) !important;
+    linear-gradient(to right, var(--color-anchor) 3px, transparent 3px) no-repeat,
+    var(--color-anchor-fill) !important;
 }
 
 /* react-diff-viewer's `empty-gutter:hover` ties on specificity with
