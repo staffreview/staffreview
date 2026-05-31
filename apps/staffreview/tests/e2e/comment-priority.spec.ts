@@ -47,7 +47,7 @@ test("a prioritized comment shows its P-badge in the UI", async ({ page }) => {
   await expect(page.getByTestId("priority-P1").first()).toBeVisible();
 });
 
-test("the priority badge is dropped once a thread is resolved", async ({ page }) => {
+test("a resolved thread shows its priority in the detail, not the summary row", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('[data-testid^="file-card-"]').first()).toBeVisible();
 
@@ -55,14 +55,14 @@ test("the priority badge is dropped once a thread is resolved", async ({ page })
   await staff(["comment", "add", "--author", "Opus 4.8", "--priority", "P1", "--body", "Top-level P1 finding."]);
   await expect(page.getByTestId("priority-P1")).toHaveCount(1);
 
-  // Resolve it → the (cramped) resolved header drops the priority badge.
+  // Resolve it → the cramped collapsed summary row omits the priority badge.
   await page.getByTestId("thread-resolve").click();
   await page.getByTestId("thread-fixed").click();
   await expect(page.getByTestId("thread-collapsed-fixed")).toBeVisible();
   await expect(page.getByTestId("priority-P1")).toHaveCount(0);
 
-  // ...and it stays gone when the resolved card is expanded.
+  // ...but expanding the card shows it on the comment's own header.
   await page.getByTestId("thread-collapsed-toggle-fixed").click();
   await expect(page.getByText("Top-level P1 finding.")).toBeVisible();
-  await expect(page.getByTestId("priority-P1")).toHaveCount(0);
+  await expect(page.getByTestId("priority-P1")).toHaveCount(1);
 });

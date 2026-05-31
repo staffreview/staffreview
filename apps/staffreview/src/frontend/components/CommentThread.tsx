@@ -126,9 +126,12 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
               <ChevronRight className="h-3 w-3 shrink-0" />
             )}
             {statusBadge(resolution.status)}
-            <span className="font-medium text-foreground ml-1">{root.author}</span>
+            {/* This row summarizes the resolution: who resolved it and when.
+             * The original author + creation time live on the comment's own
+             * header in the expanded body. */}
+            <span className="font-medium text-foreground ml-1">{resolution.author || root.author}</span>
             <span>·</span>
-            <span>{formatTime(root.createdAt)}</span>
+            <span>{formatTime(resolution.at)}</span>
           </button>
           <Button
             variant="ghost"
@@ -142,7 +145,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
         </div>
         {collapsedExpanded && (
           <div className="divide-y divide-border border-t border-border">
-            <CommentBubble comment={root} slug={slug} onChange={onChange} showPriority={false} />
+            <CommentBubble comment={root} slug={slug} onChange={onChange} />
             {replies.map((r) => (
               <CommentBubble key={r.id} comment={r} slug={slug} indent onChange={onChange} />
             ))}
@@ -165,9 +168,6 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
           collapsible
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
-          // Priority is a triage signal for open findings; drop it once the
-          // thread is resolved (incl. documented) to keep the header uncluttered.
-          showPriority={!resolution}
         />
         {!collapsed &&
           replies.map((r) => (
@@ -286,7 +286,6 @@ function CommentBubble({
   collapsible,
   collapsed,
   onToggleCollapse,
-  showPriority = true,
 }: {
   comment: Comment;
   slug: string;
@@ -297,9 +296,6 @@ function CommentBubble({
   collapsible?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
-  // The resolved-card header already shows the priority badge, so the root
-  // bubble there suppresses its own copy to avoid rendering it twice.
-  showPriority?: boolean;
 }) {
   const editDraftKey = `edit:${slug}:${comment.id}`;
   const [editing, setEditing] = useState(false);
@@ -361,7 +357,7 @@ function CommentBubble({
             )}
           </button>
         )}
-        {showPriority && comment.priority && priorityBadge(comment.priority)}
+        {comment.priority && priorityBadge(comment.priority)}
         <span className="font-medium text-foreground">{comment.author}</span>
         <span>·</span>
         <span>{formatTime(comment.createdAt)}</span>
