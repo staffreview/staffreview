@@ -116,6 +116,11 @@ empty or missing, note that and skip the step.
 Leave comments **as you find issues** in Steps 3 and 4 — don't batch them to
 the end. For each finding, run the `/staff-comment` skill. It documents the exact CLI form. Inline comments must include `--file` and `--line` (use `--end-line` to span a range); top-level comments omit both. Always pass `--author "<your model name>"` (e.g. `Opus 4.8`, `GPT-5.5`) so the review shows which model wrote each comment.
 
+Set a **`--priority`** on every finding so the author can triage — `P1` (must
+fix: bugs, security, data loss, broken contracts), `P2` (should fix: real but
+non-blocking), `P3` (minor: nits, naming, optional cleanups). Be honest with the
+scale — if everything is P1, nothing is. See `/staff-comment` for the exact flag.
+
 Write each comment so the author can act on it without asking a follow-up question:
 - **State the issue** in one sentence. No preamble.
 - **Show why it's wrong** — link to the line, name the failure mode.

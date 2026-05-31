@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { BookMarked, Check, CheckCircle2, ChevronDown, ChevronRight, MessageSquare, Pencil, SkipForward, Trash2, Undo2 } from "lucide-react";
-import type { Comment, ResolutionStatus } from "../../types.ts";
+import type { Comment, CommentPriority, ResolutionStatus } from "../../types.ts";
 import { Button } from "./ui/button.tsx";
 import { Badge } from "./ui/badge.tsx";
 import {
@@ -29,6 +29,16 @@ function statusBadge(s: ResolutionStatus) {
   if (s === "fixed") return <Badge variant="success">Fixed</Badge>;
   if (s === "skipped") return <Badge variant="outline">Skipped</Badge>;
   return <Badge variant="warning">Documented</Badge>;
+}
+
+// AI-reviewer severity: P1 most urgent (red) → P3 least (muted).
+function priorityBadge(p: CommentPriority) {
+  const variant = p === "P1" ? "destructive" : p === "P2" ? "warning" : "muted";
+  return (
+    <Badge variant={variant} className="px-1.5 py-0 font-mono" title={`Priority ${p} (set by an AI reviewer)`} data-testid={`priority-${p}`}>
+      {p}
+    </Badge>
+  );
 }
 
 export function CommentThread({ slug, comments, className, context, onChange }: Props) {
@@ -132,7 +142,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
         </div>
         {collapsedExpanded && (
           <div className="divide-y divide-border border-t border-border">
-            <CommentBubble comment={root} slug={slug} onChange={onChange} />
+            <CommentBubble comment={root} slug={slug} onChange={onChange} showPriority={false} />
             {replies.map((r) => (
               <CommentBubble key={r.id} comment={r} slug={slug} indent onChange={onChange} />
             ))}
@@ -155,6 +165,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
           collapsible
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
+          // Priority is a triage signal for open findings; drop it once the
+          // thread is resolved (incl. documented) to keep the header uncluttered.
+          showPriority={!resolution}
         />
         {!collapsed &&
           replies.map((r) => (
@@ -273,6 +286,7 @@ function CommentBubble({
   collapsible,
   collapsed,
   onToggleCollapse,
+  showPriority = true,
 }: {
   comment: Comment;
   slug: string;
@@ -283,6 +297,9 @@ function CommentBubble({
   collapsible?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  // The resolved-card header already shows the priority badge, so the root
+  // bubble there suppresses its own copy to avoid rendering it twice.
+  showPriority?: boolean;
 }) {
   const editDraftKey = `edit:${slug}:${comment.id}`;
   const [editing, setEditing] = useState(false);
@@ -344,6 +361,7 @@ function CommentBubble({
             )}
           </button>
         )}
+        {showPriority && comment.priority && priorityBadge(comment.priority)}
         <span className="font-medium text-foreground">{comment.author}</span>
         <span>·</span>
         <span>{formatTime(comment.createdAt)}</span>

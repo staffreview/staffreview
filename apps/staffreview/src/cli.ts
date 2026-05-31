@@ -5,7 +5,7 @@ import { startServer } from "./server.ts";
 import * as store from "./store.ts";
 import * as git from "./git.ts";
 import * as settings from "./settings.ts";
-import type { DiffTarget, ResolutionStatus } from "./types.ts";
+import { COMMENT_PRIORITIES, type CommentPriority, type DiffTarget, type ResolutionStatus } from "./types.ts";
 
 import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
@@ -91,7 +91,9 @@ USAGE
 
   staff comment add  [--slug <s>] [--file <p>] [--line <n>] [--end-line <n>]
                      [--side new|old] [--body <text>] [--reply-to <id>] [--author <name>]
+                     [--priority P1|P2|P3]
                      (--line + --end-line anchors the comment to a line range)
+                     (--priority is an AI-reviewer severity; P1 = most urgent)
                      (prints the new comment's JSON, including its id)
   staff comment edit   --id <id> [--body <text>] [--slug <s>]
                        (revise the body of a comment you posted)
@@ -354,9 +356,19 @@ async function main(argv: string[]) {
           | "old" | "new" | undefined;
         const author = typeof flags.author === "string" ? flags.author : "agent";
         const parentId = typeof flags["reply-to"] === "string" ? (flags["reply-to"] as string) : undefined;
+        // Optional agent-only severity (P1 = most urgent). Accept P1/P2/P3 or a
+        // bare 1/2/3, validated against the canonical set so they can't drift.
+        let priority: CommentPriority | undefined;
+        if (typeof flags.priority === "string") {
+          const norm = `P${flags.priority.trim().toUpperCase().replace(/^P/, "")}` as CommentPriority;
+          if (!COMMENT_PRIORITIES.includes(norm)) {
+            throw new Error(`--priority must be one of: ${COMMENT_PRIORITIES.join(", ")} (P1 = most urgent/serious)`);
+          }
+          priority = norm;
+        }
         const comment = await store.addComment(
           slug,
-          { body, file, line, endLine, side, author, parentId },
+          { body, file, line, endLine, side, author, parentId, priority },
           cwd,
         );
         console.log(JSON.stringify(comment, null, 2));

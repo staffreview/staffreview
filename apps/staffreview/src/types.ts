@@ -13,6 +13,14 @@ export type DiffTarget = {
 
 export type ResolutionStatus = "fixed" | "skipped" | "documented";
 
+/**
+ * Severity an AI reviewer can attach to a finding — P1 is the most
+ * serious/urgent, P3 the least. Human (UI) comments leave this unset; it's
+ * an agent-only signal to help triage which findings to fix first.
+ */
+export type CommentPriority = "P1" | "P2" | "P3";
+export const COMMENT_PRIORITIES: CommentPriority[] = ["P1", "P2", "P3"];
+
 export type Resolution = {
   status: ResolutionStatus;
   body: string;
@@ -37,6 +45,11 @@ export type Comment = {
   body: string;
   author: string;
   createdAt: string;
+  /**
+   * Severity set by an AI reviewer (P1 = most urgent). Set on the finding's
+   * root comment; replies and human comments leave it unset.
+   */
+  priority?: CommentPriority;
   resolution?: Resolution;
   /**
    * Set on the root comment when a human flags the thread for

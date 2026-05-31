@@ -121,6 +121,7 @@ export async function addComment(
     side: partial.side,
     body: partial.body,
     author: partial.author,
+    priority: partial.priority,
     createdAt: new Date().toISOString(),
   };
   c.comments.push(comment);

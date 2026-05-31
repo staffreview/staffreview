@@ -41,8 +41,20 @@ staff comment add \
   --line 42 \
   --side new \                       # "new" (default) or "old"
   --author "Opus 4.8" \              # your model name
+  --priority P1 \                    # AI-reviewer severity (see below)
   --body "Off-by-one: the loop misses the last element."
 ```
+
+**Priority** (`--priority P1|P2|P3`) — an *agent-only* severity so a human can
+triage your findings; **P1 is the most serious/urgent**, P3 the least. Set it on
+every finding you post. A rough scale:
+
+- **P1** — must fix: correctness/security bugs, data loss, crashes, broken APIs.
+- **P2** — should fix: real issues that aren't blocking (missing edge case, weak
+  test, risky pattern).
+- **P3** — minor: nits, naming, small simplifications, optional suggestions.
+
+Leave it off for purely informational top-level comments. Humans don't set it.
 
 **Inline range** (anchored to a span of lines) — add `--end-line`:
 
