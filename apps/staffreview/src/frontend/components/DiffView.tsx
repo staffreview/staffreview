@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import type { Highlighter } from "shiki";
 import {
+  Binary,
   Check,
   ChevronDown,
   ChevronRight,
@@ -906,7 +907,18 @@ export function DiffFile({
         </div>
       )}
 
-      {!collapsed && !file.isSymlink && (
+      {/* Binary blobs (images, etc.) can't be rendered as a text diff. */}
+      {!collapsed && !file.isSymlink && file.isBinary && (
+        <div
+          className="flex items-center gap-2 px-3 py-2.5 text-sm"
+          data-testid={`binary-panel-${file.path}`}
+        >
+          <Binary className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="text-muted-foreground">Binary file not shown</span>
+        </div>
+      )}
+
+      {!collapsed && !file.isSymlink && !file.isBinary && (
         <div
           className={cn(
             "staff-diff relative",

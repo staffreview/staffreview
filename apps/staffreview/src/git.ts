@@ -295,6 +295,21 @@ async function readSide(t: DiffTarget, path: string, cwd: string, isSymlink: boo
   return readContent(t, path, cwd);
 }
 
+/**
+ * Git's binary heuristic: a NUL byte in the first ~8 KB means binary. We read
+ * content as text (decoding lossily), so a binary blob shows up as a string
+ * containing U+0000 (preserved NUL) and/or U+FFFD (invalid-UTF-8 replacement).
+ */
+function looksBinary(content: string): boolean {
+  if (!content) return false;
+  const head = content.slice(0, 8000);
+  for (let i = 0; i < head.length; i++) {
+    const code = head.charCodeAt(i);
+    if (code === 0 || code === 0xfffd) return true; // NUL or U+FFFD
+  }
+  return false;
+}
+
 export async function getDiff(
   base: DiffTarget,
   head: DiffTarget,
@@ -329,15 +344,21 @@ export async function getDiff(
     const oldSymlinkTarget =
       baseIsSymlink && status !== "added" ? oldContent.trim() || undefined : undefined;
 
+    // Binary blobs (images, etc.) can't be shown as a text diff. Flag them and
+    // drop the (lossily-decoded) bytes so the UI renders a "Binary file" row
+    // instead of garbage. Symlinks are handled above and are never binary.
+    const isBinary = !isSymlink && (looksBinary(oldContent) || looksBinary(newContent));
+
     diffs.push({
       path: f.path,
       oldPath: f.oldPath,
       status,
-      oldContent,
-      newContent,
+      oldContent: isBinary ? "" : oldContent,
+      newContent: isBinary ? "" : newContent,
       isSymlink,
       symlinkTarget,
       oldSymlinkTarget,
+      isBinary,
     });
   }
   return diffs;

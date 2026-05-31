@@ -88,6 +88,12 @@ export default async function globalSetup() {
   // A symlink (git mode 120000) added on the feature branch — exercises
   // the symlink indicator in the UI.
   await symlink("README.md", join(SCRATCH_DIR, "readme-link"));
+  // A tiny binary blob (PNG magic + NUL bytes) added on the feature branch —
+  // exercises the "Binary file not shown" handling instead of a text diff.
+  await writeFile(
+    join(SCRATCH_DIR, "pixel.png"),
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0xff, 0xd8, 0xff]),
+  );
   await run("git", ["add", "-A"], SCRATCH_DIR);
   await run("git", ["commit", "-qm", "feature changes"], SCRATCH_DIR);
 

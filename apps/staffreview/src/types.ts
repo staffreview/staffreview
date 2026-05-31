@@ -70,6 +70,10 @@ export type FileDiff = {
   symlinkTarget?: string;
   /** The previous target, when an existing symlink was repointed. */
   oldSymlinkTarget?: string;
+  /** True when either side is a binary blob (image, etc.). `oldContent`/
+   * `newContent` are cleared in that case and the UI shows a compact
+   * "Binary file" row instead of trying to render a text diff. */
+  isBinary?: boolean;
 };
 
 export type GitRefInfo = {
