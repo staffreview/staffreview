@@ -114,13 +114,17 @@ staff                       # just open the UI on the active diff
 
 | Skill | What it does |
 | --- | --- |
-| `/staff-review` | Reviews the active diff from first principles and leaves inline comments. |
+| `/staff-review` | Fans the review across parallel sub-agents, verifies their findings to drop false positives, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/library/` example. |
-| `/staff-loop` | Runs `/staff-review` → `/staff-resolve` in subagents, round after round, until it converges. |
+| `/staff-loop` | Reviews (find → verify → post) then resolves the diff in subagents, round after round, until it converges. |
+
+Two more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent) — so `/staff-loop` runs the review itself instead of nesting a `/staff-review` subagent inside a subagent.
 
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your team’s standards.
+
+**The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the library) across parallel sub-agents, then a second wave of agents verifies every finding against the code so false positives never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
 
 **The library** (`.staffreview/library/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The library is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored automatically.
 
@@ -153,7 +157,7 @@ staff install                          Write the skills + initialize the .staffr
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, review‑loop cap) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, review‑loop cap, and the `/staff-review` agent count) live in the gear menu and persist globally.
 
 ---
 

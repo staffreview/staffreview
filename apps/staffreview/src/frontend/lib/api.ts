@@ -16,6 +16,7 @@ export type GlobalSettings = {
   syntaxThemeDark?: string;
   filesExpandedByDefault?: boolean;
   loopMaxRounds?: number;
+  reviewAgents?: number;
 };
 
 async function jfetch<T>(url: string, init?: RequestInit): Promise<T> {

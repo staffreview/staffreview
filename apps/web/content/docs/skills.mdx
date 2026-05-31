@@ -3,30 +3,49 @@ title: Skills
 description: The five /staff-* skills that drive the review, and how to make them your own.
 ---
 
-`staff install` writes five skills to `.agents/skills/`, symlinked into
-`.claude/skills/` so Claude Code exposes them as slash commands. They’re just
-Markdown — edit them to encode your team’s standards.
+`staff install` writes seven skills to `.agents/skills/` (the five below plus
+the two building blocks), symlinked into `.claude/skills/` so Claude Code exposes
+them as slash commands. They’re just Markdown — edit them to encode your team’s
+standards.
 
 | Skill | What it does |
 | --- | --- |
-| `/staff-review` | Reviews the active diff from first principles and leaves inline comments. |
+| `/staff-review` | Reviews the active diff with a fan-out of sub-agents, verifies their findings, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/library/` example. |
-| `/staff-loop` | Runs `/staff-review` → `/staff-resolve` in subagents, round after round, until it converges. |
+| `/staff-loop` | Reviews (find → verify → post) and then resolves the diff in sub-agents, round after round, until it converges. |
+
+Two more are **building blocks**, not run directly: `/staff-review-find` (one
+find agent — reviews an assigned slice of the areas/library and returns findings)
+and `/staff-review-verify` (one verify agent — re-checks a batch of findings).
+Both `/staff-review` and `/staff-loop` fan out to these shared units, so the loop
+never has to spawn a `/staff-review` sub-agent.
 
 ## /staff-review
 
-Conducts a staff-engineer-level review of the active diff: it reads every
-changed file plus enough surrounding context (callers, tests, sibling modules),
-traces each hunk through its edge cases, then cross-checks the diff against the
-[review library](/docs/library). Findings are posted as inline comments as they’re
-found, each with a **priority** (`P1` must-fix, `P2` should-fix, `P3` minor) so
-you can triage.
+Conducts a staff-engineer-level review of the active diff as a **multi-agent
+orchestration**. It fans the work out across parallel sub-agents — each owning a
+slice of the ten review areas (correctness, edge cases, concurrency, security,
+data, interfaces, tests, consistency, readability, performance) and a slice of
+the [review library](/docs/library) — so a large diff and a growing library both
+stay fast. A second wave of agents then **verifies every finding** against the
+code to drop false positives before anything is posted. Survivors land as inline
+comments, each with a **priority** (`P1` must-fix, `P2` should-fix, `P3` minor)
+so you can triage.
+
+How many agents it fans out per phase is the **`reviewAgents`** setting (default
+**2**, range 1–20, adjustable in the gear menu). You can also override it inline
+for a one-off — pass a bare number after the slug to tailor it to the change's
+size:
 
 ```text
-/staff-review main..WT
+/staff-review main..WT        # uses the reviewAgents setting (default 2)
+/staff-review main..WT 6      # fan out wider for a big diff
 ```
+
+The review runs ~2× that many agents in total (a find wave, then a verify wave),
+which is why the cap is conservative.
 
 ## /staff-resolve
 
@@ -52,9 +71,12 @@ that already lives on GitHub.
 
 ## /staff-loop
 
-Runs `/staff-review` then `/staff-resolve` in isolated subagents, round after
-round, until a fresh review finds nothing new or it hits the `loopMaxRounds` cap
-(default **5**). Point it at a working-tree diff so each round’s fixes feed the
+Each round runs a full multi-agent review (fanning out the same
+`/staff-review-find` and `/staff-review-verify` sub-agents that `/staff-review`
+uses) and then a `/staff-resolve` sub-agent, round after round, until a fresh
+review finds nothing new or it hits the `loopMaxRounds` cap (default **5**). It
+runs the review itself rather than calling `/staff-review`, so it never nests
+orchestrators. Point it at a working-tree diff so each round’s fixes feed the
 next review.
 
 ```text

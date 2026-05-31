@@ -1,27 +1,35 @@
 ---
 name: staff-loop
-description: Iteratively review and resolve the active Staff Review diff. Runs /staff-review then /staff-resolve in subagents, round after round, until a fresh review surfaces no new comments or a configurable round cap (the loopMaxRounds setting, default 5) is hit. Use when the user runs /staff-loop or wants the diff reviewed and fixed end-to-end with minimal supervision.
+description: Iteratively review and resolve the active Staff Review diff. Each round runs a multi-agent review (find + verify sub-agents) then a /staff-resolve sub-agent, round after round, until a fresh review surfaces no new comments or a configurable round cap (the loopMaxRounds setting, default 5) is hit. Use when the user runs /staff-loop or wants the diff reviewed and fixed end-to-end with minimal supervision.
 ---
 
 # Staff Loop
 
 You are the **orchestrator**. You don't review or resolve code yourself — you
-run a loop that delegates each phase to a fresh subagent so their (large)
+run a loop that delegates each phase to fresh sub-agents so their (large)
 contexts stay isolated from yours, and you decide when to stop.
 
-One **round** is: a review subagent posts comments → if any are open, a resolve
-subagent fixes them. Resolving edits the working tree, so the next round's
-review sees the updated code and can catch regressions or issues the first pass
-missed. The loop ends when a review posts **no new open comments** (the diff has
-converged) or after the **configured round cap** (a global setting, default 5),
-whichever comes first.
+One **round** is: a multi-agent **review** (you fan out find + verify sub-agents
+and post the survivors) → if any comments are open, a **resolve** sub-agent fixes
+them. Resolving edits the working tree, so the next round's review sees the
+updated code and can catch regressions or issues the first pass missed. The loop
+ends when a review posts **no new open comments** (the diff has converged) or
+after the **configured round cap** (default 5), whichever comes first.
+
+You run the review **inline as the orchestrator** — you do **not** spawn a
+`/staff-review` sub-agent. `/staff-review` is itself an orchestrator that spawns
+find/verify sub-agents; nesting it inside one of your sub-agents would require a
+sub-agent to spawn its own sub-agents (usually impossible). Instead you spawn the
+shared **`/staff-review-find`** and **`/staff-review-verify`** sub-agents
+directly — the same units `/staff-review` uses.
 
 ## Why the loop is shaped this way
 
-- `/staff-review` is **stateless** — left alone it re-derives findings from
-  scratch every pass and would re-raise issues a prior resolve already skipped,
-  looping forever. So each review subagent here is told to **read the existing
-  threads first** and not re-raise anything already settled.
+- The review is **stateless** — left alone it re-derives findings from scratch
+  every pass and would re-raise issues a prior resolve already settled, looping
+  forever. The `/staff-review-find` skill guards against this: each find agent
+  reads the existing threads and skips anything already resolved. So a re-review
+  won't re-raise settled issues.
 - The open-comment check happens **after the review**, never after resolve
   (resolve always closes everything, so checking there would exit after one
   round). "No new open comments after a review" is the real convergence signal.
@@ -44,46 +52,63 @@ tree; review must see those edits next round. Check `head.kind` in the JSON:
   never enter the diff and the loop is pointless. Stop and tell the user to point
   the diff at the working tree, e.g. `/staff-loop main..WT`.
 
-Capture the `slug` — pass it to every subagent so they operate on the same diff.
+Capture the `slug` — pass it to every sub-agent so they operate on the same diff.
 
-Then read the round cap (a user setting, changeable in the web UI's gear menu):
+Then read the two settings that shape the loop (both changeable in the web UI's
+gear menu):
 
 ```bash
-staff settings get loopMaxRounds   # prints the cap as a number; defaults to 5
+staff settings get loopMaxRounds   # round cap; default 5  → call this R
+staff settings get reviewAgents    # review fan-out width; default 2 → call this A
 ```
 
-Call this value **N**.
+(If the user passed a bare integer argument alongside the slug, use it as **A**
+for this run instead of the setting — tailoring fan-out to the diff's size.)
 
-## Step 2 — Run the loop (up to N rounds)
+## Step 2 — Run the loop (up to R rounds)
 
-Track a round counter yourself. For `round` = 1..N:
+Track a round counter yourself. For `round` = 1..R:
 
-### a. Spawn a review subagent
+### a. Review the diff yourself (find → verify → post)
 
-Use the Agent/Task tool (do **not** review inline). Run it in the foreground and
-await it. Give it this prompt (substitute the real slug):
+Run the same multi-agent review `/staff-review` performs, **inline** — do **not**
+spawn a `/staff-review` sub-agent. Use **A** as the fan-out width:
 
-> Read `.agents/skills/staff-review/SKILL.md` and follow it to the letter to
-> review the active Staff Review diff `<slug>`. Identify yourself with
-> `--author "<your model name>"` on every `staff comment` command.
->
-> **Before reviewing, gain context from prior rounds:** run
-> `staff comment list --json` and read the existing threads. Treat every thread
-> already resolved as `fixed`, `skipped`, or `documented` as **settled** — do
-> **not** re-raise it or a trivial variant of it. Only post comments for
-> genuinely new issues, or ones still open and unaddressed. Do not commit or
-> modify code. Report back a one-line count of comments you posted.
+1. **Find.** Partition the 10 review areas (and the `.staffreview/library/`
+   files) across **A** find agents and spawn them **in parallel** — each with:
+   > Read `.agents/skills/staff-review-find/SKILL.md` and follow it exactly.
+   > slug=`<slug>`; review areas=`<this agent's area numbers>`; library
+   > lessons=`<this agent's filenames, or "none">`. Return the findings JSON —
+   > nothing else.
+
+   See `/staff-review` Step 3 for the area/library partitioning scheme. Collect
+   the findings arrays and dedup them.
+2. **Verify.** Split the deduped findings into up to **A** batches and spawn one
+   verify agent per batch **in parallel** — each with:
+   > Read `.agents/skills/staff-review-verify/SKILL.md` and follow it exactly.
+   > slug=`<slug>`; candidate findings=`<this batch's JSON>`. Return the verdicts
+   > JSON — nothing else.
+
+   Keep only the **confirmed** findings; when a verdict carries a
+   `correctedAnchor`, replace that finding's `file`/`line`/`endLine`/`side` with
+   it wholesale.
+3. **Post.** Post each confirmed finding with the `staff` CLI, body via stdin,
+   `--author "<your model name>"` and the finding's `--priority` (as
+   `/staff-review` Step 5 describes).
+
+The find skill already skips threads earlier rounds settled, so a re-review won't
+re-raise resolved issues.
 
 ### b. Check for convergence — **this is the loop's exit**
 
-After the review subagent returns:
+After posting this round's review:
 
 ```bash
 staff comment list --open --json
 ```
 
 - If it's `[]` (empty) → **the loop is done.** Do **not** launch a resolve
-  subagent. Go to Step 3.
+  sub-agent. Go to Step 3.
 - Otherwise, there are open threads to fix — continue to (c).
 
 ### c. Spawn a resolve subagent
@@ -101,7 +126,7 @@ Then loop back to (a) for the next round.
 
 ### d. Round cap
 
-If you complete round N's resolve and have not yet converged, **stop without a
+If you complete round R's resolve and have not yet converged, **stop without a
 further review.** The last round's fixes were applied but not re-verified — say
 so in Step 3.
 
@@ -109,22 +134,26 @@ so in Step 3.
 
 Summarize to the user in chat (don't post a top-level comment):
 
-- How many rounds ran.
+- How many rounds ran; the fan-out width **A** used.
 - Per round: comments posted by review, threads resolved (fixed/documented/skipped).
 - Why it stopped: **converged** (a review found nothing new) or **hit the round
-  cap** (N — and therefore may not be fully settled; recommend a manual look or
+  cap** (R — and therefore may not be fully settled; recommend a manual look or
   another `/staff-loop`).
 - That changes are in the working tree, **uncommitted**, for the user to review
   and commit.
 
 ## Constraints
 
-- **Subagents do the work; you only orchestrate.** Keep your own context lean —
-  pass slugs and counts, not file contents.
-- **Foreground, sequential.** Each round's review must finish before its resolve,
-  and a round's resolve before the next review. Never run them in parallel — they
-  share one working tree.
-- **No worktree isolation.** The subagents must operate on the real working tree
+- **Sub-agents do the work; you only orchestrate.** Spawn find
+  (`/staff-review-find`), verify (`/staff-review-verify`), and resolve
+  (`/staff-resolve`) sub-agents — never a `/staff-review` sub-agent (no nested
+  orchestrators). Keep your own context lean — pass slugs, area buckets, and
+  short findings, not file contents.
+- **Phases are sequential.** Within a round: find → verify → post → (if open)
+  resolve, then the next round. Find agents within a wave run in parallel, but a
+  round's resolve must finish before the next round's review — they share one
+  working tree.
+- **No worktree isolation.** The sub-agents must operate on the real working tree
   the diff points at, so don't isolate them in a separate worktree.
 - **Don't commit.** Both phases leave edits in the working tree; the human commits.
 - **Respect the precondition.** If the head isn't the working tree, don't loop.

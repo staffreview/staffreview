@@ -9,6 +9,8 @@ import * as settings from "./settings.ts";
 import { COMMENT_PRIORITIES, type CommentPriority, type DiffTarget, type ResolutionStatus } from "./types.ts";
 
 import skillReview from "../skills/staff-review.md" with { type: "text" };
+import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
+import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
 import skillDocument from "../skills/staff-document.md" with { type: "text" };
 import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
@@ -16,6 +18,8 @@ import skillLoop from "../skills/staff-loop.md" with { type: "text" };
 
 const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
+  "staff-review-find": skillReviewFind,
+  "staff-review-verify": skillReviewVerify,
   "staff-comment": skillComment,
   "staff-document": skillDocument,
   "staff-resolve": skillResolve,
@@ -107,10 +111,11 @@ USAGE
   staff comment unresolve --thread <id> [--slug <s>]
 
   staff settings [--json]       Print global settings (with defaults applied).
-  staff settings get <key>      Print one setting's value (e.g. loopMaxRounds,
-                                 the /staff-loop round cap; defaults to ${settings.DEFAULT_LOOP_ROUNDS}).
+  staff settings get <key>      Print one setting's value: loopMaxRounds (the
+                                 /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}) or reviewAgents
+                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}).
 
-  staff install                 Set up the repo: write the five /staff-* skills to
+  staff install                 Set up the repo: write the seven /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 
@@ -499,10 +504,12 @@ async function main(argv: string[]) {
     }
 
     case "settings": {
-      // Settings are global (per-user config dir), not per-repo. Apply the
-      // loop-cap default so `/staff-loop` always reads a concrete number.
+      // Settings are global (per-user config dir), not per-repo. Seed the
+      // loop-cap and review-agent defaults so the skills always read concrete
+      // numbers even when the settings file omits them.
       const resolved: Record<string, unknown> = {
         loopMaxRounds: settings.DEFAULT_LOOP_ROUNDS,
+        reviewAgents: settings.DEFAULT_REVIEW_AGENTS,
         ...(await settings.readSettings()),
       };
       if (positional[1] === "get") {

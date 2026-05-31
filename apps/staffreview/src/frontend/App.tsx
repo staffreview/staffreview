@@ -22,6 +22,11 @@ import {
 import type { Diff, DiffTarget, FileDiff, GitRefInfo } from "../types.ts";
 import logoUrl from "./logo.png";
 import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "../loop-config.ts";
+import {
+  DEFAULT_REVIEW_AGENTS,
+  MIN_REVIEW_AGENTS,
+  MAX_REVIEW_AGENTS,
+} from "../review-config.ts";
 import { api, openSocket, type ColorScheme, type WSEvent } from "./lib/api.ts";
 import {
   DARK_SYNTAX_THEMES,
@@ -114,6 +119,9 @@ export function App() {
   // Hard cap on review→resolve rounds for the /staff-loop skill. Default and
   // bounds come from loop-config.ts, shared with the server (settings.ts).
   const [loopMaxRounds, setLoopMaxRoundsState] = useState<number>(DEFAULT_LOOP_ROUNDS);
+  // How many sub-agents /staff-review fans out per phase. Default + bounds from
+  // review-config.ts, shared with the server (settings.ts).
+  const [reviewAgents, setReviewAgentsState] = useState<number>(DEFAULT_REVIEW_AGENTS);
   // Load preferences from the global settings file at startup, then
   // persist any user-driven change through the server so they survive
   // ports and projects.
@@ -150,6 +158,11 @@ export function App() {
             Math.min(MAX_LOOP_ROUNDS, Math.max(MIN_LOOP_ROUNDS, settings.loopMaxRounds)),
           );
         }
+        if (typeof settings.reviewAgents === "number") {
+          setReviewAgentsState(
+            Math.min(MAX_REVIEW_AGENTS, Math.max(MIN_REVIEW_AGENTS, settings.reviewAgents)),
+          );
+        }
       } catch {}
     })();
   }, []);
@@ -174,6 +187,11 @@ export function App() {
     const clamped = Math.min(MAX_LOOP_ROUNDS, Math.max(MIN_LOOP_ROUNDS, next));
     setLoopMaxRoundsState(clamped);
     api.setSettings({ loopMaxRounds: clamped }).catch(() => {});
+  }, []);
+  const setReviewAgents = useCallback((next: number) => {
+    const clamped = Math.min(MAX_REVIEW_AGENTS, Math.max(MIN_REVIEW_AGENTS, next));
+    setReviewAgentsState(clamped);
+    api.setSettings({ reviewAgents: clamped }).catch(() => {});
   }, []);
   const setSyntaxTheme = useCallback(
     async (mode: "light" | "dark", name: string) => {
@@ -777,6 +795,45 @@ export function App() {
                 </div>
                 <span className="text-xs text-muted-foreground" data-testid="loop-rounds-value">
                   {loopMaxRounds} {loopMaxRounds === 1 ? "round" : "rounds"} max
+                </span>
+              </div>
+              <DropdownMenuLabel>Review agents</DropdownMenuLabel>
+              <div className="px-2 py-1 flex items-center gap-2">
+                <div className="inline-flex h-8 items-center rounded-md border border-input bg-background shadow-xs">
+                  <button
+                    type="button"
+                    aria-label="Fewer /staff-review agents"
+                    title="Fewer agents"
+                    onClick={() => setReviewAgents(reviewAgents - 1)}
+                    disabled={reviewAgents <= MIN_REVIEW_AGENTS}
+                    data-testid="review-agents-decrease"
+                    className={cn(
+                      "inline-flex h-full w-8 items-center justify-center rounded-l-md",
+                      "transition-colors hover:bg-accent hover:text-accent-foreground",
+                      "disabled:pointer-events-none disabled:opacity-40",
+                    )}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <div className="border-l border-input" />
+                  <button
+                    type="button"
+                    aria-label="More /staff-review agents"
+                    title="More agents"
+                    onClick={() => setReviewAgents(reviewAgents + 1)}
+                    disabled={reviewAgents >= MAX_REVIEW_AGENTS}
+                    data-testid="review-agents-increase"
+                    className={cn(
+                      "inline-flex h-full w-8 items-center justify-center rounded-r-md",
+                      "transition-colors hover:bg-accent hover:text-accent-foreground",
+                      "disabled:pointer-events-none disabled:opacity-40",
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground" data-testid="review-agents-value">
+                  {reviewAgents} {reviewAgents === 1 ? "agent" : "agents"}
                 </span>
               </div>
             </DropdownMenuContent>
