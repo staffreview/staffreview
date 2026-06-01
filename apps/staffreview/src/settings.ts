@@ -14,6 +14,14 @@ import {
   MAX_REVIEW_AGENTS,
 } from "./review-config.ts";
 export { DEFAULT_REVIEW_AGENTS, MIN_REVIEW_AGENTS, MAX_REVIEW_AGENTS };
+// `/staff-docs` scout fan-out default + bounds, same dependency-free pattern
+// so the frontend bundle can share them with the server.
+import {
+  DEFAULT_DOCS_AGENTS,
+  MIN_DOCS_AGENTS,
+  MAX_DOCS_AGENTS,
+} from "./docs-config.ts";
+export { DEFAULT_DOCS_AGENTS, MIN_DOCS_AGENTS, MAX_DOCS_AGENTS };
 
 export type ColorScheme = "system" | "light" | "dark";
 
@@ -36,6 +44,10 @@ export type GlobalSettings = {
   /** How many sub-agents `/staff-review` fans out per phase (find, then
    * verify). Defaults to {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
+  /** How many scout sub-agents `/staff-docs` fans out across the local
+   * diffs + PRs it mines. A sweep covers far more ground than a single diff
+   * review, so this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
+  docsAgents?: number;
 };
 
 export function settingsDir(): string {
@@ -75,6 +87,13 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
     next.reviewAgents = Math.min(
       MAX_REVIEW_AGENTS,
       Math.max(MIN_REVIEW_AGENTS, Math.round(next.reviewAgents)),
+    );
+  }
+  // Same defensive clamp for the docs scout fan-out.
+  if (typeof next.docsAgents === "number") {
+    next.docsAgents = Math.min(
+      MAX_DOCS_AGENTS,
+      Math.max(MIN_DOCS_AGENTS, Math.round(next.docsAgents)),
     );
   }
   await mkdir(settingsDir(), { recursive: true });

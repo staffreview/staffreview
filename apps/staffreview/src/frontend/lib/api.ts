@@ -17,6 +17,7 @@ export type GlobalSettings = {
   filesExpandedByDefault?: boolean;
   loopMaxRounds?: number;
   reviewAgents?: number;
+  docsAgents?: number;
 };
 
 async function jfetch<T>(url: string, init?: RequestInit): Promise<T> {

@@ -15,6 +15,8 @@ import skillComment from "../skills/staff-comment.md" with { type: "text" };
 import skillDocument from "../skills/staff-document.md" with { type: "text" };
 import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
 import skillLoop from "../skills/staff-loop.md" with { type: "text" };
+import skillDocs from "../skills/staff-docs.md" with { type: "text" };
+import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
 
 const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
@@ -24,6 +26,8 @@ const SKILLS: Record<string, string> = {
   "staff-document": skillDocument,
   "staff-resolve": skillResolve,
   "staff-loop": skillLoop,
+  "staff-docs": skillDocs,
+  "staff-docs-scout": skillDocsScout,
 };
 
 const VERSION = "0.1.0";
@@ -112,10 +116,11 @@ USAGE
 
   staff settings [--json]       Print global settings (with defaults applied).
   staff settings get <key>      Print one setting's value: loopMaxRounds (the
-                                 /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}) or reviewAgents
-                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}).
+                                 /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}), reviewAgents
+                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
+                                 (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}).
 
-  staff install                 Set up the repo: write the seven /staff-* skills to
+  staff install                 Set up the repo: write the nine /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 
@@ -265,7 +270,7 @@ async function main(argv: string[]) {
 
       // 3. gitignore the per-machine review data — the diffs (review
       //    sessions), attachments (pasted images), and the active-diff
-      //    pointer. The library (documented examples) and the skills are
+      //    pointer. The docs (documented examples) and the skills are
       //    meant to be committed.
       const ignoreEntries = [
         ".staffreview/diffs/",
@@ -510,6 +515,7 @@ async function main(argv: string[]) {
       const resolved: Record<string, unknown> = {
         loopMaxRounds: settings.DEFAULT_LOOP_ROUNDS,
         reviewAgents: settings.DEFAULT_REVIEW_AGENTS,
+        docsAgents: settings.DEFAULT_DOCS_AGENTS,
         ...(await settings.readSettings()),
       };
       if (positional[1] === "get") {

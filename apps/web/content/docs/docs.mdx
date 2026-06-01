@@ -1,9 +1,9 @@
 ---
-title: The library
+title: The docs
 description: Capture a project-specific gotcha once, and every future review checks for it automatically.
 ---
 
-The **library** (`.staffreview/library/`) is your team’s captured review wisdom.
+The **docs** (`.staffreview/docs/`) is your team’s captured review wisdom.
 Each entry is a Markdown file describing a mistake worth never repeating —
 context, the issue, the original and fixed code, and why it matters.
 
@@ -13,20 +13,20 @@ context, the issue, the original and fixed code, and why it matters.
    `documentRequested: true` on the thread but leaves it open — it’s a request,
    not a resolution.
 2. Run `/staff-resolve`. The agent writes the lesson up as a new file under
-   `.staffreview/library/` and resolves the thread as `documented`.
+   `.staffreview/docs/` and resolves the thread as `documented`.
 
-You can also seed the library from an existing GitHub PR review comment with
+You can also seed the docs from an existing GitHub PR review comment with
 [`/staff-document`](/docs/skills).
 
-## How the library is used
+## How the docs is used
 
-`/staff-review` reads the library on **every** pass. After its from-scratch
-review, it walks the library one entry at a time and re-flags any recurrence of
+`/staff-review` reads the docs on **every** pass. After its from-scratch
+review, it walks the docs one entry at a time and re-flags any recurrence of
 a documented mistake in the current diff — citing the entry it came from. This
 is what catches the issues a from-scratch pass misses.
 
-<Callout title="Commit the library">
-  `.staffreview/library/` is meant to be **committed** so the whole team shares
+<Callout title="Commit the docs">
+  `.staffreview/docs/` is meant to be **committed** so the whole team shares
   one memory. The session data — `.staffreview/diffs/`, `attachments/`, and
   `active.json` — is gitignored automatically by `staff install`.
 </Callout>

@@ -114,14 +114,17 @@ export function TopLevelComments({
           aria-label="Sidebar view"
           className="flex-1"
         >
-          <ToggleGroupItem value="comments" className="flex-1" data-testid="sidebar-tab-comments">
+          {/* `bg-foreground/15` is darker than both the default tab
+           * background and the `bg-accent` selected state, so the count
+           * badges stay visible in either tab state. */}
+          <ToggleGroupItem value="comments" className="flex-1 gap-1.5" data-testid="sidebar-tab-comments">
             Comments
+            <Badge className="bg-foreground/15 text-foreground border-transparent px-1.5 py-0 text-[10px] leading-4">
+              {threads.length}
+            </Badge>
           </ToggleGroupItem>
           <ToggleGroupItem value="files" className="flex-1 gap-1.5" data-testid="sidebar-tab-files">
             Files
-            {/* `bg-foreground/15` is darker than both the default tab
-             * background and the `bg-accent` selected state, so the badge
-             * stays visible in either tab state. */}
             <Badge className="bg-foreground/15 text-foreground border-transparent px-1.5 py-0 text-[10px] leading-4">
               {files.length}
             </Badge>

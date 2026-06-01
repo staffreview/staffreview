@@ -24,7 +24,7 @@ staff main..WT           # open “main vs. working tree” in your browser
 
 - **🤖 A thorough automated review from any harness or model.** Staff Review ships editable **skills** that drive a staff‑engineer‑level review: trace every changed hunk through its edge cases, read the callers and tests, and leave concrete, actionable comments. Use Claude Code out of the box, or any agent that can read a `SKILL.md` and run a shell command — and point it at whichever model you like.
 
-- **📚 Capture project‑specific concerns so they’re never missed again.** Flag a comment with **Document**, then run `/staff-resolve` — the agent writes it up as a library entry under `.staffreview/library/`. Every future review cross‑checks the diff against that library, so the gotcha your team keeps re‑learning gets caught automatically. Commit the library and the whole team benefits.
+- **📚 Capture project‑specific concerns so they’re never missed again.** Flag a comment with **Document**, then run `/staff-resolve` — the agent writes it up as a docs entry under `.staffreview/docs/`. Every future review cross‑checks the diff against that docs, so the gotcha your team keeps re‑learning gets caught automatically. Commit the docs and the whole team benefits.
 
 - **🔁 Loop review → resolve for higher‑quality results.** `/staff-loop` runs the review and the fixes in isolated subagents, round after round, until a fresh review finds nothing new (or a cap you set). Each round’s fixes get re‑reviewed, so regressions and missed issues surface on their own.
 
@@ -73,7 +73,7 @@ Prefer not to build? Run straight from source: `bun run apps/staffreview/src/cli
 From inside the git repo you want to review:
 
 ```bash
-# 1. One‑time setup: writes the five /staff-* skills, creates the
+# 1. One‑time setup: writes the nine /staff-* skills, creates the
 #    .staffreview/ store, and gitignores the per‑machine bits.
 staff install
 
@@ -110,23 +110,24 @@ staff                       # just open the UI on the active diff
 - **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so `/staff-resolve` captures it as a reusable lesson.
 - The diff and the comment sidebar scroll independently, with light/dark themes, split/unified view, and syntax highlighting in the gear menu.
 
-**The skills** are how agents review. `staff install` writes five of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands):
+**The skills** are how agents review. `staff install` writes nine of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — six you run directly plus three building blocks:
 
 | Skill | What it does |
 | --- | --- |
 | `/staff-review` | Fans the review across parallel sub-agents, verifies their findings to drop false positives, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
-| `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/library/` example. |
+| `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
+| `/staff-docs` | Mines past diffs and GitHub PRs for recurring lessons and writes the best into `.staffreview/docs/`. |
 | `/staff-loop` | Reviews (find → verify → post) then resolves the diff in subagents, round after round, until it converges. |
 
-Two more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent) — so `/staff-loop` runs the review itself instead of nesting a `/staff-review` subagent inside a subagent.
+Three more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to, plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
 
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your team’s standards.
 
-**The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the library) across parallel sub-agents, then a second wave of agents verifies every finding against the code so false positives never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
+**The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the docs) across parallel sub-agents, then a second wave of agents verifies every finding against the code so false positives never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
 
-**The library** (`.staffreview/library/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The library is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored automatically.
+**The docs** (`.staffreview/docs/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The docs is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored automatically.
 
 **The loop** (`/staff-loop`) chains review and resolution in subagents until a review surfaces nothing new, capped by the `loopMaxRounds` setting (default **5**, adjustable in the gear menu). It’s the “set it going and come back to a higher‑quality result” button.
 
@@ -136,7 +137,7 @@ They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune
 
 - **Review against your working tree.** Use a `…​..WT` diff (e.g. `main..WT`) so that fixes from `/staff-resolve` flow into the next review. This is *required* for `/staff-loop` to converge — point it at the working tree, not a fixed commit range.
 - **Make the skills yours.** They’re Markdown in `.agents/skills/`. Add your conventions, your “don’t do X here,” your preferred test framework. A review is only as good as the standard you hand it.
-- **Build the library early.** The first time *anyone* — a human or an agent — flags something project‑specific, click **Document** and let `/staff-resolve` write it up. From then on it’s checked on every review. Commit `.staffreview/library/` so the team shares one memory.
+- **Build the docs early.** The first time *anyone* — a human or an agent — flags something project‑specific, click **Document** and let `/staff-resolve` write it up. From then on it’s checked on every review. Commit `.staffreview/docs/` so the team shares one memory.
 - **Label your models.** The skills pass `--author "<model name>"` so the UI shows who said what. Mix models (e.g. one to review, another to resolve) and compare.
 - **Keep diffs focused.** Reviews are sharper on smaller changes; a 30‑file diff dilutes attention. Review feature‑by‑feature.
 - **`/staff-loop` edits your working tree.** It’s unattended and powerful, but it leaves changes uncommitted on purpose — read the diff before you commit. Lower `loopMaxRounds` to cap cost, raise it for thoroughness.
@@ -157,7 +158,7 @@ staff install                          Write the skills + initialize the .staffr
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, review‑loop cap, and the `/staff-review` agent count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
 
 ---
 

@@ -5,7 +5,7 @@ description: Resolve every unresolved comment on the active Staff Review diff by
 
 # Staff Resolve
 
-Work through the open comment threads on the active Staff Review diff. For each one, either fix the code, save the lesson into `.staffreview/library/`, or skip it with a justification — then record what you did via `/staff-comment`.
+Work through the open comment threads on the active Staff Review diff. For each one, either fix the code, save the lesson into `.staffreview/docs/`, or skip it with a justification — then record what you did via `/staff-comment`.
 
 ## Step 1 — Read the comments
 
@@ -25,7 +25,7 @@ staff comment list --open --json
 
 This returns every unresolved thread as `{ threadId, file, line, endLine, side, resolution, documentRequested, comments }` (`endLine` is set for range comments). Read all of them before touching code so you can group related fixes and avoid conflicting edits.
 
-`documentRequested: true` means a human clicked **Document** in the UI and wants this thread turned into a library entry (see option 2 below). Treat it as the reviewer's explicit instruction to document rather than fix.
+`documentRequested: true` means a human clicked **Document** in the UI and wants this thread turned into a docs entry (see option 2 below). Treat it as the reviewer's explicit instruction to document rather than fix.
 
 ## Step 2 — For each thread: act, reply, then resolve
 
@@ -54,7 +54,7 @@ Choosing the action:
 
 1. **Fix it.** Make the code change. Run the tests / typecheck / linter for the affected area. Reply describing the change, then resolve `--status fixed`.
 
-2. **Document it.** If the thread has `documentRequested: true` (the human clicked **Document**), or the reviewer's note is a teaching point worth saving, write a new file under `.staffreview/library/`. **You** decide the filename and write the content — the UI only flags the thread. Follow the `/staff-document` schema (frontmatter + Context + Issue + Original/Fix code + Why it matters). The example should contain:
+2. **Document it.** If the thread has `documentRequested: true` (the human clicked **Document**), or the reviewer's note is a teaching point worth saving, write a new file under `.staffreview/docs/`. **You** decide the filename and write the content — the UI only flags the thread. Follow the `/staff-document` schema (frontmatter + Context + Issue + Original/Fix code + Why it matters). The example should contain:
    - The comment body.
    - The diff hunk the comment was made on (from `staff files --json` filtered to the file/line).
    - The fix you made, if you also changed code.
@@ -69,7 +69,7 @@ Choosing the action:
 
 Honour the reviewer's pre-marked intent:
 - A thread whose only comment is from `/staff-review` with no resolution and no `documentRequested` → treat as **fix** by default.
-- A thread with `documentRequested: true` → **document it** (option 2): pick a filename, write the library entry, and resolve as `documented`.
+- A thread with `documentRequested: true` → **document it** (option 2): pick a filename, write the docs entry, and resolve as `documented`.
 - Resolved threads don't appear in `--open` at all, so anything the human already marked `fixed`/`skipped`/`documented` is left untouched automatically.
 
 ## Step 3 — Group fixes by file

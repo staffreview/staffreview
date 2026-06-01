@@ -1,6 +1,6 @@
 ---
 name: staff-review-find
-description: One find-agent unit of a staff-level code review — reviews the active diff through an assigned subset of the review areas (and an assigned slice of the library) and RETURNS findings as JSON without posting. A shared building block the /staff-review and /staff-loop orchestrators spawn per sub-agent; not usually run on its own.
+description: One find-agent unit of a staff-level code review — reviews the active diff through an assigned subset of the review areas (and an assigned slice of the docs) and RETURNS findings as JSON without posting. A shared building block the /staff-review and /staff-loop orchestrators spawn per sub-agent; not usually run on its own.
 ---
 
 # Staff Review — Find
@@ -11,10 +11,10 @@ gave you:
 
 - **`slug`** — the diff to review (`<base>..<head>`).
 - **review areas** — the subset of the 10 areas below that you own this pass.
-- **library lessons** — zero or more `.staffreview/library/` filenames to
+- **docs lessons** — zero or more `.staffreview/docs/` filenames to
   cross-check (may be "none").
 
-You review the **whole diff**, but only through your assigned areas + library
+You review the **whole diff**, but only through your assigned areas + docs
 lessons. You **RETURN findings — you do not post them, do not spawn other
 agents, and do not modify or commit code.** Your audience (via the orchestrator)
 is the author: make the change shippable and durable, not perform expertise.
@@ -58,9 +58,9 @@ roughly in priority order):
 requirements; anything a linter/type-checker already enforces; restating what the
 code obviously does. Skip nits unless they cluster.
 
-## Step 3 — Cross-check your assigned library lessons
+## Step 3 — Cross-check your assigned docs lessons
 
-If you were given library filenames, `cat .staffreview/library/<file>` each one
+If you were given docs filenames, `cat .staffreview/docs/<file>` each one
 in turn and scan the diff for the specific mistake it describes (or a variant).
 If the diff repeats it, that's a finding — cite the file in the body. If your
 list is "none", skip this step.
@@ -92,7 +92,7 @@ finding:
   "priority": "P1" | "P2" | "P3",      // P1 must-fix · P2 should-fix · P3 minor
   "title": "one-line summary",
   "body": "Markdown: state the issue in one sentence, show why it's wrong (name the failure mode), and propose a concrete fix. Reference path:line. Calibrated uncertainty beats false confidence.",
-  "source": "area:<n>" | "library:<file>"
+  "source": "area:<n>" | "docs:<file>"
 }
 ```
 

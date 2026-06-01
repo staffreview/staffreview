@@ -36,19 +36,22 @@ up changes over a WebSocket and re-renders live as the agent posts.
 
 ## The skills
 
-`staff install` writes five skills to `.agents/skills/` (symlinked into
-`.claude/skills/` so Claude Code picks them up as slash commands). They’re just
-Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your
-team’s standards. See the [Skills reference](/docs/skills) for what each one
-does.
+`staff install` writes nine skills to `.agents/skills/` (symlinked into
+`.claude/skills/` so Claude Code picks them up as slash commands) — six you run
+directly (`/staff-review`, `/staff-resolve`, `/staff-comment`, `/staff-document`,
+`/staff-docs`, `/staff-loop`) plus three building blocks the orchestrators fan
+out to (`/staff-review-find`, `/staff-review-verify`, `/staff-docs-scout`).
+They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it
+to your team’s standards. See the [Skills reference](/docs/skills) for what each
+one does.
 
-## The library
+## The docs
 
-`.staffreview/library/` is your team’s captured review wisdom. `/staff-review`
+`.staffreview/docs/` is your team’s captured review wisdom. `/staff-review`
 reads it on every pass and re-flags any recurrence of a documented mistake. The
-library is meant to be **committed**; the session data
+docs is meant to be **committed**; the session data
 (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored
-automatically. See [The library](/docs/library).
+automatically. See [The docs](/docs/docs).
 
 ## The loop
 

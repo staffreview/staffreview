@@ -11,8 +11,8 @@ export function diffsDir(cwd = process.cwd()) {
   return join(staffDir(cwd), "diffs");
 }
 
-export function libraryDir(cwd = process.cwd()) {
-  return join(staffDir(cwd), "library");
+export function docsDir(cwd = process.cwd()) {
+  return join(staffDir(cwd), "docs");
 }
 
 export function attachmentsDir(cwd = process.cwd()) {
@@ -29,7 +29,7 @@ export function diffPath(slug: string, cwd = process.cwd()) {
 
 export async function ensureDirs(cwd = process.cwd()) {
   await mkdir(diffsDir(cwd), { recursive: true });
-  await mkdir(libraryDir(cwd), { recursive: true });
+  await mkdir(docsDir(cwd), { recursive: true });
   await mkdir(attachmentsDir(cwd), { recursive: true });
 }
 

@@ -74,14 +74,14 @@ Track a round counter yourself. For `round` = 1..R:
 Run the same multi-agent review `/staff-review` performs, **inline** — do **not**
 spawn a `/staff-review` sub-agent. Use **A** as the fan-out width:
 
-1. **Find.** Partition the 10 review areas (and the `.staffreview/library/`
+1. **Find.** Partition the 10 review areas (and the `.staffreview/docs/`
    files) across **A** find agents and spawn them **in parallel** — each with:
    > Read `.agents/skills/staff-review-find/SKILL.md` and follow it exactly.
-   > slug=`<slug>`; review areas=`<this agent's area numbers>`; library
+   > slug=`<slug>`; review areas=`<this agent's area numbers>`; docs
    > lessons=`<this agent's filenames, or "none">`. Return the findings JSON —
    > nothing else.
 
-   See `/staff-review` Step 3 for the area/library partitioning scheme. Collect
+   See `/staff-review` Step 3 for the area/docs partitioning scheme. Collect
    the findings arrays and dedup them.
 2. **Verify.** Split the deduped findings into up to **A** batches and spawn one
    verify agent per batch **in parallel** — each with:

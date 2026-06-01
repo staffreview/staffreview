@@ -118,7 +118,7 @@ staff comment resolve --thread <threadId> --status documented --body "Saved as e
 
 - `fixed` — you made the change. The body should describe the change.
 - `skipped` — the comment doesn't apply. The body must explain why.
-- `documented` — you (the agent) wrote a library entry under `.staffreview/library/`. The body should describe what you saved; `--documented-as` is the filename you chose. This is a terminal resolution — only use it *after* the file exists.
+- `documented` — you (the agent) wrote a docs entry under `.staffreview/docs/`. The body should describe what you saved; `--documented-as` is the filename you chose. This is a terminal resolution — only use it *after* the file exists.
 
 A human can pre-flag a thread for documentation by clicking **Document** in the UI; this sets `documentRequested: true` on the thread (visible in `staff comment list --json`) but leaves it **open**. It is a request, not a resolution — `/staff-resolve` writes the entry and then resolves it as `documented`.
 

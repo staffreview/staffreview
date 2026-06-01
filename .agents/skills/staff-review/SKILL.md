@@ -71,7 +71,7 @@ sub-agents do that.
 
 ```bash
 staff files --slug <slug> --json   # the changed-file list (paths + status)
-ls .staffreview/library/           # the team's captured review lessons (may be empty)
+ls .staffreview/docs/           # the team's captured review lessons (may be empty)
 ```
 
 ## Step 3 — FIND: fan the review out across N agents (parallel)
@@ -98,8 +98,8 @@ live in `/staff-review-find`):
   changed files** among them (each extra agent reviews a subset of files across
   all areas) — the better lever for a large diff.
 
-**Partition the library** (`.staffreview/library/`): round-robin the filenames
-across the N agents (agent *i* gets files *i, i+N, i+2N, …*). If the library is
+**Partition the docs** (`.staffreview/docs/`): round-robin the filenames
+across the N agents (agent *i* gets files *i, i+N, i+2N, …*). If the docs is
 empty, skip this part.
 
 **Spawn each find agent** with a prompt that points at the shared skill and fills
@@ -109,7 +109,7 @@ in its assignment:
 > and follow it exactly. Your parameters:
 > - **slug:** `<slug>`
 > - **review areas:** `<this agent's area numbers, e.g. "1, 2, 3, 4, 5">`
-> - **library lessons:** `<this agent's filenames, or "none">`
+> - **docs lessons:** `<this agent's filenames, or "none">`
 >
 > Return the findings JSON the skill specifies — nothing else. Do not post,
 > spawn agents, or modify code.

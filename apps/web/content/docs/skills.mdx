@@ -1,10 +1,10 @@
 ---
 title: Skills
-description: The five /staff-* skills that drive the review, and how to make them your own.
+description: The /staff-* skills that drive the review, and how to make them your own.
 ---
 
-`staff install` writes seven skills to `.agents/skills/` (the five below plus
-the two building blocks), symlinked into `.claude/skills/` so Claude Code exposes
+`staff install` writes nine skills to `.agents/skills/` (the six below plus
+the three building blocks), symlinked into `.claude/skills/` so Claude Code exposes
 them as slash commands. They’re just Markdown — edit them to encode your team’s
 standards.
 
@@ -13,14 +13,17 @@ standards.
 | `/staff-review` | Reviews the active diff with a fan-out of sub-agents, verifies their findings, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
-| `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/library/` example. |
+| `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
+| `/staff-docs` | Mines past Staff Review diffs and GitHub PRs for recurring lessons and writes the best ones into `.staffreview/docs/`. |
 | `/staff-loop` | Reviews (find → verify → post) and then resolves the diff in sub-agents, round after round, until it converges. |
 
-Two more are **building blocks**, not run directly: `/staff-review-find` (one
-find agent — reviews an assigned slice of the areas/library and returns findings)
-and `/staff-review-verify` (one verify agent — re-checks a batch of findings).
-Both `/staff-review` and `/staff-loop` fan out to these shared units, so the loop
-never has to spawn a `/staff-review` sub-agent.
+Three more are **building blocks**, not run directly: `/staff-review-find` (one
+find agent — reviews an assigned slice of the areas/docs and returns findings),
+`/staff-review-verify` (one verify agent — re-checks a batch of findings), and
+`/staff-docs-scout` (one scout agent — reads an assigned slice of history and
+returns candidate lessons). `/staff-review` and `/staff-loop` fan out to the
+first two, and `/staff-docs` fans out to the scouts, so the orchestrators never
+have to spawn a top-level skill as a sub-agent.
 
 ## /staff-review
 
@@ -28,7 +31,7 @@ Conducts a staff-engineer-level review of the active diff as a **multi-agent
 orchestration**. It fans the work out across parallel sub-agents — each owning a
 slice of the ten review areas (correctness, edge cases, concurrency, security,
 data, interfaces, tests, consistency, readability, performance) and a slice of
-the [review library](/docs/library) — so a large diff and a growing library both
+the [review docs](/docs/docs) — so a large diff and a growing docs both
 stay fast. A second wave of agents then **verifies every finding** against the
 code to drop false positives before anything is posted. Survivors land as inline
 comments, each with a **priority** (`P1` must-fix, `P2` should-fix, `P3` minor)
@@ -50,7 +53,7 @@ which is why the cap is conservative.
 ## /staff-resolve
 
 Works through every open thread. For each one it picks exactly one action —
-**fix** the code, **document** it as a library entry, or **skip** it with a
+**fix** the code, **document** it as a docs entry, or **skip** it with a
 justification — replies in-thread with what it did, then records the resolution.
 It does not commit; you review and commit the changes.
 
@@ -66,8 +69,22 @@ resolve comments via the `staff` CLI. You rarely invoke it directly.
 ## /staff-document
 
 Imports a GitHub PR review comment by URL and turns it into a structured
-`.staffreview/library/` example — a way to seed the library from review wisdom
+`.staffreview/docs/` example — a way to seed the docs from review wisdom
 that already lives on GitHub.
+
+## /staff-docs
+
+Mines your review history — past Staff Review diffs and GitHub PRs (via `gh`) —
+for recurring, generalizable lessons worth keeping, then writes the best ones
+into `.staffreview/docs/`. It fans the reading out across parallel
+`/staff-docs-scout` sub-agents, ranks the survivors impact-first, surfaces the
+top candidates for you to flag, and documents the ones you keep. The scout
+fan-out width is the **`docsAgents`** setting (default **5**, range 1–20,
+adjustable in the gear menu).
+
+```text
+/staff-docs
+```
 
 ## /staff-loop
 
