@@ -5,6 +5,15 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.0.1 — 2026-06-01
+
+### Changed
+- `/staff-docs` now **excludes bot-authored PR comments entirely** (e.g.
+  CodeRabbit, SonarCloud — anything GitHub marks `user.type: "Bot"`). They were
+  previously eligible as recurring-bug/fix lessons, but in practice they're
+  templated noise the base `/staff-review` already catches, so they no longer
+  seed the docs library — only human review comments do.
+
 ## 1.0.0 — 2026-06-01
 
 First stable release. Everything below landed since the `0.1.0` preview.

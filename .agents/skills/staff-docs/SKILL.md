@@ -38,9 +38,9 @@ A candidate teaches a **generalizable** lesson `/staff-review` could catch later
    job (Step 5), since no single scout sees the whole picture.
 2. **Serious issue caught by a human reviewer** — real correctness, security,
    data-loss, or contract problem, not tied to one file's quirks. Must be a
-   **human** author: bot / automated-reviewer comments (GitHub `user.type: "Bot"`,
-   `…[bot]` login) never count here — the scout flags them `authorIsBot` and may
-   only keep them under criterion 1 or 3.
+   **human** author: the scout **drops bot / automated-reviewer comments
+   entirely** (GitHub `user.type: "Bot"`, `…[bot]` login) — they're templated
+   noise the base `/staff-review` already catches, so they never reach you.
 3. **A fix for a serious issue** — a comment whose linked fix corrected a real,
    generalizable bug.
 
@@ -222,9 +222,8 @@ cache's `lastPresented` so Step 7 knows where to look.
 
 **Present** the list to the user, highest-impact first, numbered. For each:
 the one-line lesson; which criterion it hit (recurring / human-caught / fix) and
-its recurrence count if >1; severity; source (`PR #<n>` or local slug) **and the
-author** — e.g. `octocat`, or `coderabbitai[bot]` *(bot)* — so a bot-authored
-finding is never described as "caught by a human reviewer"; and the link —
+its recurrence count if >1; severity; source (`PR #<n>` or local slug) and the
+**author** (e.g. `octocat`); and the link —
 `http://localhost:<STAFF_PORT>/?diff=<slug>` if a server is running, else the
 command `staff <slug>` (append `--port <n>` for a fixed port).
 
