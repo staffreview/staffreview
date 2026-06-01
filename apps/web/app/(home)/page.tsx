@@ -163,7 +163,7 @@ export default function HomePage() {
       <section className="border-t border-fd-border">
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 py-16 text-center sm:py-20">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Ship it before anyone else sees it
+            Do your human reviewers a favor
           </h2>
           <p className="mt-3 max-w-xl text-balance text-fd-muted-foreground">
             Install with Homebrew and open your first review in about a minute.
