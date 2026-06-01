@@ -18,7 +18,9 @@ jobs:
         include:
           - os: macos-latest
             target: darwin-arm64
-          - os: macos-13
+          # darwin-x64 cross-compiles on Linux via Bun, avoiding the slow/scarce
+          # macOS-13 Intel runner queue (which stalled the v1.0.0 release).
+          - os: ubuntu-latest
             target: darwin-x64
           - os: ubuntu-latest
             target: linux-x64
