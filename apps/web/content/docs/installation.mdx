@@ -43,6 +43,10 @@ bun run apps/staffreview/src/cli.ts <args>
 - [**Bun**](https://bun.sh) only if you build or run from source.
 - An **AI coding agent** for the automated review. Claude Code works out of the
   box; any harness that can read a `SKILL.md` and run shell commands works too.
+- The [**GitHub CLI (`gh`)**](https://cli.github.com) — optional, and only for
+  `/staff-docs`, which mines your merged PRs for review lessons. It must be
+  installed and authenticated (`gh auth login`); without it, `/staff-docs` just
+  skips PRs and still works on your local review history.
 
 <Callout type="info">
   Once installed, run `staff install` inside a git repo to write the skills and
