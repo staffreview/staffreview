@@ -30,7 +30,7 @@ const SKILLS: Record<string, string> = {
   "staff-docs-scout": skillDocsScout,
 };
 
-const VERSION = "0.1.0";
+const VERSION = "1.0.0";
 
 function parseArgs(argv: string[]): {
   flags: Record<string, string | boolean>;

@@ -1,0 +1,54 @@
+---
+title: Changelog
+description: Notable changes to Staff Review, newest first.
+---
+
+# Changelog
+
+## 1.0.0 — 2026-06-01
+
+First stable release. Everything below landed since the `0.1.0` preview.
+
+### Reviews
+- **Multi-agent `/staff-review`** — the review fans out across parallel *find*
+  sub-agents, then a second *verify* wave re-checks every finding to cut false
+  positives before anything is posted as an inline comment. Fan-out width is the
+  **`reviewAgents`** setting (or pass a number inline, e.g. `/staff-review main..WT 6`).
+- AI reviewers now set a **priority (P1–P3)** on each finding, so you can triage
+  what to fix first.
+
+### Learning from your history
+- **`/staff-docs`** (with the `/staff-docs-scout` building block) — mines your
+  review history (past Staff Review diffs **and** merged GitHub PRs via `gh`) for
+  recurring, generalizable lessons, ranks them by impact, and turns the ones you
+  keep into entries under `.staffreview/docs/` that every future `/staff-review`
+  checks against. The reading fans out across parallel scout sub-agents.
+- **`docsAgents`** setting controls the `/staff-docs` scout fan-out (default 5,
+  range 1–20), in the gear menu or via `staff settings`.
+
+### Web UI
+- Comment-count badge on the **Comments** tab (matching the Files tab).
+- Compact diff header with abbreviated SHAs and fuller tooltips; app icon and
+  favicon.
+- Inline image attachments on comments; real-time updates over WebSocket.
+- Binary files render as a compact row instead of being diffed as text.
+
+### Other
+- `PORT` env support and deterministic port selection for the local server.
+- Documentation site and landing page at
+  **[staffreview.dev](https://staffreview.dev)**.
+
+### Changed
+- The captured-examples directory is now **`.staffreview/docs/`** (previously
+  `.staffreview/library/`).
+
+### Fixed
+- `/staff-docs` no longer labels a **bot-authored** PR comment as "caught by a
+  human reviewer" — bot / automated reviewers are detected and their comments are
+  only kept as recurring-bug or merged-fix lessons.
+
+## 0.1.0 — 2026-05-30
+
+Initial preview release: the `staff` CLI, the local web UI for reviewing a diff,
+the first `/staff-*` review skills, and Homebrew install
+(`brew install staffreview/tap/staff`).
