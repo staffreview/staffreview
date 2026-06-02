@@ -107,6 +107,71 @@ function setCollapseOverride(path: string, collapsed: boolean) {
   } catch {}
 }
 
+// ── Auto-collapse heuristics for large diffs ────────────────────────────────
+// A collapsed DiffFile unmounts its react-diff-viewer body, so collapsing the
+// heavy / low-signal files keeps a 100-file diff from mounting 100 syntax
+// highlighters at once. These are *defaults*: an explicit user toggle
+// (override) always wins, and files with comments are never auto-collapsed.
+
+// Generated / lock / minified / snapshot files — rarely read line by line.
+const NOISE_FILE =
+  /(^|\/)(bun\.lockb?|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|cargo\.lock|composer\.lock|go\.sum|gemfile\.lock|poetry\.lock)$|\.min\.(js|css|mjs|cjs)$|\.map$|(^|\/)__snapshots__\/|\.snap$/i;
+
+// A single file larger than this (lines, larger side) starts collapsed.
+export const PER_FILE_COLLAPSE_LINES = 1000;
+// Across the whole diff, auto-expand at most this many files…
+export const MAX_AUTO_EXPANDED_FILES = 20;
+// …and at most this many rendered lines — whichever limit is hit first.
+export const MAX_AUTO_EXPANDED_LINES = 6000;
+
+export function fileLineCount(f: FileDiff): number {
+  if (f.isBinary || f.isSymlink) return 0; // rendered as a compact row — cheap
+  const lines = (s?: string) => (s ? s.split("\n").length : 0);
+  return Math.max(lines(f.oldContent), lines(f.newContent));
+}
+
+/**
+ * Decide which files start collapsed. Walks files in display order: binary /
+ * symlink rows and commented files are always shown; noise files and oversized
+ * files collapse; and once the per-diff file/line budget is spent everything
+ * after it collapses too, so a huge diff stays responsive. Returns the set of
+ * paths to collapse by default.
+ *
+ * Force-expanded files (binary/symlink, commented) never consume the budget —
+ * they render regardless, so charging them against `expandedFiles`/
+ * `expandedLines` would only penalize *other* (cheaper, uncollapsed) files.
+ *
+ * `lineCounts` is an optional precomputed `path → fileLineCount` map. It lets
+ * callers hoist the expensive `.split("\n")` walk into a `files`-only memo so
+ * the budget decision can be recomputed cheaply when only `commentedPaths`
+ * changes (comments arrive far more often than files do).
+ */
+export function computeAutoCollapsed(
+  files: FileDiff[],
+  commentedPaths: Set<string>,
+  lineCounts?: Map<string, number>,
+): Set<string> {
+  const linesFor = (f: FileDiff) => lineCounts?.get(f.path) ?? fileLineCount(f);
+  const collapsed = new Set<string>();
+  let expandedFiles = 0;
+  let expandedLines = 0;
+  for (const f of files) {
+    if (f.isBinary || f.isSymlink) continue; // compact + cheap; leave expanded
+    if (commentedPaths.has(f.path)) continue; // always show commented files (budget-exempt)
+    const lines = linesFor(f);
+    const overBudget =
+      expandedFiles >= MAX_AUTO_EXPANDED_FILES ||
+      expandedLines + lines > MAX_AUTO_EXPANDED_LINES;
+    if (NOISE_FILE.test(f.path) || lines > PER_FILE_COLLAPSE_LINES || overBudget) {
+      collapsed.add(f.path);
+    } else {
+      expandedFiles++;
+      expandedLines += lines;
+    }
+  }
+  return collapsed;
+}
+
 function groupCommentsByThread(comments: Comment[]) {
   const map = new Map<string, Comment[]>();
   for (const c of comments) {
@@ -262,6 +327,7 @@ export function DiffFile({
   themeMode,
   syntaxTheme,
   expandedByDefault,
+  autoCollapsed,
   onChange,
 }: {
   file: FileDiff;
@@ -271,6 +337,7 @@ export function DiffFile({
   themeMode: "light" | "dark";
   syntaxTheme: string;
   expandedByDefault: boolean;
+  autoCollapsed: boolean;
   onChange?: () => void;
 }) {
   type ComposingTarget = { line: number; side: "old" | "new"; endLine?: number };
@@ -288,7 +355,7 @@ export function DiffFile({
   // "expand unchanged context" setting below. Defaults to expanded; a
   // per-file toggle is remembered as an override.
   const [collapsed, setCollapsed] = useState<boolean>(
-    () => loadCollapseOverrides()[file.path] ?? false,
+    () => loadCollapseOverrides()[file.path] ?? autoCollapsed,
   );
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -315,6 +382,21 @@ export function DiffFile({
     window.addEventListener("staff:expand-file", handler);
     return () => window.removeEventListener("staff:expand-file", handler);
   }, [file.path]);
+
+  // `collapsed` is seeded once at mount, but `autoCollapsed` is reactive: a
+  // large/over-budget file that *later* gains a comment flips to
+  // `autoCollapsed=false` (commented files are never auto-collapsed). Without
+  // this, the file would stay collapsed and its inline thread would only be
+  // reachable from the sidebar. Mirror the `staff:expand-file` handler: only
+  // ever force-EXPAND, and only when there's no explicit user override for
+  // this path — never auto-re-collapse (don't fight a manual expand, don't
+  // undo staff:expand-file).
+  useEffect(() => {
+    if (autoCollapsed) return; // never auto-collapse, only force-expand
+    if (file.path in loadCollapseOverrides()) return; // explicit user choice wins
+    setCollapsed((prev) => (prev ? false : prev));
+  }, [autoCollapsed, file.path]);
+
   const diffRef = useRef<HTMLDivElement>(null);
   // Host <td> elements (one per open composer), keyed by `${side}:${line}`.
   // Ref-backed so DOM and host map stay in sync inside useLayoutEffect; a
@@ -1063,6 +1145,28 @@ export function DiffView({
   onChange?: () => void;
 }) {
   const resolvedSyntaxTheme = syntaxTheme ?? shikiThemeFor(themeMode);
+  // Decide up front which files start collapsed so a large diff doesn't mount
+  // every react-diff-viewer at once (see computeAutoCollapsed).
+  //
+  // The expensive part — splitting every file's content to count its lines —
+  // only depends on `files`, so memoize it there. Comments arrive far more
+  // often than files change; re-splitting the whole (large) diff on every
+  // comment add/resolve/refresh would be wasted work, since the budget walk
+  // itself is just arithmetic.
+  const lineCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const f of files) map.set(f.path, fileLineCount(f));
+    return map;
+  }, [files]);
+  const commentedPaths = useMemo(
+    () =>
+      new Set(comments.map((c) => c.file).filter((p): p is string => Boolean(p))),
+    [comments],
+  );
+  const autoCollapsed = useMemo(
+    () => computeAutoCollapsed(files, commentedPaths, lineCounts),
+    [files, commentedPaths, lineCounts],
+  );
   if (files.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
@@ -1082,6 +1186,7 @@ export function DiffView({
           themeMode={themeMode}
           syntaxTheme={resolvedSyntaxTheme}
           expandedByDefault={expandedByDefault}
+          autoCollapsed={autoCollapsed.has(f.path)}
           onChange={onChange}
         />
       ))}

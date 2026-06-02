@@ -5,6 +5,17 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.1.0 — 2026-06-01
+
+### Added
+- **Large diffs stay responsive.** The web UI now auto-collapses files in big
+  diffs instead of mounting every file's syntax-highlighted diff at once (a
+  100-file diff used to crawl). Generated/lock/minified/snapshot files and files
+  over 1000 lines start collapsed, and the diff auto-expands at most 20 files /
+  6000 lines before collapsing the rest. Files with review comments — and
+  binary/symlink rows — are always shown, and your explicit expand/collapse
+  choices still win and persist. Each collapsed file is one click to open.
+
 ## 1.0.1 — 2026-06-01
 
 ### Changed
