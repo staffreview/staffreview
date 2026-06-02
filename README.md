@@ -6,7 +6,7 @@
 
 **A local, staff‑engineer‑grade code review — for your working tree, before anyone else sees it.**
 
-Staff Review opens a GitHub‑style review of *any* diff in your browser and lets **any AI coding agent** leave a thorough, inline review on it — then fix, document, or skip each comment. No PR, no cloud service, no waiting on a teammate. It all runs on your machine, over your local git repo.
+Staff Review opens a GitHub‑style review of *any* diff in your browser and lets **any AI coding agent** leave a thorough, inline review on it — then fix, document, or skip each comment. No PR, no cloud service, no waiting. It all runs on your machine, over your local git repo.
 
 <!-- Add a screenshot or GIF of the review UI here — it sells the tool better than words. -->
 

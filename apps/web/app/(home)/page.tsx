@@ -60,7 +60,7 @@ export default function HomePage() {
             Open a GitHub-style review of <em>any</em> diff in your browser and
             let <strong>any AI coding agent</strong> leave a thorough, inline
             review on it — then fix, document, or skip each comment. No PR, no
-            cloud, no waiting on a teammate.
+            cloud, no waiting.
           </p>
 
           <HeroCtas githubUrl={githubUrl} />
