@@ -5,6 +5,23 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.1.1 — 2026-06-02
+
+### Fixed
+- **Inline-comment file paths no longer overflow the sidebar.** A long
+  `path:line` on a review comment — or a long filename in the Files tab — used to
+  push a horizontal scrollbar across the right sidebar. Both now left-truncate
+  with an ellipsis so the base filename and line number stay visible.
+- **`staff` no longer shares a port with another project.** When another instance
+  was already serving on the default port, a new `staff` could bind the *same*
+  port and silently load-balance requests between the two projects. It now binds
+  the port exclusively and walks up to the next free one as intended.
+- **Diff reads tolerate half-written files.** A diff read during a concurrent
+  save could surface an unactionable `JSON Parse error`. Writes are now atomic
+  (temp file + rename) and an empty/half-written file is treated as absent, so the
+  error is gone. A genuinely corrupt file now reports a clear `corrupt diff file`
+  message instead of being silently recreated empty.
+
 ## 1.1.0 — 2026-06-01
 
 ### Added

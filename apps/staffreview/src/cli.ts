@@ -30,7 +30,7 @@ const SKILLS: Record<string, string> = {
   "staff-docs-scout": skillDocsScout,
 };
 
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 
 function parseArgs(argv: string[]): {
   flags: Record<string, string | boolean>;
@@ -307,10 +307,14 @@ async function main(argv: string[]) {
       const c = await store.loadDiff(slug, cwd);
       if (flags.json) console.log(JSON.stringify(c, null, 2));
       else {
-        console.log(`slug: ${c?.slug}`);
-        console.log(`base: ${git.targetLabel(c!.base)}`);
-        console.log(`head: ${git.targetLabel(c!.head)}`);
-        console.log(`comments: ${c?.comments.length ?? 0}`);
+        if (!c) {
+          console.error("active diff is missing or corrupt");
+          return;
+        }
+        console.log(`slug: ${c.slug}`);
+        console.log(`base: ${git.targetLabel(c.base)}`);
+        console.log(`head: ${git.targetLabel(c.head)}`);
+        console.log(`comments: ${c.comments.length}`);
       }
       return;
     }

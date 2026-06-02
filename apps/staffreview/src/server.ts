@@ -107,7 +107,11 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
 
   try {
     watch(store.diffsDir(cwd), { recursive: true }, (_event, filename) => {
-      if (filename) scheduleFile(filename);
+      // Only react to the canonical diff files. saveDiff writes a uniquely-
+      // named `<slug>.json.<uuid>.tmp` then renames it into place; forwarding
+      // those temp names would fire a spurious diff:changed per save (the UUID
+      // defeats the per-file dedupe) and trigger a redundant client refetch.
+      if (filename?.endsWith(".json")) scheduleFile(filename);
     });
     watch(store.activePointerPath(cwd).replace(/\/active\.json$/, ""), (_e, filename) => {
       if (filename === "active.json") {
@@ -188,6 +192,12 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   const isDev = process.env.STAFF_BUILD !== "binary";
   const makeServer = (port: number) => Bun.serve<WSData, {}>({
     port,
+    // Bind the port *exclusively*. Otherwise a second `staff` (e.g. for another
+    // project) can SO_REUSEPORT-share a port that's already serving instead of
+    // walking up to a free one — so http://localhost:<port> load-balances
+    // between the two projects. Forcing reuse off makes a taken port throw
+    // EADDRINUSE, so listenOnRange walks to the next free port as intended.
+    reusePort: false,
     development: isDev ? { hmr: true, console: true } : false,
     routes: {
       "/": indexHtml,

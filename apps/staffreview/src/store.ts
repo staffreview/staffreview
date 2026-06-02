@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { Diff, DiffTarget, Comment, Resolution } from "./types.ts";
 import { slugForDiff } from "./git.ts";
@@ -36,13 +36,44 @@ export async function ensureDirs(cwd = process.cwd()) {
 export async function loadDiff(slug: string, cwd = process.cwd()): Promise<Diff | null> {
   const file = Bun.file(diffPath(slug, cwd));
   if (!(await file.exists())) return null;
-  return JSON.parse(await file.text()) as Diff;
+  const text = await file.text();
+  if (text.trim() === "") {
+    // An empty or whitespace-only file (e.g. read during a concurrent save, or
+    // a 0-byte leftover from an interrupted write) isn't actionable — treat it
+    // as "not there" rather than throwing an unhandled JSON parse error.
+    // saveDiff writes atomically (below), so this is just a defensive backstop
+    // for the transient mid-write window.
+    return null;
+  }
+  try {
+    return JSON.parse(text) as Diff;
+  } catch (e) {
+    // Non-empty but unparseable means real corruption, not a half-written
+    // file. Returning null here would make loadOrCreateDiff recreate the diff
+    // empty and silently destroy its comments — so throw a clear, actionable
+    // error instead of swallowing it.
+    throw new Error(`corrupt diff file: ${diffPath(slug, cwd)}`, { cause: e });
+  }
 }
 
 export async function saveDiff(c: Diff, cwd = process.cwd()): Promise<void> {
   await ensureDirs(cwd);
   c.updatedAt = new Date().toISOString();
-  await Bun.write(diffPath(c.slug, cwd), JSON.stringify(c, null, 2));
+  // Write to a temp file then atomically rename into place, so a concurrent
+  // reader (the file watcher, a browser refetch, another `staff`) never sees a
+  // partially-written or empty file and trips a JSON parse error.
+  const path = diffPath(c.slug, cwd);
+  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
+  await Bun.write(tmp, JSON.stringify(c, null, 2));
+  try {
+    await rename(tmp, path);
+  } catch (e) {
+    // The rename failed (or was interrupted), so the temp file would otherwise
+    // be left orphaned in diffsDir. Clean it up; ignore unlink errors so we
+    // surface the original rename failure, not a secondary cleanup error.
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
 }
 
 export async function loadOrCreateDiff(

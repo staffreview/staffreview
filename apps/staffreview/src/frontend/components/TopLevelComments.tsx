@@ -169,15 +169,11 @@ export function TopLevelComments({
           {threads.map((thread) => {
             const root = thread.find((c) => !c.parentId)!;
             const filePath = root.file ?? "";
-            const slashIdx = filePath.lastIndexOf("/");
-            const dir = slashIdx >= 0 ? filePath.slice(0, slashIdx + 1) : "";
-            const filename = slashIdx >= 0 ? filePath.slice(slashIdx + 1) : filePath;
             const lineSuffix = root.line
               ? root.endLine && root.endLine !== root.line
                 ? `:${root.line}-${root.endLine}`
                 : `:${root.line}`
               : "";
-            const tail = `${filename}${lineSuffix}`;
             const fullLocation = `${filePath}${lineSuffix}`;
             return (
               <div key={root.threadId} className="space-y-1">
@@ -197,15 +193,17 @@ export function TopLevelComments({
                     title={fullLocation}
                     className="flex w-full items-center text-left font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1 focus-visible:outline-none focus-visible:underline"
                   >
-                    {/* Directory part shrinks with a left-ellipsis when it can't
-                     * fit; the filename + line never truncate. */}
+                    {/* Left-truncate the whole `path:line` (ellipsis on the
+                     * left via rtl, plaintext bdi to keep natural reading
+                     * order). The end — base filename + line — stays visible,
+                     * and a long path OR a long filename can never overflow the
+                     * sidebar and force a horizontal scrollbar. */}
                     <span
-                      className="overflow-hidden whitespace-nowrap text-ellipsis min-w-0"
+                      className="min-w-0 overflow-hidden whitespace-nowrap text-ellipsis"
                       style={{ direction: "rtl" }}
                     >
-                      <bdi style={{ unicodeBidi: "plaintext" }}>{dir}</bdi>
+                      <bdi style={{ unicodeBidi: "plaintext" }}>{fullLocation}</bdi>
                     </span>
-                    <span className="shrink-0">{tail}</span>
                   </button>
                 )}
                 <CommentThread
@@ -227,30 +225,29 @@ export function TopLevelComments({
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {files.map((f) => {
-                const slashIdx = f.path.lastIndexOf("/");
-                const dir = slashIdx >= 0 ? f.path.slice(0, slashIdx + 1) : "";
-                const filename = slashIdx >= 0 ? f.path.slice(slashIdx + 1) : f.path;
-                return (
-                  <li key={f.path}>
-                    <button
-                      type="button"
-                      onClick={() => scrollToFile(f.path)}
-                      title={f.path}
-                      data-testid={`sidebar-file-${f.path}`}
-                      className="flex w-full items-center px-2 py-1.5 text-left font-mono text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted"
+              {files.map((f) => (
+                <li key={f.path}>
+                  <button
+                    type="button"
+                    onClick={() => scrollToFile(f.path)}
+                    title={f.path}
+                    data-testid={`sidebar-file-${f.path}`}
+                    className="flex w-full items-center px-2 py-1.5 text-left font-mono text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted"
+                  >
+                    {/* Left-truncate the whole path in one span (ellipsis on
+                     * the left via rtl, plaintext bdi to keep natural reading
+                     * order), matching the inline-comment header above. The
+                     * base filename stays visible and a long dir OR a long
+                     * filename can never overflow the sidebar. */}
+                    <span
+                      className="min-w-0 overflow-hidden whitespace-nowrap text-ellipsis text-foreground"
+                      style={{ direction: "rtl" }}
                     >
-                      <span
-                        className="overflow-hidden whitespace-nowrap text-ellipsis min-w-0 text-muted-foreground"
-                        style={{ direction: "rtl" }}
-                      >
-                        <bdi style={{ unicodeBidi: "plaintext" }}>{dir}</bdi>
-                      </span>
-                      <span className="shrink-0 text-foreground">{filename}</span>
-                    </button>
-                  </li>
-                );
-              })}
+                      <bdi style={{ unicodeBidi: "plaintext" }}>{f.path}</bdi>
+                    </span>
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </div>
