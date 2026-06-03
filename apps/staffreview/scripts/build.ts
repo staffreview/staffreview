@@ -1,4 +1,7 @@
-import { rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 
 const target = process.argv[2] ?? "current";
@@ -23,18 +26,116 @@ await rm(t.outfile, { force: true }).catch(() => {});
 
 console.log(`Building ${t.outfile} for target=${t.flag}…`);
 
-const result = await Bun.build({
-  entrypoints: ["src/cli.ts"],
-  compile: { target: t.flag as any, outfile: t.outfile },
-  plugins: [tailwind],
-  define: { "process.env.STAFF_BUILD": JSON.stringify("binary") },
-  minify: true,
-  // sourcemap omitted for smaller binary
-});
+const generatedAssetsPath = "src/generated/frontend-assets.ts";
+const generatedAssetsPlaceholder = `export type GeneratedFrontendAsset = {
+  type: string;
+  body: string;
+};
 
-if (!result.success) {
-  for (const log of result.logs) console.error(log);
-  process.exit(1);
+export const frontendHtml = "";
+export const frontendAssets: Record<string, GeneratedFrontendAsset> = {};
+`;
+
+await mkdir("src/generated", { recursive: true });
+let frontendOutDir: string | null = null;
+
+function frontendAssetType(name: string): string {
+  switch (extname(name).toLowerCase()) {
+    case ".css":
+      return "text/css;charset=utf-8";
+    case ".js":
+      return "text/javascript;charset=utf-8";
+    case ".png":
+      return "image/png";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+async function findFrontendEntry(outDir: string, files: string[]): Promise<string | null> {
+  const jsFiles = files.filter((name) => name.endsWith(".js"));
+  for (const name of jsFiles) {
+    const text = await readFile(join(outDir, name), "utf8");
+    if (
+      text.includes("document.getElementById") &&
+      text.includes("#root not found") &&
+      text.includes("createRoot")
+    ) {
+      return name;
+    }
+  }
+  return null;
+}
+
+try {
+  frontendOutDir = await mkdtemp(join(tmpdir(), "staffreview-frontend-"));
+  const frontend = await Bun.build({
+    entrypoints: ["src/index.html"],
+    outdir: frontendOutDir,
+    plugins: [tailwind],
+    minify: true,
+    splitting: true,
+  });
+
+  if (!frontend.success) {
+    for (const log of frontend.logs) console.error(log);
+    process.exit(1);
+  }
+
+  const emittedFiles = await readdir(frontendOutDir);
+  let html = await readFile(join(frontendOutDir, "index.html"), "utf8").catch(() => "");
+  const entryJs = await findFrontendEntry(frontendOutDir, emittedFiles);
+  if (entryJs) {
+    html = html.replace(
+      /<script\b([^>]*\btype=["']module["'][^>]*)\bsrc=["'][^"']+\.js["']([^>]*)><\/script>/,
+      `<script$1src="./${entryJs}"$2></script>`,
+    );
+  }
+
+  const assets: Record<string, { type: string; body: string }> = {};
+  for (const name of emittedFiles) {
+    if (name.endsWith(".html")) continue;
+    const body = Buffer.from(await readFile(join(frontendOutDir, name))).toString("base64");
+    assets[`/${name}`] = { type: frontendAssetType(name), body };
+  }
+
+  if (!html) {
+    console.error("frontend build did not produce index.html");
+    process.exit(1);
+  }
+  if (!entryJs) {
+    console.error("frontend build did not produce a recognizable app entry chunk");
+    process.exit(1);
+  }
+
+  await writeFile(
+    generatedAssetsPath,
+    `export type GeneratedFrontendAsset = {
+  type: string;
+  body: string;
+};
+
+export const frontendHtml = ${JSON.stringify(html)};
+export const frontendAssets: Record<string, GeneratedFrontendAsset> = ${JSON.stringify(assets)};
+`,
+  );
+
+  const result = await Bun.build({
+    entrypoints: ["src/cli.ts"],
+    compile: { target: t.flag as any, outfile: t.outfile },
+    plugins: [tailwind],
+    define: { "process.env.STAFF_BUILD": JSON.stringify("binary") },
+    minify: true,
+    // sourcemap omitted for smaller binary
+  });
+
+  if (!result.success) {
+    for (const log of result.logs) console.error(log);
+    process.exit(1);
+  }
+} finally {
+  await writeFile(generatedAssetsPath, generatedAssetsPlaceholder);
+  if (frontendOutDir) await rm(frontendOutDir, { recursive: true, force: true });
 }
 
 console.log(`✓ ${t.outfile}`);

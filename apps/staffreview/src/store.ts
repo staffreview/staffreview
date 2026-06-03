@@ -33,6 +33,33 @@ export async function ensureDirs(cwd = process.cwd()) {
   await mkdir(attachmentsDir(cwd), { recursive: true });
 }
 
+// Reap orphaned `<slug>.json.<uuid>.tmp` files left in diffsDir. saveDiff
+// writes to a fresh-UUID temp file then atomically renames it into place,
+// unlinking it on rename failure — but if the process is killed (SIGKILL,
+// OOM, power loss) between the write and the rename, the temp file survives.
+// Each crash uses a new UUID, so without a reaper these accumulate unbounded.
+//
+// This is a one-shot startup sweep (called from server boot), NOT part of the
+// hot save path. It must never run inside a `saveDiff` that may overlap an
+// in-flight write: Bun serves overlapping requests on one event loop, so a
+// per-write glob would unlink a *concurrent* save's just-written temp before
+// that save's own `rename`, turning a successful write into an ENOENT failure
+// and silently losing it. The glob is repo-wide, so it could also clobber
+// temps for other slugs (two tabs, or the server plus a `staff` CLI). Keeping
+// it to startup — before any save can be in flight — sidesteps both races.
+//
+// Best-effort: ignore per-file unlink errors and any scan error so cleanup
+// never breaks an actual save/load.
+export async function sweepStaleTmp(cwd = process.cwd()) {
+  const dir = diffsDir(cwd);
+  try {
+    const glob = new Bun.Glob("*.tmp");
+    for await (const file of glob.scan({ cwd: dir })) {
+      await unlink(join(dir, file)).catch(() => {});
+    }
+  } catch {}
+}
+
 export async function loadDiff(slug: string, cwd = process.cwd()): Promise<Diff | null> {
   const file = Bun.file(diffPath(slug, cwd));
   if (!(await file.exists())) return null;

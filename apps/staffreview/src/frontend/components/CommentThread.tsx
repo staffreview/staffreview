@@ -106,7 +106,8 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
   if (resolution && (resolution.status === "fixed" || resolution.status === "skipped")) {
     return (
       <div
-        className={cn("rounded-md border border-border bg-muted/40", className)}
+        className={cn("min-w-0 overflow-hidden rounded-md border border-border bg-muted/40", className)}
+        data-thread-card="true"
         data-testid={`thread-collapsed-${resolution.status}`}
       >
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
@@ -118,7 +119,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             aria-expanded={collapsedExpanded}
             onClick={() => setCollapsedExpanded((v) => !v)}
             data-testid={`thread-collapsed-toggle-${resolution.status}`}
-            className="flex flex-1 items-center gap-2 text-left text-muted-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground"
           >
             {collapsedExpanded ? (
               <ChevronDown className="h-3 w-3 shrink-0" />
@@ -129,9 +130,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             {/* This row summarizes the resolution: who resolved it and when.
              * The original author + creation time live on the comment's own
              * header in the expanded body. */}
-            <span className="font-medium text-foreground ml-1">{resolution.author || root.author}</span>
+            <span className="ml-1 min-w-0 truncate font-medium text-foreground">{resolution.author || root.author}</span>
             <span>·</span>
-            <span>{formatTime(resolution.at)}</span>
+            <span className="shrink-0">{formatTime(resolution.at)}</span>
           </button>
           <Button
             variant="ghost"
@@ -156,7 +157,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
   }
 
   return (
-    <div className={cn("rounded-md border border-border bg-muted/40", className)}>
+    <div className={cn("min-w-0 overflow-hidden rounded-md border border-border bg-muted/40", className)} data-thread-card="true">
       {context && (
         <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">{context}</div>
       )}
@@ -176,11 +177,11 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
       </div>
 
       {!collapsed && resolution && (
-        <div className="border-t border-border bg-background px-3 py-2 flex items-center gap-2 text-xs">
+        <div className="min-w-0 border-t border-border bg-background px-3 py-2 flex items-center gap-2 text-xs">
           {statusBadge(resolution.status)}
-          <span className="text-muted-foreground">— {resolution.body}</span>
+          <span className="min-w-0 break-words text-muted-foreground">— {resolution.body}</span>
           {resolution.documentedAs && (
-            <code className="text-xs text-muted-foreground">{resolution.documentedAs}</code>
+            <code className="min-w-0 break-all text-xs text-muted-foreground">{resolution.documentedAs}</code>
           )}
           <Button variant="outline" size="sm" onClick={unresolve} className="ml-auto">
             <Undo2 />
@@ -335,11 +336,11 @@ function CommentBubble({
   }
 
   return (
-    <div className={cn("p-3", indent && "pl-6 bg-background")}>
+    <div className={cn("min-w-0 overflow-hidden p-3", indent && "pl-6 bg-background")}>
       {/* Fixed row height (matches the icon-xs action buttons) so collapsing —
           which hides those buttons — doesn't reflow the header and shift the
           chevron/author. */}
-      <div className={cn("flex min-h-6 items-center gap-2 text-xs text-muted-foreground", !collapsed && "mb-1")}>
+      <div className={cn("flex min-h-6 min-w-0 items-center gap-2 text-xs text-muted-foreground", !collapsed && "mb-1")}>
         {collapsible && (
           <button
             type="button"
@@ -358,10 +359,10 @@ function CommentBubble({
           </button>
         )}
         {comment.priority && priorityBadge(comment.priority)}
-        <span className="font-medium text-foreground">{comment.author}</span>
-        <span>·</span>
-        <span>{formatTime(comment.createdAt)}</span>
-        <div className="ml-auto flex items-center gap-0.5">
+        <span className="min-w-0 truncate font-medium text-foreground">{comment.author}</span>
+        <span className="shrink-0">·</span>
+        <span className="shrink-0">{formatTime(comment.createdAt)}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {!editing && !collapsed && (
             <>
               <Button
@@ -417,7 +418,7 @@ function CommentBubble({
           }
         />
       ) : (
-        <Markdown>{comment.body}</Markdown>
+        <Markdown className="min-w-0 max-w-full overflow-hidden">{comment.body}</Markdown>
       )}
     </div>
   );

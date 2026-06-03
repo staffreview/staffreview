@@ -2,11 +2,13 @@ import {
   ChevronsUpDown,
   Check,
   Columns2,
+  ExternalLink,
   FoldVertical,
   Loader2,
   Minus,
   Monitor,
   Moon,
+  MousePointer2,
   Plus,
   RefreshCw,
   Rows2,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "../../loop-config.ts";
+import { DEFAULT_OPEN_BROWSER } from "../../open-browser-config.ts";
 import {
   DEFAULT_DOCS_AGENTS,
   MIN_DOCS_AGENTS,
@@ -99,8 +102,9 @@ export function SettingsMenu({
   // How many scout sub-agents /staff-docs fans out. Default + bounds from
   // docs-config.ts, shared with the server (settings.ts).
   const [docsAgents, setDocsAgentsState] = useState<number>(DEFAULT_DOCS_AGENTS);
+  const [openBrowser, setOpenBrowserState] = useState<boolean>(DEFAULT_OPEN_BROWSER);
 
-  // These three controls are write-only (nothing in the app renders from them),
+  // These controls are write-only (nothing in the app renders from them),
   // so SettingsMenu owns their load + persist directly. Values App renders with
   // come down as props.
   useEffect(() => {
@@ -122,6 +126,9 @@ export function SettingsMenu({
             Math.min(MAX_DOCS_AGENTS, Math.max(MIN_DOCS_AGENTS, settings.docsAgents)),
           );
         }
+        if (typeof settings.openBrowser === "boolean") {
+          setOpenBrowserState(settings.openBrowser);
+        }
       } catch {}
     })();
   }, []);
@@ -140,6 +147,10 @@ export function SettingsMenu({
     const clamped = Math.min(MAX_DOCS_AGENTS, Math.max(MIN_DOCS_AGENTS, next));
     setDocsAgentsState(clamped);
     api.setSettings({ docsAgents: clamped }).catch(() => {});
+  };
+  const setOpenBrowser = (next: boolean) => {
+    setOpenBrowserState(next);
+    api.setSettings({ openBrowser: next }).catch(() => {});
   };
 
   return (
@@ -168,6 +179,43 @@ export function SettingsMenu({
           )}
           Refresh
         </DropdownMenuItem>
+        <DropdownMenuLabel>Open web UI in browser</DropdownMenuLabel>
+        <div className="px-2 py-1">
+          <p className="mb-1.5 text-xs text-muted-foreground">
+            When you run <span className="font-mono">staff serve</span>, open this
+            web UI in your browser automatically.
+          </p>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={openBrowser ? "open" : "manual"}
+            onValueChange={(v) => {
+              if (v) setOpenBrowser(v === "open");
+            }}
+            aria-label="Open web UI in browser on launch"
+            className="w-full"
+          >
+            <ToggleGroupItem
+              value="open"
+              className="flex-1"
+              data-testid="open-browser-auto"
+              title="Open the web UI in your browser automatically when the server starts"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open automatically
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="manual"
+              className="flex-1"
+              data-testid="open-browser-manual"
+              title="Don't open a browser; print the URL and let me open it myself"
+            >
+              <MousePointer2 className="h-3.5 w-3.5" />
+              I'll open it
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
         <DropdownMenuLabel>View mode</DropdownMenuLabel>
         <div className="px-2 py-1">
           <ToggleGroup

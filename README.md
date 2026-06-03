@@ -101,6 +101,7 @@ staff main..WT              # current main → uncommitted working tree
 staff abc1234..HEAD         # a specific commit → HEAD
 staff main..STAGED          # main → what you’ve git‑added
 staff                       # just open the UI on the active diff
+staff --port 4400           # serve the UI on a specific port
 ```
 
 **The web UI** is a GitHub‑style review:
@@ -148,17 +149,19 @@ They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune
 ## CLI reference
 
 ```text
-staff [serve] [<slug>]                 Open the web UI (default). <slug> like main..WT.
+staff [serve] [<slug>] [--port <n>] [--open] [--no-open] [--repo <dir>]
+                                       Open the web UI (default). <slug> like main..WT.
 staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
 staff files [--json]                   List the file‑level changes for a diff.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
+staff settings set openBrowser false   Stop opening the browser automatically.
 staff install                          Write the skills + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, browser auto-open, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
 
 ---
 

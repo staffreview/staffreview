@@ -15,6 +15,7 @@ export type GlobalSettings = {
   syntaxThemeLight?: string;
   syntaxThemeDark?: string;
   filesExpandedByDefault?: boolean;
+  openBrowser?: boolean;
   loopMaxRounds?: number;
   reviewAgents?: number;
   docsAgents?: number;

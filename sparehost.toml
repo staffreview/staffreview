@@ -16,3 +16,9 @@ command = "claude --permission-mode auto --effort xhigh --name ${SPAREHOST_WORKT
 [[services]]
 name = "Shell"
 command = "''"
+
+[[services]]
+name = "Staff Review"
+command = "staff '--base main'"
+dynamic_port = 1
+local_domain = "staff.sr"

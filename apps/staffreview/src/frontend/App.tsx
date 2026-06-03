@@ -558,7 +558,9 @@ export function App() {
             "lg:min-h-0",
             // pr-2.5 keeps the thread list off its own scrollbar (matches the
             // diff pane's right padding).
-            sidebarOpen ? "space-y-5 lg:overflow-y-auto lg:pr-2.5" : "flex flex-col items-end gap-2",
+            sidebarOpen
+              ? "space-y-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2.5"
+              : "flex flex-col items-end gap-2",
           )}
         >
           {sidebarOpen

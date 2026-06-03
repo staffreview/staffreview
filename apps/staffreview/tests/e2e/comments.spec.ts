@@ -168,3 +168,28 @@ test("an open (unresolved) thread can be collapsed and expanded via its chevron"
   await expect(page.getByText("Body to collapse.")).toBeVisible();
   await expect(page.getByTestId("thread-resolve")).toBeVisible();
 });
+
+test("long inline-code paths wrap inside the comment card", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+
+  const diff = await readActiveDiff();
+  const longPath =
+    "packages/web/src/server/graphql/types/InvestAccountWithAnExtremelyLongGeneratedTypeName.ts";
+  await page.request.post("/api/comment", {
+    data: {
+      slug: diff.slug,
+      body: `\`${longPath}\` should stay inside the card.`,
+    },
+  });
+  await page.reload();
+
+  const body = page.locator(".staff-md").filter({ hasText: longPath }).first();
+  await expect(body).toBeVisible();
+  const card = body.locator("xpath=ancestor::*[@data-thread-card='true'][1]");
+  const widths = await card.evaluate((el) => ({
+    clientWidth: el.clientWidth,
+    scrollWidth: el.scrollWidth,
+  }));
+  expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth + 1);
+});

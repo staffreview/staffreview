@@ -162,6 +162,9 @@
 .staff-md {
   font-size: var(--staff-diff-font-size, 14px);
   line-height: 1.6;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 .staff-md > :first-child { margin-top: 0; }
 .staff-md > :last-child { margin-bottom: 0; }
@@ -187,6 +190,9 @@
   background: var(--color-muted);
   padding: 0.1em 0.35em;
   border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .staff-md pre {
   background: var(--color-muted);
@@ -201,6 +207,9 @@
   padding: 0;
   font-size: 0.85em;
   line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .staff-md blockquote {
   border-left: 3px solid var(--color-border);

@@ -5,6 +5,31 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.1.2 — 2026-06-03
+
+### Added
+- **Syntax highlighting now uses Shiki's full bundled language registry.** Staff
+  Review no longer limits highlighting to a hand-picked subset of languages; it
+  resolves Shiki language ids and aliases on demand, so uncommon source files are
+  much more likely to highlight correctly.
+- **Every bundled Shiki theme is available in settings.** Light and dark syntax
+  theme menus now come from Shiki's own theme metadata instead of a curated list.
+
+### Fixed
+- **Proxied Staff Review pages load their split frontend assets.** The binary
+  release now embeds the generated CSS, JS, logo, and Shiki split chunks, and the
+  server serves them by path so hostnames such as `staff.sr.sparehost` no longer
+  load the page shell while 404ing or 502ing the chunks.
+- **Backticked paths stay inside comment cards.** Long inline-code filenames in
+  review comments now wrap within the card instead of widening the sidebar and
+  creating a horizontal scrollbar.
+- **Dev HTML responses no longer emit duplicate `Content-Length` headers.** The
+  development server now serves Bun's HTML bundle as a direct route entry.
+
+### Changed
+- The README and CLI reference now document `staff serve --port <n>` alongside
+  the related browser-opening flags.
+
 ## 1.1.1 — 2026-06-02
 
 ### Fixed

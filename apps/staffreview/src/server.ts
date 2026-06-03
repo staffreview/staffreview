@@ -1,7 +1,9 @@
 import type { ServerWebSocket } from "bun";
+import { Buffer } from "node:buffer";
 import { watch } from "node:fs";
 import { join } from "node:path";
-import indexHtml from "./index.html";
+import logoPngPath from "./frontend/logo.png";
+import { frontendAssets, frontendHtml } from "./generated/frontend-assets.ts";
 import { userInfo } from "node:os";
 import * as git from "./git.ts";
 import * as store from "./store.ts";
@@ -54,6 +56,41 @@ type WSData = { id: string };
 
 const sockets = new Set<ServerWebSocket<WSData>>();
 
+type FrontendAssets = {
+  css?: string;
+  js?: string;
+};
+
+function frontendChunkKind(pathname: string): keyof FrontendAssets | null {
+  const name = pathname.split("/").pop() ?? "";
+  const match = /^chunk-[a-z0-9-]+\.(css|js)$/i.exec(name);
+  if (!match) return null;
+  return match[1] as keyof FrontendAssets;
+}
+
+function isFrontendLogoPath(pathname: string): boolean {
+  const name = pathname.split("/").pop() ?? "";
+  return pathname === "/frontend/logo.png" || /^logo-[a-z0-9-]+\.png$/i.test(name);
+}
+
+function parseFrontendAssets(html: string): FrontendAssets {
+  const resolvePath = (raw: string): string => new URL(raw, "http://staff.local/").pathname;
+  const css = html.match(/<link\b[^>]*\bhref=["']([^"']+\.css)["']/)?.[1];
+  const js = html.match(/<script\b[^>]*\bsrc=["']([^"']+\.js)["']/)?.[1];
+  return {
+    css: css ? resolvePath(css) : undefined,
+    js: js ? resolvePath(js) : undefined,
+  };
+}
+
+function generatedFrontendResponse(pathname: string): Response | null {
+  const asset = frontendAssets[pathname];
+  if (!asset) return null;
+  return new Response(Buffer.from(asset.body, "base64"), {
+    headers: { "content-type": asset.type },
+  });
+}
+
 function broadcast(msg: unknown) {
   const payload = JSON.stringify(msg);
   for (const ws of sockets) {
@@ -89,6 +126,11 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   // reads (Bun.file(join(cwd, path))) must resolve from the same anchor.
   const cwd = await git.gitRoot(initialCwd);
   await store.ensureDirs(cwd);
+  // One-shot startup sweep of orphaned `*.tmp` left by crashed writes. Done
+  // here (before the server accepts requests) rather than on the hot save path
+  // so it can never unlink a concurrent in-flight save's temp — see
+  // store.sweepStaleTmp.
+  await store.sweepStaleTmp(cwd);
 
   const defaultAuthor = await detectDefaultAuthor(cwd);
 
@@ -190,6 +232,22 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   }
 
   const isDev = process.env.STAFF_BUILD !== "binary";
+  const devIndexHtml = isDev ? (await import("./index.html")).default : null;
+  const rootRoute = isDev
+    ? devIndexHtml
+    : async () => new Response(frontendHtml, { headers: { "content-type": "text/html" } });
+  let serverUrl: URL | null = null;
+  let cachedFrontendAssets: Promise<FrontendAssets> | null = null;
+  const currentFrontendAssets = async (): Promise<FrontendAssets> => {
+    if (!serverUrl) return {};
+    const load = () => fetch(new URL("/", serverUrl!))
+      .then((res) => res.text())
+      .then(parseFrontendAssets)
+      .catch(() => ({}));
+    if (isDev) return load();
+    cachedFrontendAssets ??= load();
+    return cachedFrontendAssets;
+  };
   const makeServer = (port: number) => Bun.serve<WSData, {}>({
     port,
     // Bind the port *exclusively*. Otherwise a second `staff` (e.g. for another
@@ -200,7 +258,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
     reusePort: false,
     development: isDev ? { hmr: true, console: true } : false,
     routes: {
-      "/": indexHtml,
+      "/": rootRoute as any,
 
       "/api/info": async () => {
         const branch = await git.currentBranch(cwd);
@@ -288,7 +346,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
 
       "/api/settings": {
         GET: async () => {
-          const s = await settings.readSettings();
+          const s = settings.settingsWithDefaults(await settings.readSettings());
           return json({ settings: s });
         },
         POST: async (req) => {
@@ -411,6 +469,25 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
       },
     },
 
+    fetch: async (req) => {
+      const url = new URL(req.url);
+      if (!isDev) {
+        const asset = generatedFrontendResponse(url.pathname);
+        if (asset) return asset;
+      }
+      if (isFrontendLogoPath(url.pathname)) {
+        return new Response(Bun.file(logoPngPath), { headers: { "content-type": "image/png" } });
+      }
+      const kind = frontendChunkKind(url.pathname);
+      if (kind) {
+        const target = (await currentFrontendAssets())[kind];
+        if (target && target !== url.pathname) {
+          return new Response(null, { status: 302, headers: { Location: target } });
+        }
+      }
+      return new Response(null, { status: 404 });
+    },
+
     websocket: {
       open(ws) {
         sockets.add(ws);
@@ -429,6 +506,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   });
 
   const server = listenOnRange(makeServer, opts.port);
+  serverUrl = server.url;
 
   return server;
 }

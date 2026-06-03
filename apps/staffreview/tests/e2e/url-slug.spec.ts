@@ -39,7 +39,7 @@ test("loading the page with ?diff=<slug> opens that diff", async ({ page }) => {
   // Use a separate context so localStorage doesn't carry over.
   const recipient = await page.context().browser()!.newContext();
   const tab = await recipient.newPage();
-  await tab.goto(`http://localhost:4823/?diff=${encodeURIComponent(fullSlug)}`);
+  await tab.goto(`http://127.0.0.1:4823/?diff=${encodeURIComponent(fullSlug)}`);
   await expect(tab.getByText("math.ts", { exact: true }).first()).toBeVisible();
   await expect(tab.getByTestId("diff-slug-text")).toHaveText(shownSlug);
   await recipient.close();

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diffPath, diffsDir, ensureDirs, loadDiff, saveDiff } from "./store.ts";
+import { diffPath, diffsDir, ensureDirs, loadDiff, saveDiff, sweepStaleTmp } from "./store.ts";
 import type { Diff } from "./types.ts";
 
 // Every helper in store.ts takes an explicit `cwd`, so point them at a
@@ -71,6 +71,45 @@ test("a successful save leaves no *.tmp files in the diffs dir", async () => {
 	const entries = await readdir(diffsDir(tmp));
 	expect(entries).toContain(`${d.slug}.json`);
 	expect(entries.filter((e) => e.endsWith(".tmp"))).toEqual([]);
+});
+
+test("sweepStaleTmp reaps orphaned *.tmp files left by a crash mid-write", async () => {
+	await ensureDirs(tmp);
+	// Simulate temp files orphaned by a process killed between Bun.write(tmp)
+	// and rename — each crash uses a fresh UUID so they accumulate unbounded.
+	await writeFile(join(diffsDir(tmp), "abc123..WT.json.uuid-1.tmp"), "{}");
+	await writeFile(join(diffsDir(tmp), "def456..WT.json.uuid-2.tmp"), "{}");
+	// The one-shot startup sweep (server boot) clears them.
+	await sweepStaleTmp(tmp);
+	const entries = await readdir(diffsDir(tmp));
+	expect(entries.filter((e) => e.endsWith(".tmp"))).toEqual([]);
+});
+
+test("sweepStaleTmp leaves real *.json diffs untouched while reaping *.tmp", async () => {
+	const d = makeDiff();
+	await saveDiff(d, tmp);
+	await writeFile(join(diffsDir(tmp), `${d.slug}.json.orphan.tmp`), "{}");
+	await sweepStaleTmp(tmp);
+	const entries = await readdir(diffsDir(tmp));
+	expect(entries).toContain(`${d.slug}.json`);
+	expect(entries.filter((e) => e.endsWith(".tmp"))).toEqual([]);
+	// The reaper must not corrupt the surviving diff.
+	expect(await loadDiff(d.slug, tmp)).toEqual(d);
+});
+
+test("saveDiff does NOT reap a concurrent in-flight save's temp file", async () => {
+	// Regression for the hot-path reap: ensureDirs (called at the top of every
+	// saveDiff) must not glob+unlink *.tmp, or it would delete a concurrent
+	// save's just-written temp before that save's own rename, causing ENOENT
+	// and silently losing the write. Simulate the in-flight temp and assert a
+	// second save leaves it intact.
+	const d = makeDiff();
+	await ensureDirs(tmp);
+	const inflight = join(diffsDir(tmp), "other..WT.json.inflight-uuid.tmp");
+	await writeFile(inflight, "{}");
+	await saveDiff(d, tmp);
+	const entries = await readdir(diffsDir(tmp));
+	expect(entries).toContain("other..WT.json.inflight-uuid.tmp");
 });
 
 test("loadDiff throws on a non-empty corrupt file (never silently recreates)", async () => {

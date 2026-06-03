@@ -4,12 +4,14 @@ description: Every staff subcommand at a glance.
 ---
 
 ```text
-staff [serve] [<slug>]                 Open the web UI (default). <slug> like main..WT.
+staff [serve] [<slug>] [--port <n>] [--open] [--no-open] [--repo <dir>]
+                                       Open the web UI (default). <slug> like main..WT.
 staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
 staff files [--json]                   List the file-level changes for a diff.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
+staff settings set openBrowser false   Stop opening the browser automatically.
 staff install                          Write the skills + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
@@ -18,6 +20,9 @@ staff --help                           Full usage.
 
 ```bash
 staff main..WT                         # open the UI on main → working tree
+staff main..WT --port 4400             # serve the UI on a specific port
+staff main..WT --no-open               # start the server and print the URL only
+staff --open                           # override openBrowser=false for one run
 staff diff main..WT --json             # create/load the diff, print its JSON
 staff diff --base HEAD --head working-tree --json
 staff active --json                    # the currently active diff
@@ -62,7 +67,11 @@ top-level comments.
 ```bash
 staff settings get loopMaxRounds       # /staff-loop round cap (default 5)
 staff settings get reviewAgents        # /staff-review agent fan-out (default 2)
+staff settings get docsAgents          # /staff-docs scout fan-out (default 5)
+staff settings get openBrowser         # browser auto-open preference
+staff settings set openBrowser false   # make --no-open the default
 ```
 
-Settings (theme, split/unified, font size, syntax theme, review-loop cap, and
-the review agent count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, browser auto-open,
+review-loop cap, the review agent count, and the docs scout count) live in the
+gear menu and persist globally.

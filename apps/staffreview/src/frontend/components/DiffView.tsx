@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import type { Highlighter } from "shiki";
 import {
   Binary,
   Check,
@@ -19,12 +18,63 @@ import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
 import { cn } from "../lib/utils.ts";
-import { getHighlighter, langForPath, shikiThemeFor, tokenizeLine } from "../lib/highlight.ts";
+import {
+  ensureShikiLanguage,
+  ensureShikiTheme,
+  getHighlighter,
+  langForPath,
+  shikiThemeFor,
+  tokenizeLine,
+  type StaffHighlighter,
+} from "../lib/highlight.ts";
 
 function statusIcon(s: FileDiff["status"]) {
   if (s === "added") return <FilePlus2 className="h-4 w-4 text-success" />;
   if (s === "deleted") return <FileMinus2 className="h-4 w-4 text-destructive" />;
   return <FileCode2 className="h-4 w-4 text-muted-foreground" />;
+}
+
+/**
+ * Escape text destined for an HTML body via `dangerouslySetInnerHTML` so file
+ * contents can't inject markup. Entities are character-counted by
+ * react-diff-viewer-continued's `applyDiffToHighlightedHtml`, which decodes
+ * `&lt; &gt; &amp; &quot; &#39; &#x27; &nbsp;` back to single characters when
+ * overlaying word-diff ranges — so this set must stay in sync with that decoder.
+ *
+ * Subtlety (the reason for the `<wbr>` below): the library's `decodeEntities`
+ * runs its replacements *sequentially* and decodes `&amp;`→`&` **before**
+ * `&quot;`/`&#39;`/`&#x27;`/`&nbsp;`. So a source line that literally contains one
+ * of those entity strings (common in HTML/XML — e.g. `&nbsp;`, `&#39;`) escapes
+ * to `&amp;nbsp;` / `&amp;#39;`, and the decoder then *re-forms* the entity
+ * (`&amp;`→`&`, then `&nbsp;`→space): the decoded length undercounts the raw
+ * length by 4–5 chars and the word-diff `<ins>`/`<del>` overlay drifts for the
+ * rest of a CHANGED line. `&amp;lt;`/`&amp;gt;` are safe because `&lt;`/`&gt;`
+ * are decoded *before* `&amp;`, so the body is already consumed.
+ *
+ * Fix: after escaping, drop a zero-width `<wbr>` between any `&amp;` and a
+ * following re-formable body. `applyDiffToHighlightedHtml` splits HTML into
+ * tag/text segments and decodes each text segment independently, so the `<wbr>`
+ * tag boundary keeps the decoded `&` and the body in separate segments — they
+ * can no longer re-combine, and per-segment decoded length matches raw length.
+ * `<wbr>` is a zero-width void element, so the rendered output is unchanged.
+ */
+// Bodies the library's `decodeEntities` decodes *after* `&amp;` — these are the
+// ones that re-form once `&amp;`→`&` exposes a leading `&`.
+const REFORMABLE_ENTITY_BODY = /&amp;(?=#39;|#x27;|quot;|nbsp;)/g;
+
+export function escapeHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  return escaped.replace(REFORMABLE_ENTITY_BODY, "&amp;<wbr>");
+}
+
+/** Escape a value placed inside a double-quoted HTML attribute. */
+export function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
 /**
@@ -403,17 +453,23 @@ export function DiffFile({
   // version counter triggers re-renders so the portals pick up changes.
   const hostsRef = useRef<Map<string, HTMLElement>>(new Map());
   const [, bumpHostsVersion] = useReducer((n: number) => n + 1, 0);
-  const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
+  const [highlighter, setHighlighter] = useState<StaffHighlighter | null>(null);
+  const lang = useMemo(() => langForPath(file.path), [file.path]);
   useEffect(() => {
     let cancelled = false;
-    getHighlighter().then((h) => {
+    setHighlighter(null);
+    (async () => {
+      const h = await getHighlighter();
+      await ensureShikiTheme(syntaxTheme);
+      if (lang !== "text") await ensureShikiLanguage(lang);
       if (!cancelled) setHighlighter(h);
+    })().catch(() => {
+      if (!cancelled) setHighlighter(null);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
-  const lang = useMemo(() => langForPath(file.path), [file.path]);
+  }, [lang, syntaxTheme]);
 
   const closeComposer = (target: ComposingTarget) => {
     setComposingLines((prev) =>
@@ -424,18 +480,29 @@ export function DiffFile({
   const renderContent = useMemo(() => {
     if (!highlighter || lang === "text") return undefined;
     return (source: string) => {
-      // `source` is the text of a line (or a word-diff chunk). Shiki
-      // tokenizes it as a single line; multi-line constructs (block
-      // comments / template literals) lose continuity but for line-by-
-      // line diff this is the accepted trade-off.
-      const tokens = tokenizeLine(highlighter, source, lang, syntaxTheme as any);
-      return (
-        <span>
-          {tokens.map((t, i) => (
-            <span key={i} style={t.color ? { color: t.color } : undefined}>{t.content}</span>
-          ))}
-        </span>
-      );
+      // `source` is the text of a line (or a word-diff chunk). Tokenizing
+      // line-by-line keeps the diff renderer fast and avoids huge highlighter
+      // bundles in the browser startup chunk.
+      //
+      // We emit the tokens as an HTML string via `dangerouslySetInnerHTML`
+      // rather than nested React elements. react-diff-viewer-continued's
+      // CHANGED-line path (`renderWordDiff`) only keeps the renderer's output
+      // if it exposes `props.dangerouslySetInnerHTML.__html` — it then overlays
+      // the word-diff `<ins>/<del>` wrappers onto that highlighted HTML
+      // (`applyDiffToHighlightedHtml`). Element output is silently discarded,
+      // leaving changed lines unhighlighted. The library decodes HTML entities
+      // when counting characters against the diff ranges, so we must escape
+      // token text (which also prevents file contents from injecting markup).
+      const tokens = tokenizeLine(highlighter, source, lang, syntaxTheme);
+      const html = tokens
+        .map((t) => {
+          const text = escapeHtml(t.content);
+          return t.color
+            ? `<span style="color:${escapeHtmlAttr(t.color)}">${text}</span>`
+            : text;
+        })
+        .join("");
+      return <span dangerouslySetInnerHTML={{ __html: html }} />;
     };
   }, [highlighter, lang, syntaxTheme]);
 

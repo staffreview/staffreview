@@ -22,6 +22,9 @@ import {
   MAX_DOCS_AGENTS,
 } from "./docs-config.ts";
 export { DEFAULT_DOCS_AGENTS, MIN_DOCS_AGENTS, MAX_DOCS_AGENTS };
+import { DEFAULT_OPEN_BROWSER } from "./open-browser-config.ts";
+export { DEFAULT_OPEN_BROWSER };
+import { parseBooleanSetting } from "./boolean-setting.ts";
 
 export type ColorScheme = "system" | "light" | "dark";
 
@@ -38,6 +41,8 @@ export type GlobalSettings = {
   /** Whether file diffs start expanded (default true). Per-file toggles
    * in the UI override this. */
   filesExpandedByDefault?: boolean;
+  /** Whether `staff serve` opens the browser automatically. */
+  openBrowser?: boolean;
   /** Hard cap on review→resolve rounds for the `/staff-loop` skill.
    * Defaults to {@link DEFAULT_LOOP_ROUNDS} when unset. */
   loopMaxRounds?: number;
@@ -70,6 +75,16 @@ export async function readSettings(): Promise<GlobalSettings> {
   }
 }
 
+export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
+  return {
+    openBrowser: DEFAULT_OPEN_BROWSER,
+    loopMaxRounds: DEFAULT_LOOP_ROUNDS,
+    reviewAgents: DEFAULT_REVIEW_AGENTS,
+    docsAgents: DEFAULT_DOCS_AGENTS,
+    ...settings,
+  };
+}
+
 export async function writeSettings(partial: GlobalSettings): Promise<GlobalSettings> {
   const current = await readSettings();
   const next = { ...current, ...partial };
@@ -95,6 +110,22 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       MAX_DOCS_AGENTS,
       Math.max(MIN_DOCS_AGENTS, Math.round(next.docsAgents)),
     );
+  }
+  // Coerce `openBrowser` to a real boolean regardless of caller (the server's
+  // `POST /api/settings` casts the request body straight to `GlobalSettings`),
+  // so a stray `{"openBrowser":"yes"}` or `{"openBrowser":1}` is normalized
+  // rather than persisted verbatim and silently un-honored by readers.
+  // Route through the shared `parseBooleanSetting` (the same parser the CLI
+  // `set` path uses) so server and CLI agree on the stringy spellings — most
+  // importantly `"false"`/`"no"`/`"off"`/`"0"`, which `Boolean(...)` would
+  // wrongly flip to `true`. Fall back to the default on an unrecognized value
+  // (normalize-over-reject) so a crafted request can't crash the server.
+  if ("openBrowser" in next && typeof next.openBrowser !== "boolean") {
+    try {
+      next.openBrowser = parseBooleanSetting(String(next.openBrowser), "openBrowser");
+    } catch {
+      next.openBrowser = DEFAULT_OPEN_BROWSER;
+    }
   }
   await mkdir(settingsDir(), { recursive: true });
   await Bun.write(settingsPath(), JSON.stringify(next, null, 2));

@@ -6,6 +6,8 @@ import { resolvePort, PORT_RANGE_START } from "./port.ts";
 import * as store from "./store.ts";
 import * as git from "./git.ts";
 import * as settings from "./settings.ts";
+import { parseBooleanSetting } from "./boolean-setting.ts";
+import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
 import { COMMENT_PRIORITIES, type CommentPriority, type DiffTarget, type ResolutionStatus } from "./types.ts";
 
 import skillReview from "../skills/staff-review.md" with { type: "text" };
@@ -30,7 +32,17 @@ const SKILLS: Record<string, string> = {
   "staff-docs-scout": skillDocsScout,
 };
 
-const VERSION = "1.1.1";
+const VERSION = "1.1.2";
+const BOOLEAN_FLAGS = new Set([
+  "help",
+  "h",
+  "json",
+  "no-open",
+  "no-set-active",
+  "open",
+  "version",
+  "v",
+]);
 
 function parseArgs(argv: string[]): {
   flags: Record<string, string | boolean>;
@@ -42,14 +54,17 @@ function parseArgs(argv: string[]): {
     const a = argv[i]!;
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
+      const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
       if (eq !== -1) {
-        flags[a.slice(2, eq)] = a.slice(eq + 1);
+        flags[name] = a.slice(eq + 1);
+      } else if (BOOLEAN_FLAGS.has(name)) {
+        flags[name] = true;
       } else {
         const next = argv[i + 1];
         if (next === undefined || next.startsWith("--")) {
-          flags[a.slice(2)] = true;
+          flags[name] = true;
         } else {
-          flags[a.slice(2)] = next;
+          flags[name] = next;
           i++;
         }
       }
@@ -60,6 +75,10 @@ function parseArgs(argv: string[]): {
     }
   }
   return { flags, positional };
+}
+
+function booleanFlag(value: string | boolean | undefined): boolean {
+  return value === true || value === "true" || value === "1" || value === "yes" || value === "on";
 }
 
 function parseTarget(spec: string | undefined): DiffTarget {
@@ -86,6 +105,7 @@ USAGE
                                  that diff, creating it from the slug if needed.
     --port <n>                   Port (default: $PORT, else the first free
                                  port at or above ${PORT_RANGE_START}).
+    --open                       Open a browser even if openBrowser is false.
     --no-open                    Don't open a browser.
     --repo <dir>                 Repository to review (default: current directory).
 
@@ -118,7 +138,11 @@ USAGE
   staff settings get <key>      Print one setting's value: loopMaxRounds (the
                                  /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}), reviewAgents
                                  (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
-                                 (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}).
+                                 (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}), or
+                                 openBrowser (whether serve opens a browser,
+                                 default ${settings.DEFAULT_OPEN_BROWSER}).
+  staff settings set openBrowser <true|false>
+                                 Persist whether serve opens a browser.
 
   staff install                 Set up the repo: write the nine /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
@@ -235,7 +259,17 @@ async function main(argv: string[]) {
       // re-evaluate on every source change; this sentinel survives across
       // hot reloads so we don't keep popping new tabs.
       const g = globalThis as { __staffBrowserOpened?: boolean };
-      if (!flags["no-open"] && !g.__staffBrowserOpened) {
+      const globalSettings = await settings.readSettings();
+      const openBrowserSetting =
+        typeof globalSettings.openBrowser === "boolean"
+          ? globalSettings.openBrowser
+          : settings.DEFAULT_OPEN_BROWSER;
+      const shouldOpenBrowser = decideOpenBrowser({
+        noOpen: booleanFlag(flags["no-open"]),
+        open: booleanFlag(flags.open),
+        setting: openBrowserSetting,
+      });
+      if (shouldOpenBrowser && !g.__staffBrowserOpened) {
         openBrowser(url);
         g.__staffBrowserOpened = true;
       }
@@ -513,15 +547,14 @@ async function main(argv: string[]) {
     }
 
     case "settings": {
-      // Settings are global (per-user config dir), not per-repo. Seed the
-      // loop-cap and review-agent defaults so the skills always read concrete
-      // numbers even when the settings file omits them.
-      const resolved: Record<string, unknown> = {
-        loopMaxRounds: settings.DEFAULT_LOOP_ROUNDS,
-        reviewAgents: settings.DEFAULT_REVIEW_AGENTS,
-        docsAgents: settings.DEFAULT_DOCS_AGENTS,
-        ...(await settings.readSettings()),
-      };
+      // Settings are global (per-user config dir), not per-repo. Seed defaults
+      // so skills and CLI callers read concrete values even when unset.
+      // Annotate as a string-indexable record so `resolved[key]` below (key is
+      // an arbitrary CLI argument) type-checks under strict mode — `GlobalSettings`
+      // has no string index signature.
+      const resolved: Record<string, unknown> = settings.settingsWithDefaults(
+        await settings.readSettings(),
+      );
       if (positional[1] === "get") {
         const key = positional[2];
         if (!key) throw new Error("usage: staff settings get <key>");
@@ -531,6 +564,15 @@ async function main(argv: string[]) {
           return;
         }
         console.log(flags.json ? JSON.stringify(value) : String(value));
+        return;
+      }
+      if (positional[1] === "set") {
+        const key = positional[2];
+        if (key !== "openBrowser") throw new Error("usage: staff settings set openBrowser <true|false>");
+        const value = parseBooleanSetting(positional[3], key);
+        await settings.writeSettings({ openBrowser: value });
+        if (flags.json) console.log(JSON.stringify({ [key]: value }, null, 2));
+        else console.log(`${key}: ${value}`);
         return;
       }
       console.log(JSON.stringify(resolved, null, 2));
