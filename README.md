@@ -156,12 +156,13 @@ staff files [--json]                   List the file‑level changes for a diff.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
-staff settings set openBrowser false   Stop opening the browser automatically.
+staff settings set <openBrowser|structuredHighlighting> <true|false>
+                                       Persist browser auto-open / intra-line word-diff highlighting.
 staff install                          Write the skills + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, browser auto-open, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, browser auto-open, intra-line word-diff highlighting, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
 
 ---
 

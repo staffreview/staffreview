@@ -14,6 +14,7 @@ export type GlobalSettings = {
   theme?: ColorScheme;
   syntaxThemeLight?: string;
   syntaxThemeDark?: string;
+  structuredHighlighting?: boolean;
   filesExpandedByDefault?: boolean;
   openBrowser?: boolean;
   loopMaxRounds?: number;

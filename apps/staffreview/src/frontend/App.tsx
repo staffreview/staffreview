@@ -69,6 +69,7 @@ export function App() {
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">("light");
   const [syntaxThemeLight, setSyntaxThemeLightState] = useState<string>("catppuccin-latte");
   const [syntaxThemeDark, setSyntaxThemeDarkState] = useState<string>("catppuccin-mocha");
+  const [structuredHighlighting, setStructuredHighlightingState] = useState(false);
   // Collapsed by default (showDiffOnly): only the changed hunks show,
   // with react-diff-viewer's expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
@@ -92,6 +93,9 @@ export function App() {
           settings.theme === "dark"
         ) {
           setThemeState(settings.theme);
+        }
+        if (typeof settings.structuredHighlighting === "boolean") {
+          setStructuredHighlightingState(settings.structuredHighlighting);
         }
         if (typeof settings.syntaxThemeLight === "string") {
           setSyntaxThemeLightState(settings.syntaxThemeLight);
@@ -123,6 +127,10 @@ export function App() {
   const setFilesExpandedByDefault = useCallback((next: boolean) => {
     setFilesExpandedByDefaultState(next);
     api.setSettings({ filesExpandedByDefault: next }).catch(() => {});
+  }, []);
+  const setStructuredHighlighting = useCallback((next: boolean) => {
+    setStructuredHighlightingState(next);
+    api.setSettings({ structuredHighlighting: next }).catch(() => {});
   }, []);
   const setSyntaxTheme = useCallback(
     async (mode: "light" | "dark", name: string) => {
@@ -503,6 +511,8 @@ export function App() {
             effectiveTheme={effectiveTheme}
             syntaxThemeLight={syntaxThemeLight}
             syntaxThemeDark={syntaxThemeDark}
+            structuredHighlighting={structuredHighlighting}
+            onStructuredHighlightingChange={setStructuredHighlighting}
             onSyntaxThemeChange={setSyntaxTheme}
           />
         </div>
@@ -543,6 +553,7 @@ export function App() {
               splitView={splitView}
               themeMode={effectiveTheme}
               syntaxTheme={effectiveTheme === "dark" ? syntaxThemeDark : syntaxThemeLight}
+              structuredHighlighting={structuredHighlighting}
               expandedByDefault={filesExpandedByDefault}
               onChange={refreshDiffOnly}
             />

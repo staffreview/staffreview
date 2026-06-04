@@ -138,11 +138,14 @@ USAGE
   staff settings get <key>      Print one setting's value: loopMaxRounds (the
                                  /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}), reviewAgents
                                  (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
-                                 (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}), or
+                                 (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}),
                                  openBrowser (whether serve opens a browser,
-                                 default ${settings.DEFAULT_OPEN_BROWSER}).
-  staff settings set openBrowser <true|false>
-                                 Persist whether serve opens a browser.
+                                 default ${settings.DEFAULT_OPEN_BROWSER}), or structuredHighlighting
+                                 (intra-line word-diff highlighting,
+                                 default ${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}).
+  staff settings set <openBrowser|structuredHighlighting> <true|false>
+                                 Persist whether serve opens a browser / shows
+                                 intra-line word-diff highlighting.
 
   staff install                 Set up the repo: write the nine /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
@@ -568,9 +571,17 @@ async function main(argv: string[]) {
       }
       if (positional[1] === "set") {
         const key = positional[2];
-        if (key !== "openBrowser") throw new Error("usage: staff settings set openBrowser <true|false>");
+        if (key !== "openBrowser" && key !== "structuredHighlighting") {
+          throw new Error(
+            "usage: staff settings set <openBrowser|structuredHighlighting> <true|false>",
+          );
+        }
         const value = parseBooleanSetting(positional[3], key);
-        await settings.writeSettings({ openBrowser: value });
+        await settings.writeSettings(
+          key === "openBrowser"
+            ? { openBrowser: value }
+            : { structuredHighlighting: value },
+        );
         if (flags.json) console.log(JSON.stringify({ [key]: value }, null, 2));
         else console.log(`${key}: ${value}`);
         return;

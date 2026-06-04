@@ -485,6 +485,7 @@ export function DiffFile({
   splitView,
   themeMode,
   syntaxTheme,
+  structuredHighlighting,
   expandedByDefault,
   autoCollapsed,
   onChange,
@@ -495,6 +496,7 @@ export function DiffFile({
   splitView: boolean;
   themeMode: "light" | "dark";
   syntaxTheme: string;
+  structuredHighlighting: boolean;
   expandedByDefault: boolean;
   autoCollapsed: boolean;
   onChange?: () => void;
@@ -768,7 +770,12 @@ export function DiffFile({
     return () => {
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [collapsed, inlineLines, composingLines, splitView, file.oldContent, file.newContent]);
+    // `structuredHighlighting` is in the deps because toggling it flips
+    // `disableWordDiff` on <ReactDiffViewer>, whose componentDidUpdate
+    // re-renders all diff <tr> rows and detaches our injected comment-host
+    // <tr>s. Re-running this effect restarts the repair loop so the inline
+    // comment portals get re-anchored instead of pointing at detached <td>s.
+  }, [collapsed, inlineLines, composingLines, splitView, structuredHighlighting, file.oldContent, file.newContent]);
 
   // Track the currently anchored range — driven by the URL hash. Browser
   // navigation fires `hashchange`; our own `setLineHash` helper
@@ -1208,6 +1215,7 @@ export function DiffFile({
             newValue={file.newContent}
             splitView={splitView}
             compareMethod={DiffMethod.WORDS}
+            disableWordDiff={!structuredHighlighting}
             useDarkTheme={themeMode === "dark"}
             // When files aren't "expanded by default", fold unchanged
             // regions to just the changed hunks (+3 context lines). Commented
@@ -1320,6 +1328,7 @@ export function DiffView({
   splitView,
   themeMode,
   syntaxTheme,
+  structuredHighlighting = false,
   expandedByDefault = true,
   onChange,
 }: {
@@ -1329,6 +1338,7 @@ export function DiffView({
   splitView: boolean;
   themeMode: "light" | "dark";
   syntaxTheme?: string;
+  structuredHighlighting?: boolean;
   expandedByDefault?: boolean;
   onChange?: () => void;
 }) {
@@ -1372,6 +1382,7 @@ export function DiffView({
           splitView={splitView}
           themeMode={themeMode}
           syntaxTheme={resolvedSyntaxTheme}
+          structuredHighlighting={structuredHighlighting}
           expandedByDefault={expandedByDefault}
           autoCollapsed={autoCollapsed.has(f.path)}
           onChange={onChange}
