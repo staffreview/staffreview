@@ -19,6 +19,8 @@ command = "''"
 
 [[services]]
 name = "Staff Review"
-command = "staff '--base main'"
-dynamic_port = 1
-local_domain = "staff.sr"
+command = "bun dev --base main"
+local_domains = [
+  "staff.sr",
+]
+working_dir = "apps/staffreview"
