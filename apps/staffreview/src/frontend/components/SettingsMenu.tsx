@@ -72,6 +72,8 @@ export interface SettingsMenuProps {
   effectiveTheme: "light" | "dark";
   syntaxThemeLight: string;
   syntaxThemeDark: string;
+  structuredHighlighting: boolean;
+  onStructuredHighlightingChange: (next: boolean) => void;
   onSyntaxThemeChange: (mode: "light" | "dark", name: string) => void;
 }
 
@@ -89,6 +91,8 @@ export function SettingsMenu({
   effectiveTheme,
   syntaxThemeLight,
   syntaxThemeDark,
+  structuredHighlighting,
+  onStructuredHighlightingChange,
   onSyntaxThemeChange,
 }: SettingsMenuProps) {
   const [syntaxPickerOpen, setSyntaxPickerOpen] = useState(false);
@@ -325,6 +329,37 @@ export function SettingsMenu({
             <ToggleGroupItem value="dark" className="flex-1" data-testid="theme-dark">
               <Moon className="h-3.5 w-3.5" />
               Dark
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <DropdownMenuLabel>Structured highlighting</DropdownMenuLabel>
+        <div className="px-2 py-1">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={structuredHighlighting ? "on" : "off"}
+            onValueChange={(v) => {
+              if (v) onStructuredHighlightingChange(v === "on");
+            }}
+            aria-label="Structured highlighting"
+            className="w-full"
+          >
+            <ToggleGroupItem
+              value="on"
+              className="flex-1"
+              data-testid="structured-highlighting-on"
+            >
+              <Check className="h-3.5 w-3.5" />
+              On
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="off"
+              className="flex-1"
+              data-testid="structured-highlighting-off"
+            >
+              <Minus className="h-3.5 w-3.5" />
+              Off
             </ToggleGroupItem>
           </ToggleGroup>
         </div>

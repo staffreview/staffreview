@@ -7,6 +7,7 @@ import {
 	DEFAULT_LOOP_ROUNDS,
 	DEFAULT_OPEN_BROWSER,
 	DEFAULT_REVIEW_AGENTS,
+	DEFAULT_STRUCTURED_HIGHLIGHTING,
 	MAX_DOCS_AGENTS,
 	MIN_DOCS_AGENTS,
 	settingsWithDefaults,
@@ -105,11 +106,42 @@ test('writeSettings coerces "no"/"off" openBrowser to false', async () => {
 	).toBe(false);
 });
 
-test("settingsWithDefaults includes openBrowser and agent defaults", () => {
+test("writeSettings coerces a non-boolean structuredHighlighting to a real boolean", async () => {
+	const next = await writeSettings({
+		structuredHighlighting: "on" as unknown as boolean,
+	});
+	expect(next.structuredHighlighting).toBe(true);
+	const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+	expect(onDisk.structuredHighlighting).toBe(true);
+});
+
+test('writeSettings coerces the string "false" structuredHighlighting to false', async () => {
+	// Regression: like openBrowser, a naive `Boolean("false")` is `true` (every
+	// non-empty string is truthy), so a crafted `POST /api/settings` with
+	// `{"structuredHighlighting":"false"}` would flip to `true` — the opposite
+	// of intent. Routing through `parseBooleanSetting` keeps the falsy-string
+	// path correct and the server in agreement with the CLI `set` path.
+	const next = await writeSettings({
+		structuredHighlighting: "false" as unknown as boolean,
+	});
+	expect(next.structuredHighlighting).toBe(false);
+	const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+	expect(onDisk.structuredHighlighting).toBe(false);
+	expect(
+		(
+			await writeSettings({
+				structuredHighlighting: "off" as unknown as boolean,
+			})
+		).structuredHighlighting,
+	).toBe(false);
+});
+
+test("settingsWithDefaults includes openBrowser, highlighting, and agent defaults", () => {
 	expect(settingsWithDefaults({})).toEqual({
 		openBrowser: DEFAULT_OPEN_BROWSER,
 		loopMaxRounds: DEFAULT_LOOP_ROUNDS,
 		reviewAgents: DEFAULT_REVIEW_AGENTS,
 		docsAgents: DEFAULT_DOCS_AGENTS,
+		structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
 	});
 });

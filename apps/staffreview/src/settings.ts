@@ -27,6 +27,7 @@ export { DEFAULT_OPEN_BROWSER };
 import { parseBooleanSetting } from "./boolean-setting.ts";
 
 export type ColorScheme = "system" | "light" | "dark";
+export const DEFAULT_STRUCTURED_HIGHLIGHTING = false;
 
 export type GlobalSettings = {
   splitView?: boolean;
@@ -38,6 +39,9 @@ export type GlobalSettings = {
   syntaxThemeLight?: string;
   /** Shiki syntax-highlighting theme used while the UI is in dark mode. */
   syntaxThemeDark?: string;
+  /** Whether intra-line (word-level) diff highlighting is enabled in rendered
+   * diffs. Independent of Shiki syntax highlighting, which is always on. */
+  structuredHighlighting?: boolean;
   /** Whether file diffs start expanded (default true). Per-file toggles
    * in the UI override this. */
   filesExpandedByDefault?: boolean;
@@ -81,6 +85,7 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
     loopMaxRounds: DEFAULT_LOOP_ROUNDS,
     reviewAgents: DEFAULT_REVIEW_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
+    structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
     ...settings,
   };
 }
@@ -125,6 +130,19 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       next.openBrowser = parseBooleanSetting(String(next.openBrowser), "openBrowser");
     } catch {
       next.openBrowser = DEFAULT_OPEN_BROWSER;
+    }
+  }
+  if (
+    "structuredHighlighting" in next &&
+    typeof next.structuredHighlighting !== "boolean"
+  ) {
+    try {
+      next.structuredHighlighting = parseBooleanSetting(
+        String(next.structuredHighlighting),
+        "structuredHighlighting",
+      );
+    } catch {
+      next.structuredHighlighting = DEFAULT_STRUCTURED_HIGHLIGHTING;
     }
   }
   await mkdir(settingsDir(), { recursive: true });
