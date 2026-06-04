@@ -131,16 +131,27 @@ function makeDiffStyles(mode: "light" | "dark") {
   } as const;
 }
 
-// Per-file collapse *overrides*: a map of path → collapsed?. Only files
-// the user has explicitly toggled appear here; everything else follows
-// the global "files expanded by default" setting. (Previously this was a
-// flat Set of collapsed paths, which couldn't represent "explicitly
-// expanded" when the default is collapsed.)
-const COLLAPSE_OVERRIDES_KEY = "staff:file-collapse-overrides";
+// Per-diff, per-file collapse *overrides*: a map of path → collapsed?. Only
+// files the user has explicitly toggled appear here; everything else follows
+// the current auto-collapse decision. The diff slug is part of the key so a
+// manual expand in one review cannot keep the same path expanded forever.
+const COLLAPSE_OVERRIDES_KEY_PREFIX = "staff:file-collapse-overrides:v2";
+// The pre-slug global key. Orphaned by the v2 migration; removed once.
+export const COLLAPSE_OVERRIDES_V1_KEY = "staff:file-collapse-overrides";
+// localStorage has a ~5MB origin cap and we never delete a slug's entry, so a
+// long-lived install reviewing many diffs would otherwise grow without bound
+// (and a quota-exceeded write is silently swallowed below, dropping *all*
+// persisted state). Cap the number of retained per-slug entries, evicting the
+// least-recently-touched, so growth is bounded.
+export const MAX_COLLAPSE_OVERRIDE_SLUGS = 50;
 
-function loadCollapseOverrides(): Record<string, boolean> {
+export function collapseOverridesKey(slug: string): string {
+  return `${COLLAPSE_OVERRIDES_KEY_PREFIX}:${slug}`;
+}
+
+function loadCollapseOverrides(slug: string): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(COLLAPSE_OVERRIDES_KEY);
+    const raw = localStorage.getItem(collapseOverridesKey(slug));
     if (!raw) return {};
     const obj = JSON.parse(raw);
     return obj && typeof obj === "object" ? (obj as Record<string, boolean>) : {};
@@ -149,11 +160,49 @@ function loadCollapseOverrides(): Record<string, boolean> {
   }
 }
 
-function setCollapseOverride(path: string, collapsed: boolean) {
+// Bounded-growth guard, run on each write: drop the orphaned v1 key, then keep
+// only the most-recently-written slugs. Recency is the localStorage key
+// enumeration order, which is insertion order per the Web Storage spec:
+// `setItem` on an *existing* key updates the value in place and does NOT move
+// the key. `setCollapseOverride` therefore `removeItem`s before `setItem` so the
+// slug it touches is genuinely re-appended, making enumeration order a true
+// most-recently-written ordering and the front of `keys` the actual oldest.
+// We additionally always protect `keep` (the slug written this pass) from
+// eviction.
+export function pruneCollapseOverrides(keep: string) {
   try {
-    const map = loadCollapseOverrides();
+    localStorage.removeItem(COLLAPSE_OVERRIDES_V1_KEY);
+    const keepKey = collapseOverridesKey(keep);
+    const prefix = `${COLLAPSE_OVERRIDES_KEY_PREFIX}:`;
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(prefix)) keys.push(k);
+    }
+    if (keys.length <= MAX_COLLAPSE_OVERRIDE_SLUGS) return;
+    // Evict the oldest (front of enumeration order), never the active slug.
+    const evictable = keys.filter((k) => k !== keepKey);
+    const toEvict = evictable.slice(0, keys.length - MAX_COLLAPSE_OVERRIDE_SLUGS);
+    for (const k of toEvict) localStorage.removeItem(k);
+  } catch {}
+}
+
+export function setCollapseOverride(
+  slug: string,
+  path: string,
+  collapsed: boolean,
+) {
+  try {
+    const key = collapseOverridesKey(slug);
+    const map = loadCollapseOverrides(slug);
     map[path] = collapsed;
-    localStorage.setItem(COLLAPSE_OVERRIDES_KEY, JSON.stringify(map));
+    // removeItem before setItem so an existing slug is genuinely re-appended to
+    // localStorage's enumeration order (a bare setItem on an existing key keeps
+    // its original slot). This makes pruneCollapseOverrides' eviction true
+    // most-recently-written, not FIFO-by-first-write.
+    localStorage.removeItem(key);
+    localStorage.setItem(key, JSON.stringify(map));
+    pruneCollapseOverrides(slug);
   } catch {}
 }
 
@@ -161,7 +210,8 @@ function setCollapseOverride(path: string, collapsed: boolean) {
 // A collapsed DiffFile unmounts its react-diff-viewer body, so collapsing the
 // heavy / low-signal files keeps a 100-file diff from mounting 100 syntax
 // highlighters at once. These are *defaults*: an explicit user toggle
-// (override) always wins, and files with comments are never auto-collapsed.
+// (override) always wins, and active unresolved comments only force-open a
+// bounded number of file cards.
 
 // Generated / lock / minified / snapshot files — rarely read line by line.
 const NOISE_FILE =
@@ -173,6 +223,9 @@ export const PER_FILE_COLLAPSE_LINES = 1000;
 export const MAX_AUTO_EXPANDED_FILES = 20;
 // …and at most this many rendered lines — whichever limit is hit first.
 export const MAX_AUTO_EXPANDED_LINES = 6000;
+// Active commented files are higher signal than ordinary files, but the
+// sidebar is the scalable navigation surface once a review has many findings.
+export const MAX_AUTO_EXPANDED_COMMENTED_FILES = 8;
 
 export function fileLineCount(f: FileDiff): number {
   if (f.isBinary || f.isSymlink) return 0; // rendered as a compact row — cheap
@@ -182,33 +235,42 @@ export function fileLineCount(f: FileDiff): number {
 
 /**
  * Decide which files start collapsed. Walks files in display order: binary /
- * symlink rows and commented files are always shown; noise files and oversized
- * files collapse; and once the per-diff file/line budget is spent everything
- * after it collapses too, so a huge diff stays responsive. Returns the set of
- * paths to collapse by default.
+ * symlink rows and a bounded number of active commented files are shown; noise
+ * files and oversized files collapse; and once the per-diff file/line budget is
+ * spent everything after it collapses too, so a huge diff stays responsive.
+ * Returns the set of paths to collapse by default. Active commented files that
+ * stay open still render with unchanged context folded; see `commentLineIds` /
+ * `alwaysShowLines` below.
  *
- * Force-expanded files (binary/symlink, commented) never consume the budget —
- * they render regardless, so charging them against `expandedFiles`/
- * `expandedLines` would only penalize *other* (cheaper, uncollapsed) files.
+ * Force-expanded files (binary/symlink, active commented files under the cap)
+ * never consume the ordinary file/line budget — they render regardless, so
+ * charging them would only penalize other cheaper files.
  *
  * `lineCounts` is an optional precomputed `path → fileLineCount` map. It lets
  * callers hoist the expensive `.split("\n")` walk into a `files`-only memo so
- * the budget decision can be recomputed cheaply when only `commentedPaths`
- * changes (comments arrive far more often than files do).
+ * the budget decision can be recomputed cheaply when only active comments
+ * change (comments arrive far more often than files do).
  */
 export function computeAutoCollapsed(
   files: FileDiff[],
-  commentedPaths: Set<string>,
+  activeCommentedPaths: Set<string>,
   lineCounts?: Map<string, number>,
 ): Set<string> {
   const linesFor = (f: FileDiff) => lineCounts?.get(f.path) ?? fileLineCount(f);
   const collapsed = new Set<string>();
   let expandedFiles = 0;
   let expandedLines = 0;
+  let expandedCommentedFiles = 0;
   for (const f of files) {
     if (f.isBinary || f.isSymlink) continue; // compact + cheap; leave expanded
-    if (commentedPaths.has(f.path)) continue; // always show commented files (budget-exempt)
     const lines = linesFor(f);
+    if (
+      activeCommentedPaths.has(f.path) &&
+      expandedCommentedFiles < MAX_AUTO_EXPANDED_COMMENTED_FILES
+    ) {
+      expandedCommentedFiles++;
+      continue;
+    }
     const overBudget =
       expandedFiles >= MAX_AUTO_EXPANDED_FILES ||
       expandedLines + lines > MAX_AUTO_EXPANDED_LINES;
@@ -230,6 +292,53 @@ function groupCommentsByThread(comments: Comment[]) {
     map.set(c.threadId, list);
   }
   return Array.from(map.values()).map((cs) => cs.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+}
+
+/**
+ * Files that have at least one *active* (unresolved) line/range comment. These
+ * are the higher-signal files `computeAutoCollapsed` will force-open under the
+ * commented-file cap. Resolved roots are excluded on purpose — a resolved
+ * thread shouldn't keep its whole file card expanded — but they're still kept
+ * visible inline by `computeCommentLineIds` (see below).
+ */
+export function computeActiveCommentedPaths(comments: Comment[]): Set<string> {
+  return new Set(
+    comments
+      .filter((c) => !c.parentId && !c.resolution && c.file)
+      .map((c) => c.file as string),
+  );
+}
+
+/**
+ * The line ids (`R<line>` / `L<line>`) react-diff-viewer must keep unfolded so
+ * every comment's anchor row stays rendered even while surrounding context is
+ * folded. Without this a comment on an unchanged line has no host row and its
+ * thread is reachable only from the sidebar (see folded-comment.spec.ts).
+ *
+ * - Side maps to the diff gutter prefix: `new` → `R`, `old` → `L`.
+ * - Range comments emit *two* ids — the start line and the end line — because
+ *   the thread portal is hosted at `endLine` and both endpoints need a rendered
+ *   row (react-diff-viewer's `extraLinesSurroundingDiff` fills the gap between).
+ * - Resolved roots are intentionally INCLUDED here so a resolved comment on an
+ *   unchanged context line still gets an inline host. (They're excluded from
+ *   `computeActiveCommentedPaths` so they don't keep the whole file card open.)
+ *
+ * `threads` is the grouped output of `groupCommentsByThread` (each entry is one
+ * thread's comments, root first or findable via `!parentId`).
+ */
+export function computeCommentLineIds(threads: Comment[][]): string[] {
+  return Array.from(
+    new Set(
+      threads.flatMap((t) => {
+        const root = t.find((c) => !c.parentId);
+        if (!root?.line) return [];
+        const side = root.side === "old" ? "L" : "R";
+        const ids = [`${side}-${root.line}`];
+        if (root.endLine && root.endLine !== root.line) ids.push(`${side}-${root.endLine}`);
+        return ids;
+      }),
+    ),
+  );
 }
 
 /**
@@ -405,12 +514,12 @@ export function DiffFile({
   // "expand unchanged context" setting below. Defaults to expanded; a
   // per-file toggle is remembered as an override.
   const [collapsed, setCollapsed] = useState<boolean>(
-    () => loadCollapseOverrides()[file.path] ?? autoCollapsed,
+    () => loadCollapseOverrides(slug)[file.path] ?? autoCollapsed,
   );
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev;
-      setCollapseOverride(file.path, next);
+      setCollapseOverride(slug, file.path, next);
       return next;
     });
   };
@@ -424,28 +533,28 @@ export function DiffFile({
       if (detail?.path === file.path) {
         setCollapsed((prev) => {
           if (!prev) return prev;
-          setCollapseOverride(file.path, false);
+          setCollapseOverride(slug, file.path, false);
           return false;
         });
       }
     };
     window.addEventListener("staff:expand-file", handler);
     return () => window.removeEventListener("staff:expand-file", handler);
-  }, [file.path]);
+  }, [file.path, slug]);
 
   // `collapsed` is seeded once at mount, but `autoCollapsed` is reactive: a
-  // large/over-budget file that *later* gains a comment flips to
-  // `autoCollapsed=false` (commented files are never auto-collapsed). Without
-  // this, the file would stay collapsed and its inline thread would only be
-  // reachable from the sidebar. Mirror the `staff:expand-file` handler: only
-  // ever force-EXPAND, and only when there's no explicit user override for
-  // this path — never auto-re-collapse (don't fight a manual expand, don't
-  // undo staff:expand-file).
+  // newly-arrived unresolved comment can push a file into the higher-signal set
+  // and should force the card OPEN. This effect is force-EXPAND-only — it never
+  // auto-collapses. Auto-collapsing here would yank a card shut out from under a
+  // user mid-review: e.g. resolving a file's last unresolved comment inline
+  // drops it from `activeCommentedPaths`, flipping `autoCollapsed` to true; or
+  // freeing per-diff budget in file A pushes file B over the cap. Re-collapsing
+  // is left to explicit user action (the chevron), which writes an override.
   useEffect(() => {
     if (autoCollapsed) return; // never auto-collapse, only force-expand
-    if (file.path in loadCollapseOverrides()) return; // explicit user choice wins
+    if (file.path in loadCollapseOverrides(slug)) return; // explicit user choice wins
     setCollapsed((prev) => (prev ? false : prev));
-  }, [autoCollapsed, file.path]);
+  }, [autoCollapsed, file.path, slug]);
 
   const diffRef = useRef<HTMLDivElement>(null);
   // Host <td> elements (one per open composer), keyed by `${side}:${line}`.
@@ -567,9 +676,9 @@ export function DiffFile({
     // Place a host row after every wanted line and tear down stale ones.
     // `findRowForLine` only sees currently-rendered rows. A host can be missing
     // because the row isn't rendered yet (react-diff-viewer renders, and
-    // expands files via `hasLineComments`, across several async frames) OR
-    // because a re-render swapped in fresh <tr> nodes and orphaned a host we
-    // injected. Treat a disconnected host the same as a missing one and
+    // unfolds commented lines via `alwaysShowLines`, across several async
+    // frames) OR because a re-render swapped in fresh <tr> nodes and orphaned a
+    // host we injected. Treat a disconnected host the same as a missing one and
     // recreate it — otherwise the thread's portal points at a detached <td>
     // and the comment shows only in the sidebar. We retry on a frame budget
     // (below) until everything is placed and connected.
@@ -638,8 +747,9 @@ export function DiffFile({
 
     // Re-run on a frame budget so hosts land once the library finishes its
     // async (re)render — and get re-placed if a later render orphans them
-    // (e.g. the expand triggered by hasLineComments swaps the rows out). Once
-    // everything is placed and connected, `placeHosts` is a passive no-op, so
+    // (e.g. the `key={commentLineKey}` remount, or `alwaysShowLines` unfolding
+    // a commented line, swaps the rows out). Once everything is placed and
+    // connected, `placeHosts` is a passive no-op, so
     // this doesn't fight the library's own row rendering the way a live
     // MutationObserver did. ~3s matches scrollToLine's polling budget.
     let raf = 0;
@@ -671,18 +781,13 @@ export function DiffFile({
     { side: "old" | "new"; startLine: number; endLine: number } | null
   >(null);
 
-  // Does this file have any line-anchored comment thread? If so we render it
-  // fully expanded (see `showDiffOnly` below) instead of folding unchanged
-  // context. Folding hides the rows a comment is anchored to, and with them
-  // the inline thread's host row — leaving the comment visible only in the
-  // sidebar, even after the user unfolds by hand. react-diff-viewer's own
-  // `alwaysShowLines` would be the surgical fix, but in this version toggling
-  // it at runtime corrupts the virtualized render (the file goes blank), so we
-  // expand the whole file instead — coarser, but reliable.
-  const hasLineComments = useMemo(
-    () => threads.some((t) => t.find((c) => !c.parentId)?.line != null),
-    [threads],
-  );
+  // Keep line-comment anchors visible even while unchanged context is folded
+  // (resolved roots included — see computeCommentLineIds). For range comments,
+  // reveal the start and end lines; the thread portal is hosted at the end
+  // line, and react-diff-viewer's `extraLinesSurroundingDiff` gives both
+  // endpoints local context without expanding the whole file.
+  const commentLineIds = useMemo(() => computeCommentLineIds(threads), [threads]);
+  const commentLineKey = commentLineIds.join("|");
 
   /**
    * Resolve a click anywhere in a diff row to a (line, side) pair, sharing
@@ -1080,20 +1185,36 @@ export function DiffFile({
           onMouseMove={handleDiffMouseMove}
           onMouseLeave={handleDiffMouseLeave}
         >
+          {/*
+            Keying on `commentLineKey` is required, not cosmetic:
+            react-diff-viewer-continued@4.2.2's componentDidUpdate only
+            recomputes its fold blocks on oldValue/newValue/compareMethod/
+            disableWordDiff/linesOffset changes and IGNORES `alwaysShowLines`.
+            Without a key change a newly commented line would never unfold.
+
+            Tradeoff (accepted): a key change unmounts/remounts the viewer,
+            which resets its internal `expandedBlocks` ([] on mount). So adding
+            or deleting a line comment snaps any folds the user had manually
+            expanded shut and re-runs the diff (a brief flash on large files).
+            Resolving/unresolving does NOT change `commentLineIds` (resolved
+            roots stay in it, see computeCommentLineIds), so it no longer
+            remounts. The real fix is patching the library to react to
+            `alwaysShowLines` in componentDidUpdate; until then this is an
+            intentional remount, not a bug.
+          */}
           <ReactDiffViewer
+            key={commentLineKey}
             oldValue={file.oldContent}
             newValue={file.newContent}
             splitView={splitView}
             compareMethod={DiffMethod.WORDS}
             useDarkTheme={themeMode === "dark"}
             // When files aren't "expanded by default", fold unchanged
-            // regions to just the changed hunks (+3 context lines). That
-            // makes react-diff-viewer's expand/fold-all button in the
-            // summary row functional. Fully-expanded mode shows the whole
-            // file (and the button has nothing to do). We also force-expand
-            // any file that has line comments so none of them are hidden in a
-            // fold (see `hasLineComments`).
-            showDiffOnly={!expandedByDefault && !hasLineComments}
+            // regions to just the changed hunks (+3 context lines). Commented
+            // lines are added to `alwaysShowLines`, so comments reveal local
+            // context without forcing the entire file to mount.
+            showDiffOnly={!expandedByDefault}
+            alwaysShowLines={commentLineIds}
             extraLinesSurroundingDiff={3}
             renderContent={renderContent}
             styles={diffStyles as any}
@@ -1225,14 +1346,13 @@ export function DiffView({
     for (const f of files) map.set(f.path, fileLineCount(f));
     return map;
   }, [files]);
-  const commentedPaths = useMemo(
-    () =>
-      new Set(comments.map((c) => c.file).filter((p): p is string => Boolean(p))),
+  const activeCommentedPaths = useMemo(
+    () => computeActiveCommentedPaths(comments),
     [comments],
   );
   const autoCollapsed = useMemo(
-    () => computeAutoCollapsed(files, commentedPaths, lineCounts),
-    [files, commentedPaths, lineCounts],
+    () => computeAutoCollapsed(files, activeCommentedPaths, lineCounts),
+    [files, activeCommentedPaths, lineCounts],
   );
   if (files.length === 0) {
     return (
