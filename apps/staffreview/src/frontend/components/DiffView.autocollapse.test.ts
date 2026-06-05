@@ -8,6 +8,7 @@ import {
   computeCommentLineIds,
   fileChangeStats,
   fileLineCount,
+  groupFileCommentsByRootThread,
   MAX_AUTO_EXPANDED_COMMENTED_FILES,
   MAX_AUTO_EXPANDED_FILES,
   MAX_AUTO_EXPANDED_LINES,
@@ -292,6 +293,20 @@ test("computeCommentLineIds ignores threads whose root has no line (file-level)"
 test("computeCommentLineIds finds the root even when replies sort first", () => {
   const thread: Comment[] = [reply("t1", { line: undefined }), root({ threadId: "t1", line: 14 })];
   expect(computeCommentLineIds([thread])).toEqual(["R-14"]);
+});
+
+test("groupFileCommentsByRootThread keeps replies that omit file metadata", () => {
+  const rootComment = root({ file: "a.ts", line: 14, threadId: "thread-a" });
+  const replyComment = reply(rootComment.threadId, {
+    parentId: rootComment.id,
+    file: undefined,
+  });
+  const otherRoot = root({ file: "b.ts", threadId: "thread-b" });
+
+  const threads = groupFileCommentsByRootThread([replyComment, otherRoot, rootComment], "a.ts");
+
+  expect(threads).toHaveLength(1);
+  expect(threads[0]!.map((c) => c.id)).toEqual([rootComment.id, replyComment.id]);
 });
 
 test("computeActiveCommentedPaths keeps files with an unresolved root", () => {

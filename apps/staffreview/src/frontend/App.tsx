@@ -492,7 +492,6 @@ export function App() {
   }, [info]);
 
   const comments = diff?.comments ?? [];
-  const fileComments = useMemo(() => comments.filter((c) => c.file), [comments]);
 
   return (
     <div
@@ -642,7 +641,7 @@ export function App() {
             <DiffView
               files={files}
               slug={diff.slug}
-              comments={fileComments}
+              comments={comments}
               splitView={splitView}
               themeMode={effectiveTheme}
               syntaxTheme={effectiveTheme === "dark" ? syntaxThemeDark : syntaxThemeLight}

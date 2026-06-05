@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fillEditor, readActiveDiff, resetDiffsJson } from "./helpers.ts";
+import { fillEditor, readActiveDiff, resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -140,6 +140,47 @@ test("Reply adds a child comment to the thread", async ({ page }) => {
   const diff = await readActiveDiff();
   const reply = diff.comments.find((c: any) => c.parentId);
   expect(reply.body).toBe("Reply text.");
+});
+
+test("CLI replies without file metadata render inline with their root thread", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
+
+  const root = JSON.parse(
+    await staff([
+      "comment",
+      "add",
+      "--file",
+      "math.ts",
+      "--line",
+      "2",
+      "--side",
+      "new",
+      "--author",
+      "Opus 4.8",
+      "--body",
+      "Root inline finding.",
+    ]),
+  );
+  await staff([
+    "comment",
+    "add",
+    "--reply-to",
+    root.id,
+    "--author",
+    "agent",
+    "--body",
+    "Reply without file metadata.",
+  ]);
+
+  await page.reload();
+  const mathCard = page.getByTestId("file-card-math.ts");
+  const inlineThread = mathCard.locator(`[data-thread-id="${root.threadId}"]`);
+
+  await expect(inlineThread).toContainText("Root inline finding.");
+  await expect(inlineThread).toContainText("Reply without file metadata.");
 });
 
 test("an open (unresolved) thread can be collapsed and expanded via its chevron", async ({

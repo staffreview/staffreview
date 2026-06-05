@@ -509,6 +509,13 @@ function groupCommentsByThread(comments: Comment[]) {
   );
 }
 
+export function groupFileCommentsByRootThread(comments: Comment[], filePath: string) {
+  return groupCommentsByThread(comments).filter((thread) => {
+    const root = thread.find((c) => !c.parentId);
+    return root?.file === filePath;
+  });
+}
+
 /**
  * Files that have at least one *active* (unresolved) line/range comment. These
  * are the higher-signal files `computeAutoCollapsed` will force-open under the
@@ -821,11 +828,10 @@ export function DiffFile({
   const hasChangeStats = changeStats.additions > 0 || changeStats.deletions > 0;
   const canToggleFoldedContext = !expandedByDefault && !file.isSymlink && !file.isBinary;
 
-  const fileComments = useMemo(
-    () => comments.filter((c) => c.file === file.path),
+  const threads = useMemo(
+    () => groupFileCommentsByRootThread(comments, file.path),
     [comments, file.path],
   );
-  const threads = useMemo(() => groupCommentsByThread(fileComments), [fileComments]);
   const rootByLine = new Map<string, Comment[]>();
   for (const thread of threads) {
     const root = thread.find((c) => !c.parentId);
@@ -1568,7 +1574,7 @@ export function DiffFile({
         {file.oldPath && file.oldPath !== file.path && (
           <span className="text-xs text-muted-foreground font-mono">← {file.oldPath}</span>
         )}
-        {fileComments.length > 0 && (
+        {threads.length > 0 && (
           <Badge variant="muted" className="ml-1">
             {threads.length} thread{threads.length === 1 ? "" : "s"}
           </Badge>
