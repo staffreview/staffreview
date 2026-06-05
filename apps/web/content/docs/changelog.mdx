@@ -5,6 +5,33 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.2.0 — 2026-06-05
+
+### Added
+- **Structured highlighting can now be toggled.** Staff Review adds a setting
+  for word-level syntax highlighting in diffs, exposed through settings and
+  documented in the CLI reference.
+- **Target pickers stay compact in repos with many refs.** Branches, remote
+  branches, tags, and recent commits now show the latest 5 by default, keep the
+  selected target visible, and page with "View 10 more". Search remains uncapped.
+- **BiomeJS linting and formatting baseline.** The repo now has shared `check`,
+  `check:fix`, `format`, and `lint` scripts, plus a checked-in Biome config for
+  consistent formatting and import organization.
+
+### Fixed
+- **Comments on folded diff lines render inline.** Commented lines are kept
+  visible through auto-collapse logic, including folded/large-file cases, so
+  existing review threads stay anchored in the diff.
+- **Auto-collapse behavior is more robust.** Added coverage around
+  collapsed-file budgets, commented paths, binary/symlink files, and
+  comment-line id computation.
+- **Sparehost config cleanup.** The Staff Review service config now has the
+  expected working directory and command shape.
+
+### Changed
+- Applied the initial Biome formatting pass across the monorepo.
+- Added happy-dom preload/test setup for React component tests.
+
 ## 1.1.2 — 2026-06-03
 
 ### Added
