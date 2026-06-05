@@ -1,3 +1,4 @@
+import { diffLines } from "diff";
 import {
   Binary,
   Check,
@@ -7,8 +8,10 @@ import {
   FileCode2,
   FileMinus2,
   FilePlus2,
+  FoldVertical,
   Link2,
   Plus,
+  UnfoldVertical,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
@@ -29,7 +32,6 @@ import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 
 type ComposingTarget = { line: number; side: "old" | "new"; endLine?: number };
-
 /**
  * Inline composer hosts and existing threads are keyed by `(side, host line)`.
  * The host line is the visual position of the comment — for a range, that's
@@ -44,6 +46,210 @@ function statusIcon(s: FileDiff["status"]) {
   if (s === "added") return <FilePlus2 className="h-4 w-4 text-success" />;
   if (s === "deleted") return <FileMinus2 className="h-4 w-4 text-destructive" />;
   return <FileCode2 className="h-4 w-4 text-muted-foreground" />;
+}
+
+function diffLineCount(value: string): number {
+  return value === "" ? 0 : value.replace(/\n$/, "").split("\n").length;
+}
+
+export function fileChangeStats(file: FileDiff): { additions: number; deletions: number } {
+  // Symlink and binary files render as a compact single row, not added/deleted
+  // code lines, so a +/- badge would claim line changes that don't correspond
+  // to anything rendered. For a symlink, git.ts stores the link-target path
+  // string as old/new content, so a repointed symlink would otherwise report
+  // +1/-1; binary content is already blanked to "". Short-circuit both to
+  // {0,0} (mirroring `fileLineCount`) rather than relying on every call site to
+  // re-derive the guard `canToggleFoldedContext` already applies.
+  if (file.isSymlink || file.isBinary) return { additions: 0, deletions: 0 };
+  let additions = 0;
+  let deletions = 0;
+  for (const change of diffLines(file.oldContent, file.newContent)) {
+    if (change.added) additions += diffLineCount(change.value);
+    if (change.removed) deletions += diffLineCount(change.value);
+  }
+  return { additions, deletions };
+}
+
+type DiffViewerHandle = {
+  state?: {
+    expandedBlocks?: number[];
+    computedDiffResult?: Record<string, { blocks?: { index: number }[] }>;
+  };
+  setState?: (state: { expandedBlocks: number[] }, callback?: () => void) => void;
+};
+
+/**
+ * The block list react-diff-viewer-continued computed for the *currently
+ * rendered* inputs. The library keys `computedDiffResult` by `getMemoisedKey()`
+ * — a `JSON.stringify` of the diff-shaping props — and never evicts entries, so
+ * picking `Object.values(...).at(-1)` (the most-recently-*inserted* entry) is
+ * only correct while content keeps changing forward: if the inputs revert to a
+ * value already cached (a working-tree edit undone over the WS, content cycling
+ * back), the active key is a cache *hit*, no new entry is appended, and `.at(-1)`
+ * returns a stale, unrelated block set. Reconstruct the library's key from the
+ * same props we pass to `<ReactDiffViewer>` and look the entry up directly. Fall
+ * back to `.at(-1)` only if the keyed lookup misses (e.g. before the first
+ * compute lands, or a future library/prop drift), preserving prior behavior.
+ *
+ * `key` MUST mirror `getMemoisedKey` field-for-field, including the prop order
+ * and the library's `defaultProps` for any prop we don't pass (`linesOffset: 0`).
+ */
+function diffViewerBlocksKey(props: {
+  oldValue: string;
+  newValue: string;
+  disableWordDiff: boolean;
+  compareMethod: string;
+  alwaysShowLines: string[];
+  extraLinesSurroundingDiff: number;
+}): string {
+  return JSON.stringify({
+    oldValue: props.oldValue,
+    newValue: props.newValue,
+    disableWordDiff: props.disableWordDiff,
+    compareMethod: props.compareMethod,
+    linesOffset: 0,
+    alwaysShowLines: props.alwaysShowLines,
+    extraLinesSurroundingDiff: props.extraLinesSurroundingDiff,
+  });
+}
+
+function diffViewerBlocks(viewer: DiffViewerHandle | null, key?: string): { index: number }[] {
+  const cache = viewer?.state?.computedDiffResult;
+  if (!cache) return [];
+  const keyed = key !== undefined ? cache[key] : undefined;
+  if (keyed) return keyed.blocks ?? [];
+  return Object.values(cache).at(-1)?.blocks ?? [];
+}
+
+function alignCodeFoldButtons(container: HTMLElement) {
+  const table = container.querySelector("table");
+  if (!table) return;
+  const tableRect = table.getBoundingClientRect();
+  const tableCenter = tableRect.left + tableRect.width / 2;
+  for (const button of container.querySelectorAll<HTMLButtonElement>(
+    'button[class*="code-fold-expand-button"]',
+  )) {
+    button.style.setProperty("--staff-code-fold-shift", "0px");
+    const buttonRect = button.getBoundingClientRect();
+    const buttonCenter = buttonRect.left + buttonRect.width / 2;
+    button.style.setProperty("--staff-code-fold-shift", `${tableCenter - buttonCenter}px`);
+  }
+}
+
+function clearUnifiedGutterNormalization(container: HTMLElement) {
+  for (const col of container.querySelectorAll<HTMLTableColElement>(
+    "col[data-staff-unified-hidden-col]",
+  )) {
+    col.removeAttribute("data-staff-unified-hidden-col");
+    col.style.removeProperty("display");
+    col.style.removeProperty("width");
+  }
+  for (const col of container.querySelectorAll<HTMLTableColElement>(
+    "col[data-staff-unified-content-col]",
+  )) {
+    col.removeAttribute("data-staff-unified-content-col");
+    col.style.removeProperty("width");
+  }
+  for (const cell of container.querySelectorAll<HTMLTableCellElement>(
+    "td[data-staff-unified-gutter]",
+  )) {
+    const pre = cell.querySelector("pre");
+    if (pre) pre.textContent = cell.dataset.oldLine ?? "";
+    cell.removeAttribute("data-line");
+    cell.removeAttribute("data-new-line");
+    cell.removeAttribute("data-old-line");
+    cell.removeAttribute("data-side");
+    cell.removeAttribute("data-staff-unified-gutter");
+    cell.removeAttribute("data-staff-gutter-label");
+    cell.removeAttribute("title");
+  }
+  for (const cell of container.querySelectorAll<HTMLTableCellElement>(
+    "td[data-staff-unified-hidden-gutter]",
+  )) {
+    cell.removeAttribute("aria-hidden");
+    cell.removeAttribute("data-staff-unified-hidden-gutter");
+    cell.style.removeProperty("display");
+    cell.style.removeProperty("width");
+    cell.style.removeProperty("padding");
+    cell.style.removeProperty("border");
+  }
+}
+
+function lineNumberText(cell: HTMLTableCellElement): string {
+  const text = cell.querySelector("pre")?.textContent?.trim() ?? cell.textContent?.trim() ?? "";
+  return /^\d+$/.test(text) ? text : "";
+}
+
+function normalizeUnifiedGutters(container: HTMLElement) {
+  const table = container.querySelector("table");
+  if (!table) return;
+  const cols = Array.from(table.querySelectorAll<HTMLTableColElement>(":scope > colgroup > col"));
+  if (cols.length >= 4) {
+    cols[1].dataset.staffUnifiedHiddenCol = "true";
+    cols[1].style.setProperty("display", "none", "important");
+    cols[1].style.setProperty("width", "0px", "important");
+    cols[3].dataset.staffUnifiedContentCol = "true";
+    cols[3].style.setProperty("width", "100%", "important");
+  }
+
+  const rows = table.querySelectorAll<HTMLTableRowElement>(
+    'tbody > tr:not([data-composer-host="true"]):not([class*="code-fold"])',
+  );
+  for (const row of rows) {
+    const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>(":scope > td"));
+    if (cells.length !== 4) continue;
+    const [oldCell, newCell, markerCell] = cells;
+    if (!markerCell?.className.includes("marker")) continue;
+
+    // Re-derive both line numbers from the *fresh* DOM every pass — never
+    // `||`-short-circuit to the persisted dataset, or a content refresh that
+    // rewrites the line-number `<pre>`s without remounting the viewer (a WS
+    // `repo:changed` outside a commented region, so `commentLineKey` is stable)
+    // would leave the cached numbers — and thus comment/hash anchoring — stale.
+    // `newCell`'s `<pre>` is only hidden, never overwritten, so it always holds
+    // the live new-line number. `oldCell`'s `<pre>`, however, gets clobbered
+    // with `label` below; once that happens the raw old-line is gone from the
+    // DOM, so we read it from the dataset — but only while the `<pre>` still
+    // shows the label we last wrote. When the library rewrites that `<pre>`
+    // with a fresh raw old-line, `staffGutterLabel` no longer matches and we
+    // pick the live number back up.
+    const oldPreText = oldCell.querySelector("pre")?.textContent ?? "";
+    const oldCellShowsOurLabel =
+      oldCell.dataset.staffGutterLabel !== undefined &&
+      oldPreText === oldCell.dataset.staffGutterLabel;
+    const oldLine = oldCellShowsOurLabel
+      ? (oldCell.dataset.oldLine ?? "")
+      : lineNumberText(oldCell);
+    const newLine = lineNumberText(newCell);
+    const primarySide = newLine ? "new" : "old";
+    const primaryLine = primarySide === "new" ? newLine : oldLine;
+    const label = newLine ? newLine : oldLine ? "-" : "";
+
+    oldCell.dataset.staffUnifiedGutter = "true";
+    oldCell.dataset.side = primarySide;
+    if (primaryLine) oldCell.dataset.line = primaryLine;
+    else oldCell.removeAttribute("data-line");
+    if (oldLine) oldCell.dataset.oldLine = oldLine;
+    else oldCell.removeAttribute("data-old-line");
+    if (newLine) oldCell.dataset.newLine = newLine;
+    else oldCell.removeAttribute("data-new-line");
+    if (oldLine && !newLine) oldCell.title = `Deleted old line ${oldLine}`;
+    else oldCell.removeAttribute("title");
+
+    const pre = oldCell.querySelector("pre");
+    if (pre && pre.textContent !== label) pre.textContent = label;
+    // Remember the label we wrote so the next pass can tell "our overwritten
+    // gutter" apart from a `<pre>` the library has since rewritten with a fresh
+    // raw old-line number.
+    oldCell.dataset.staffGutterLabel = label;
+
+    newCell.dataset.staffUnifiedHiddenGutter = "true";
+    newCell.setAttribute("aria-hidden", "true");
+    newCell.style.setProperty("display", "none", "important");
+    newCell.style.setProperty("width", "0px", "important");
+    newCell.style.setProperty("padding", "0", "important");
+    newCell.style.setProperty("border", "0", "important");
+  }
 }
 
 /**
@@ -102,35 +308,35 @@ function makeDiffStyles(mode: "light" | "dark") {
     diffViewerBackground: "var(--color-card)",
     diffViewerColor: "var(--color-card-foreground)",
     addedBackground: isDark
-      ? "color-mix(in oklch, var(--color-success) 28%, transparent)"
-      : "color-mix(in oklch, var(--color-success) 14%, transparent)",
+      ? "color-mix(in oklch, var(--color-success) 17%, transparent)"
+      : "color-mix(in oklch, var(--color-success) 11%, transparent)",
     addedColor: "var(--color-foreground)",
     removedBackground: isDark
-      ? "color-mix(in oklch, var(--color-destructive) 30%, transparent)"
-      : "color-mix(in oklch, var(--color-destructive) 12%, transparent)",
+      ? "color-mix(in oklch, var(--color-destructive) 18%, transparent)"
+      : "color-mix(in oklch, var(--color-destructive) 10%, transparent)",
     removedColor: "var(--color-foreground)",
     wordAddedBackground: isDark
-      ? "color-mix(in oklch, var(--color-success) 55%, transparent)"
-      : "color-mix(in oklch, var(--color-success) 36%, transparent)",
+      ? "color-mix(in oklch, var(--color-success) 22%, transparent)"
+      : "color-mix(in oklch, var(--color-success) 18%, transparent)",
     wordRemovedBackground: isDark
-      ? "color-mix(in oklch, var(--color-destructive) 55%, transparent)"
-      : "color-mix(in oklch, var(--color-destructive) 30%, transparent)",
+      ? "color-mix(in oklch, var(--color-destructive) 24%, transparent)"
+      : "color-mix(in oklch, var(--color-destructive) 17%, transparent)",
     addedGutterBackground: isDark
-      ? "color-mix(in oklch, var(--color-success) 40%, transparent)"
-      : "color-mix(in oklch, var(--color-success) 22%, transparent)",
+      ? "color-mix(in oklch, var(--color-success) 17%, transparent)"
+      : "color-mix(in oklch, var(--color-success) 11%, transparent)",
     removedGutterBackground: isDark
-      ? "color-mix(in oklch, var(--color-destructive) 40%, transparent)"
-      : "color-mix(in oklch, var(--color-destructive) 22%, transparent)",
-    gutterBackground: "var(--color-muted)",
-    gutterBackgroundDark: "var(--color-muted)",
-    highlightBackground: "color-mix(in oklch, var(--color-warning) 25%, transparent)",
-    highlightGutterBackground: "color-mix(in oklch, var(--color-warning) 35%, transparent)",
-    codeFoldGutterBackground: "var(--color-muted)",
-    codeFoldBackground: "var(--color-muted)",
-    emptyLineBackground: "var(--color-background)",
+      ? "color-mix(in oklch, var(--color-destructive) 18%, transparent)"
+      : "color-mix(in oklch, var(--color-destructive) 10%, transparent)",
+    gutterBackground: "transparent",
+    gutterBackgroundDark: "transparent",
+    highlightBackground: "var(--color-anchor-fill)",
+    highlightGutterBackground: "var(--color-anchor-fill)",
+    codeFoldGutterBackground: "transparent",
+    codeFoldBackground: "transparent",
+    emptyLineBackground: "var(--color-card)",
     gutterColor: "var(--color-muted-foreground)",
-    addedGutterColor: "var(--color-foreground)",
-    removedGutterColor: "var(--color-foreground)",
+    addedGutterColor: "var(--color-success)",
+    removedGutterColor: "var(--color-destructive)",
     codeFoldContentColor: "var(--color-muted-foreground)",
     diffViewerTitleBackground: "var(--color-muted)",
     diffViewerTitleColor: "var(--color-foreground)",
@@ -351,8 +557,8 @@ export function computeCommentLineIds(threads: Comment[][]): string[] {
 /**
  * Find the <tr> in the rendered diff table whose line-number cell on the
  * given side matches `line`. Works for split view (6 cells per row, line
- * numbers at indices 0 and 3) and unified view (4 cells, line numbers at
- * 0 and 1).
+ * numbers at indices 0 and 3) and unified view, where the first normalized
+ * gutter stores both old/new line numbers as data attributes.
  */
 /**
  * Build the URL fragment for a (file, side, line) or line-range target.
@@ -464,6 +670,10 @@ function findRowForLine(
   const wanted = String(target.line);
   for (const row of Array.from(rows)) {
     const cells = row.querySelectorAll<HTMLTableCellElement>(":scope > td");
+    const unifiedGutter = row.querySelector<HTMLTableCellElement>("td[data-staff-unified-gutter]");
+    const unifiedLine =
+      target.side === "old" ? unifiedGutter?.dataset.oldLine : unifiedGutter?.dataset.newLine;
+    if (unifiedLine === wanted) return row as HTMLElement;
     let cell: HTMLTableCellElement | undefined;
     if (cells.length >= 6) {
       cell = target.side === "old" ? cells[0] : cells[3];
@@ -605,6 +815,11 @@ export function DiffFile({
   }, [highlighter, lang, syntaxTheme]);
 
   const diffStyles = useMemo(() => makeDiffStyles(themeMode), [themeMode]);
+  const diffViewerRef = useRef<DiffViewerHandle | null>(null);
+  const [contextFoldState, setContextFoldState] = useState({ key: "", expanded: false });
+  const changeStats = useMemo(() => fileChangeStats(file), [file]);
+  const hasChangeStats = changeStats.additions > 0 || changeStats.deletions > 0;
+  const canToggleFoldedContext = !expandedByDefault && !file.isSymlink && !file.isBinary;
 
   const fileComments = useMemo(
     () => comments.filter((c) => c.file === file.path),
@@ -624,6 +839,64 @@ export function DiffFile({
     const r = t.find((c) => !c.parentId);
     return !r?.line;
   });
+
+  // Keep line-comment anchors visible even while unchanged context is folded
+  // (resolved roots included — see computeCommentLineIds). For range comments,
+  // reveal the start and end lines; the thread portal is hosted at the end
+  // line, and react-diff-viewer's `extraLinesSurroundingDiff` gives both
+  // endpoints local context without expanding the whole file.
+  const commentLineIds = useMemo(() => computeCommentLineIds(threads), [threads]);
+  const commentLineKey = commentLineIds.join("|");
+  const viewerResetKey = `${file.oldContent}\0${file.newContent}\0${commentLineKey}\0${expandedByDefault}`;
+  // The library's `computedDiffResult` cache key for the props we render below.
+  // Used to look up the *current* block set instead of the last-inserted one
+  // (see `diffViewerBlocks`), which matters when content reverts to a value the
+  // library has already cached. Mirrors the `<ReactDiffViewer>` props verbatim.
+  const blocksCacheKey = useMemo(
+    () =>
+      diffViewerBlocksKey({
+        oldValue: file.oldContent,
+        newValue: file.newContent,
+        disableWordDiff: !structuredHighlighting,
+        compareMethod: DiffMethod.WORDS,
+        alwaysShowLines: commentLineIds,
+        extraLinesSurroundingDiff: 3,
+      }),
+    [file.oldContent, file.newContent, structuredHighlighting, commentLineIds],
+  );
+  // Prefer the viewer's live fold state over the cached `contextFoldState` key:
+  // `viewerResetKey` folds in `file.oldContent`/`file.newContent`, but the
+  // viewer is keyed only on `commentLineKey`, so a working-tree edit arriving
+  // over the WebSocket updates the content WITHOUT remounting the viewer (and
+  // the library doesn't reset `expandedBlocks` on a content prop change). The
+  // cached key would then say "not expanded" while the blocks are still
+  // expanded. Deriving from `viewer.state.expandedBlocks` vs the current blocks
+  // keeps the button label honest across those refreshes; fall back to the
+  // cached flag only before the viewer ref is populated on first render.
+  const allContextExpanded = (() => {
+    const viewer = diffViewerRef.current;
+    const blocks = diffViewerBlocks(viewer, blocksCacheKey);
+    if (viewer?.state && blocks.length > 0) {
+      const expanded = new Set(viewer.state.expandedBlocks ?? []);
+      return blocks.every((block) => expanded.has(block.index));
+    }
+    return contextFoldState.key === viewerResetKey && contextFoldState.expanded;
+  })();
+
+  function toggleFoldedContext() {
+    const viewer = diffViewerRef.current;
+    const blocks = diffViewerBlocks(viewer, blocksCacheKey);
+    if (!viewer?.setState || blocks.length === 0) {
+      setContextFoldState({ key: viewerResetKey, expanded: false });
+      return;
+    }
+    const expanded = new Set(viewer.state?.expandedBlocks ?? []);
+    const allExpanded = blocks.every((block) => expanded.has(block.index));
+    const nextExpandedBlocks = allExpanded ? [] : blocks.map((block) => block.index);
+    viewer.setState({ expandedBlocks: nextExpandedBlocks }, () => {
+      setContextFoldState({ key: viewerResetKey, expanded: !allExpanded });
+    });
+  }
 
   // Lines that need an inline host: union of lines with an open composer and
   // lines that have at least one threaded comment anchored to them. We only
@@ -773,6 +1046,63 @@ export function DiffFile({
     file.newContent,
   ]);
 
+  useLayoutEffect(() => {
+    if (collapsed) return;
+    const container = diffRef.current;
+    if (!container) return;
+    let raf = 0;
+    // The gutter writes below (`pre.textContent`, col/cell styles) are
+    // themselves childList/subtree mutations inside the observed container, so a
+    // live observer re-fires `apply` on every normalization pass — the
+    // `textContent !== label` guard makes it converge rather than loop, but each
+    // library re-render / portal insert still costs an extra rAF. Disconnect
+    // around the writes so the tool's own mutations don't feed back, then
+    // reconnect to catch genuine library re-renders.
+    //
+    // `alignCodeFoldButtons` does a forced layout read (`getBoundingClientRect`)
+    // per fold button; only the *count/identity* of fold buttons and the table
+    // affect that alignment, so skip it when neither changed since the last pass
+    // (`forceAlign` covers resize and the initial pass, where geometry can move
+    // without a DOM mutation). This keeps the reflow off the hot path of every
+    // unrelated mutation while still realigning when folds actually appear/move.
+    let observer: MutationObserver | null = null;
+    let lastFoldSignature = "";
+    const foldSignature = () => {
+      const table = container.querySelector("table");
+      const buttons = container.querySelectorAll('button[class*="code-fold-expand-button"]');
+      // Node identity (via a per-pass marker) would be ideal, but a cheap count
+      // + table presence is enough: fold buttons only appear/disappear/move when
+      // the diff's hidden-block structure changes, which is what realignment
+      // tracks.
+      return `${table ? "t" : ""}:${buttons.length}`;
+    };
+    const apply = (forceAlign = false) => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        observer?.disconnect();
+        if (splitView) clearUnifiedGutterNormalization(container);
+        else normalizeUnifiedGutters(container);
+        const signature = foldSignature();
+        if (forceAlign || signature !== lastFoldSignature) {
+          alignCodeFoldButtons(container);
+          lastFoldSignature = signature;
+        }
+        observer?.observe(container, { childList: true, subtree: true });
+      });
+    };
+    apply(true);
+    observer = new MutationObserver(() => apply());
+    observer.observe(container, { childList: true, subtree: true });
+    const onResize = () => apply(true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      observer.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, [collapsed, splitView]);
+
   // Track the currently anchored range — driven by the URL hash. Browser
   // navigation fires `hashchange`; our own `setLineHash` helper
   // additionally dispatches `staff:hashchange` because
@@ -785,14 +1115,6 @@ export function DiffFile({
     startLine: number;
     endLine: number;
   } | null>(null);
-
-  // Keep line-comment anchors visible even while unchanged context is folded
-  // (resolved roots included — see computeCommentLineIds). For range comments,
-  // reveal the start and end lines; the thread portal is hosted at the end
-  // line, and react-diff-viewer's `extraLinesSurroundingDiff` gives both
-  // endpoints local context without expanding the whole file.
-  const commentLineIds = useMemo(() => computeCommentLineIds(threads), [threads]);
-  const commentLineKey = commentLineIds.join("|");
 
   /**
    * Resolve a click anywhere in a diff row to a (line, side) pair, sharing
@@ -810,6 +1132,18 @@ export function DiffFile({
       preferred = clickedIdx <= 2 ? "old" : "new";
       oldCell = cells[0];
       newCell = cells[3];
+    } else if (cells[0]?.dataset.staffUnifiedGutter === "true") {
+      const gutter = cells[0];
+      const primarySide = gutter.dataset.side === "old" ? "old" : "new";
+      const primaryLine = Number(gutter.dataset.line ?? "");
+      if (Number.isFinite(primaryLine) && primaryLine > 0) {
+        return { line: primaryLine, side: primarySide };
+      }
+      const newNum = Number(gutter.dataset.newLine ?? "");
+      if (Number.isFinite(newNum) && newNum > 0) return { line: newNum, side: "new" };
+      const oldNum = Number(gutter.dataset.oldLine ?? "");
+      if (Number.isFinite(oldNum) && oldNum > 0) return { line: oldNum, side: "old" };
+      return null;
     } else if (cells.length >= 4) {
       preferred = clickedIdx === 0 ? "old" : "new";
       oldCell = cells[0];
@@ -846,6 +1180,12 @@ export function DiffFile({
     if (cells.length >= 6) {
       if (idx === 0) side = "old";
       else if (idx === 3) side = "new";
+    } else if (td.dataset.staffUnifiedGutter === "true") {
+      const unifiedSide = td.dataset.side === "old" ? "old" : "new";
+      const unifiedLine = Number(td.dataset.line ?? "");
+      if (Number.isFinite(unifiedLine) && unifiedLine > 0) {
+        return { side: unifiedSide, line: unifiedLine };
+      }
     } else if (cells.length >= 4) {
       if (idx === 0) side = "old";
       else if (idx === 1) side = "new";
@@ -894,7 +1234,10 @@ export function DiffFile({
   }
 
   function handleDiffMouseOver(e: React.MouseEvent<HTMLDivElement>) {
-    if (!dragRef.current) return;
+    if (!dragRef.current) {
+      updatePlusFromTarget(e.target as HTMLElement);
+      return;
+    }
     // While dragging, extend the range based on whichever row the
     // cursor is over, not just gutter cells. The row's gutter on the
     // dragged side might be empty (e.g. a pure deletion when dragging
@@ -911,7 +1254,11 @@ export function DiffFile({
       const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>(":scope > td"));
       let cell: HTMLTableCellElement | undefined;
       if (cells.length >= 6) cell = side === "old" ? cells[0] : cells[3];
-      else if (cells.length >= 4) cell = side === "old" ? cells[0] : cells[1];
+      else if (cells[0]?.dataset.staffUnifiedGutter === "true") {
+        const raw = side === "old" ? cells[0].dataset.oldLine : cells[0].dataset.newLine;
+        const n = Number(raw ?? "");
+        return Number.isFinite(n) && n > 0 ? n : null;
+      } else if (cells.length >= 4) cell = side === "old" ? cells[0] : cells[1];
       if (!cell) return null;
       const n = Number(cell.textContent?.trim() ?? "");
       return Number.isFinite(n) && n > 0 ? n : null;
@@ -956,34 +1303,85 @@ export function DiffFile({
     left: number;
   } | null>(null);
   const lastHoveredTr = useRef<HTMLElement | null>(null);
-  function handleDiffMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    const td = (e.target as HTMLElement).closest("td");
+  const plusKeyRef = useRef<string | null>(null);
+  // Pre-geometry anchor signature of the last accepted move: the resolved
+  // gutter cell (node identity) + side + line. `onMouseMove` is on the diff
+  // container and fires per pixel, so we use this to bail *before* any forced
+  // `getBoundingClientRect` reads while the cursor stays anchored to the same
+  // line — restoring the hot-path early-out the `handleDiffMouseMove`→
+  // `updatePlusFromTarget` refactor dropped. We key on the gutter cell rather
+  // than the `<tr>` so moving between the two gutters of a split row (which
+  // resolves to a different side/line) still re-anchors.
+  const lastPlusAnchor = useRef<{
+    cell: HTMLTableCellElement;
+    side: "old" | "new";
+    line: number;
+  } | null>(null);
+  function clearPlus() {
+    plusKeyRef.current = null;
+    lastPlusAnchor.current = null;
+    setPlus(null);
+  }
+  function updatePlusFromTarget(target: HTMLElement) {
+    const td = target.closest("td");
     if (!td) return;
     const tr = td.closest("tr") as HTMLElement | null;
-    if (!tr || tr.dataset.composerHost === "true") {
-      if (lastHoveredTr.current !== null) {
-        lastHoveredTr.current = null;
-        setPlus(null);
-      }
+    if (!tr) {
+      lastHoveredTr.current = null;
+      clearPlus();
       return;
     }
-    if (tr === lastHoveredTr.current && plus) return;
+    if (tr.dataset.composerHost === "true") {
+      lastHoveredTr.current = null;
+      // Moving onto an inline composer/thread host has no "+" of its own, so
+      // clear the one left on the previously-hovered data row (mirrors the
+      // `!tr` branch above) instead of leaving it stuck.
+      clearPlus();
+      return;
+    }
     lastHoveredTr.current = tr;
     const cells = Array.from(tr.querySelectorAll<HTMLTableCellElement>(":scope > td"));
     const idx = cells.indexOf(td as HTMLTableCellElement);
     if (idx < 0) return;
     const resolved = resolveTargetFromCells(cells, idx);
     if (!resolved) {
-      setPlus(null);
+      clearPlus();
       return;
     }
     // Pick the gutter cell for the resolved side so we can anchor the "+".
     let gutterCell: HTMLTableCellElement | undefined;
-    if (cells.length >= 6) gutterCell = resolved.side === "old" ? cells[0] : cells[3];
-    else if (cells.length >= 4) gutterCell = resolved.side === "old" ? cells[0] : cells[1];
+    let markerCell: HTMLTableCellElement | undefined;
+    if (cells.length >= 6) {
+      gutterCell = resolved.side === "old" ? cells[0] : cells[3];
+      markerCell = resolved.side === "old" ? cells[1] : cells[4];
+    } else if (cells[0]?.dataset.staffUnifiedGutter === "true") {
+      gutterCell = cells[0];
+      markerCell = cells[2];
+    } else if (cells.length >= 4) {
+      gutterCell = resolved.side === "old" ? cells[0] : cells[1];
+      markerCell = cells[2];
+    }
     if (!gutterCell || !diffRef.current) return;
+    // Hot-path early-out: the cursor is still over the same resolved anchor as
+    // the last accepted move and a "+" is already shown, so its geometry can't
+    // have changed within this continuous mousemove. Bail before the forced
+    // layout reads below. (Layout shifts from scroll/resize re-run the gutter
+    // normalization, and the next move re-anchors — same staleness window the
+    // original `tr === lastHoveredTr.current && plus` guard had.)
+    const prevAnchor = lastPlusAnchor.current;
+    if (
+      plus &&
+      prevAnchor &&
+      prevAnchor.cell === gutterCell &&
+      prevAnchor.side === resolved.side &&
+      prevAnchor.line === resolved.line
+    ) {
+      return;
+    }
+    lastPlusAnchor.current = { cell: gutterCell, side: resolved.side, line: resolved.line };
     const containerRect = diffRef.current.getBoundingClientRect();
     const cellRect = gutterCell.getBoundingClientRect();
+    const markerRect = markerCell?.getBoundingClientRect();
     // Anchor the "+" vertically to the line-number text, not the cell's
     // center — on a wrapped line the cell grows tall, and centering on
     // it would drop the "+" into the middle of the wrapped content.
@@ -991,16 +1389,25 @@ export function DiffFile({
     // to the top of the cell.
     const numEl = gutterCell.querySelector("pre") ?? gutterCell;
     const numRect = numEl.getBoundingClientRect();
-    setPlus({
+    const nextPlus = {
       line: resolved.line,
       side: resolved.side,
       top: numRect.top - containerRect.top + numRect.height / 2,
-      left: cellRect.right - containerRect.left,
-    });
+      left: markerRect
+        ? markerRect.left - containerRect.left + markerRect.width / 2 - 4
+        : cellRect.right - containerRect.left,
+    };
+    const nextKey = `${nextPlus.side}:${nextPlus.line}:${Math.round(nextPlus.top)}:${Math.round(nextPlus.left)}`;
+    if (plusKeyRef.current === nextKey) return;
+    plusKeyRef.current = nextKey;
+    setPlus(nextPlus);
+  }
+  function handleDiffMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    updatePlusFromTarget(e.target as HTMLElement);
   }
   function handleDiffMouseLeave() {
     lastHoveredTr.current = null;
-    setPlus(null);
+    clearPlus();
   }
   function openComposerAt(t: ComposingTarget) {
     setComposingLines((prev) =>
@@ -1122,7 +1529,9 @@ export function DiffFile({
           )}
         </Button>
         {statusIcon(file.status)}
-        <span className="font-mono text-sm">{file.path}</span>
+        <span className="min-w-0 truncate font-mono text-sm" title={file.path}>
+          {file.path}
+        </span>
         <Button
           size="icon-xs"
           variant="ghost"
@@ -1139,6 +1548,23 @@ export function DiffFile({
         >
           {pathCopied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
         </Button>
+        {canToggleFoldedContext && !collapsed && (
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={allContextExpanded ? "Fold unchanged context" : "Expand unchanged context"}
+            aria-expanded={allContextExpanded}
+            title={allContextExpanded ? "Fold unchanged context" : "Expand unchanged context"}
+            onClick={toggleFoldedContext}
+            data-testid={`fold-context-${file.path}`}
+          >
+            {allContextExpanded ? (
+              <FoldVertical className="h-3.5 w-3.5" />
+            ) : (
+              <UnfoldVertical className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        )}
         {file.oldPath && file.oldPath !== file.path && (
           <span className="text-xs text-muted-foreground font-mono">← {file.oldPath}</span>
         )}
@@ -1148,9 +1574,25 @@ export function DiffFile({
           </Badge>
         )}
         <div className="flex-1" />
-        <Badge variant="outline" className="capitalize">
-          {file.status}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2.5">
+          {hasChangeStats && (
+            <span
+              className="flex items-center gap-1 font-mono text-xs"
+              title={`${changeStats.additions} additions, ${changeStats.deletions} deletions`}
+              data-testid={`file-change-stats-${file.path}`}
+            >
+              {changeStats.additions > 0 && (
+                <span className="text-success">+{changeStats.additions}</span>
+              )}
+              {changeStats.deletions > 0 && (
+                <span className="text-destructive">-{changeStats.deletions}</span>
+              )}
+            </span>
+          )}
+          <Badge variant="outline" className="capitalize">
+            {file.status}
+          </Badge>
+        </div>
       </div>
 
       {/* Symlinks render a compact target row instead of the file content —
@@ -1215,6 +1657,9 @@ export function DiffFile({
             intentional remount, not a bug.
           */}
           <ReactDiffViewer
+            ref={(instance) => {
+              diffViewerRef.current = instance as unknown as DiffViewerHandle | null;
+            }}
             key={commentLineKey}
             oldValue={file.oldContent}
             newValue={file.newContent}
@@ -1229,6 +1674,13 @@ export function DiffFile({
             showDiffOnly={!expandedByDefault}
             alwaysShowLines={commentLineIds}
             extraLinesSurroundingDiff={3}
+            codeFoldMessageRenderer={(totalFoldedLines) => (
+              <span className="inline-flex items-center gap-1.5">
+                <UnfoldVertical className="h-3 w-3" />
+                {totalFoldedLines} unchanged line{totalFoldedLines === 1 ? "" : "s"}
+              </span>
+            )}
+            hideSummary
             renderContent={renderContent}
             styles={diffStyles as any}
           />
@@ -1240,6 +1692,8 @@ export function DiffFile({
               title="Comment on this line"
               onClick={(e) => {
                 e.stopPropagation();
+                lastHoveredTr.current = null;
+                clearPlus();
                 // If the hovered line falls inside the active anchored
                 // range on the same side, attach the comment to the
                 // whole range (rendered at endLine). Otherwise it's a
@@ -1324,7 +1778,7 @@ export function DiffView({
   splitView,
   themeMode,
   syntaxTheme,
-  structuredHighlighting = false,
+  structuredHighlighting = true,
   expandedByDefault = true,
   onChange,
 }: {

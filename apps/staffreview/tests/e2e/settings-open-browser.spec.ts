@@ -21,9 +21,9 @@ test("openBrowser: CLI default, gear-menu toggle persists, and CLI setter writes
   const posted = page.waitForResponse(
     (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
   );
-  await page.getByTestId("open-browser-manual").click();
+  await page.getByTestId("open-browser-auto").click();
   await posted;
-  await expect(page.getByTestId("open-browser-manual")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("open-browser-auto")).toHaveAttribute("aria-checked", "false");
   await expect
     .poll(async () => (await staff(["settings", "get", "openBrowser"])).trim())
     .toBe("false");

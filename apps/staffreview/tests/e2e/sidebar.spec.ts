@@ -70,7 +70,7 @@ test("collapsed-strip Plus button expands the sidebar, opens the composer, and f
   await expect(editor).toContainText("typed-after-plus-click");
 });
 
-test("collapsed strip buttons share an X column with the header's gear button", async ({
+test("header live badge keeps right padding and collapsed strip buttons align", async ({
   page,
 }) => {
   await page.goto("/");
@@ -82,18 +82,20 @@ test("collapsed strip buttons share an X column with the header's gear button", 
   await page.getByTestId("sidebar-toggle").click();
   await expect(page.getByTestId("review-sidebar")).toHaveAttribute("data-state", "collapsed");
 
-  const gearBox = await page.getByTestId("settings-menu-button").boundingBox();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  const liveBox = await page.getByText("Live", { exact: true }).boundingBox();
   const toggleBox = await page.getByTestId("sidebar-toggle").boundingBox();
   const plusBox = await page.getByTestId("sidebar-new-comment").boundingBox();
 
-  if (!gearBox || !toggleBox || !plusBox) throw new Error("missing bounding box");
+  if (!liveBox || !toggleBox || !plusBox) throw new Error("missing bounding box");
 
-  // All three live in the same vertical column — their right edges should
-  // line up within a 2px tolerance for sub-pixel rendering.
-  expect(Math.abs(gearBox.x + gearBox.width - (toggleBox.x + toggleBox.width))).toBeLessThanOrEqual(
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  expect(viewportWidth - (liveBox.x + liveBox.width)).toBeGreaterThanOrEqual(14);
+
+  // The collapsed sidebar controls still share a vertical column.
+  expect(Math.abs(toggleBox.x + toggleBox.width - (plusBox.x + plusBox.width))).toBeLessThanOrEqual(
     2,
   );
-  expect(Math.abs(gearBox.x + gearBox.width - (plusBox.x + plusBox.width))).toBeLessThanOrEqual(2);
 });
 
 test("the diff and sidebar are independent scroll panes; the page itself doesn't scroll", async ({

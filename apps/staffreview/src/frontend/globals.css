@@ -30,12 +30,22 @@
   --color-ring: oklch(0.708 0 0);
   --color-success: oklch(0.62 0.16 150);
   --color-warning: oklch(0.72 0.15 80);
-  /* Line-anchor highlight (click/drag/URL) — a brighter, yellower tint than
-   * `warning` so it reads clearly without recoloring the warning badges.
-   * `--color-anchor` is the solid 3px edge accent; `--color-anchor-fill`
-   * bakes in the row-tint opacity (tuned per theme). */
-  --color-anchor: oklch(0.86 0.17 98);
-  --color-anchor-fill: oklch(0.86 0.17 98 / 0.32);
+  /* Line-anchor highlight (click/drag/URL) — a soft highlighter blue.
+   * `--color-anchor` is the solid 1px edge accent; the fill tokens are
+   * resolved against the card surface so changed-line highlights stay
+   * consistent instead of stacking semi-transparent colors. */
+  --color-anchor: oklch(0.68 0.24 250);
+  --color-anchor-fill: oklch(0.975 0.035 245);
+  --color-anchor-added-fill: color-mix(
+    in srgb,
+    var(--color-success) 12%,
+    var(--color-anchor-fill) 88%
+  );
+  --color-anchor-removed-fill: color-mix(
+    in srgb,
+    var(--color-destructive) 16%,
+    var(--color-anchor-fill) 84%
+  );
 
   --radius: 0.5rem;
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -68,11 +78,20 @@
    * swallowed by the dark canvas. */
   --color-success: oklch(0.78 0.18 150);
   --color-warning: oklch(0.78 0.15 80);
-  /* On dark, a low-opacity yellow over the near-black bg muddies to olive
-   * ("mustard"). A brighter source with a bit more opacity reads as a cleaner,
-   * lighter yellow — yellower *and* airier than the dark, muddy version. */
-  --color-anchor: oklch(0.92 0.2 100);
-  --color-anchor-fill: oklch(0.92 0.2 100 / 0.4);
+  /* On dark, use a muted blue surface instead of transparent color over
+   * black, so the highlight stays soft and readable. */
+  --color-anchor: oklch(0.78 0.2 250);
+  --color-anchor-fill: oklch(0.34 0.07 250);
+  --color-anchor-added-fill: color-mix(
+    in srgb,
+    var(--color-success) 10%,
+    var(--color-anchor-fill) 90%
+  );
+  --color-anchor-removed-fill: color-mix(
+    in srgb,
+    var(--color-destructive) 22%,
+    var(--color-anchor-fill) 78%
+  );
 }
 
 @layer base {
@@ -114,6 +133,27 @@
   cursor: pointer;
 }
 
+.staff-diff td[class*="marker"] pre {
+  visibility: hidden;
+}
+
+.staff-diff td[class*="gutter"] pre {
+  opacity: 1;
+}
+
+.staff-diff td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]) {
+  box-shadow: inset 1px 0 0 var(--color-success);
+}
+.staff-diff-unified td[data-staff-unified-gutter][class*="diff-added"] {
+  box-shadow: inset 1px 0 0 var(--color-success);
+}
+.staff-diff td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+  box-shadow: inset 1px 0 0 var(--color-destructive);
+}
+.staff-diff-unified td[data-staff-unified-gutter][class*="diff-removed"] {
+  box-shadow: inset 1px 0 0 var(--color-destructive);
+}
+
 /* Anchored row — the line referenced by `#<file>:R<line>`. We can't
  * use react-diff-viewer's own `highlightLines` for this because in
  * split view it only highlights cells on the side that matches the
@@ -123,17 +163,37 @@
  * whether they have diff-added / diff-removed / empty-gutter / empty-
  * line classes from the library.
  *
- * The leftmost cell additionally stacks a 3px gradient on top for the
- * URL-anchor accent. Per-word <ins>/<del> backgrounds are deliberately
+ * The first gutter in each visible pane gets a 1px URL-anchor accent.
+ * Added/removed cells read as blue-highlighted first, with a small
+ * green/red tint. Per-word <ins>/<del> backgrounds are deliberately
  * left alone so the substring-level diff highlights stay visible on
- * top of the yellow tint. */
+ * top of the row tint. */
 .staff-diff table tbody tr[data-anchored="true"] > td {
   background: var(--color-anchor-fill) !important;
 }
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="diff-added"] {
+  background: var(--color-anchor-added-fill) !important;
+}
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="diff-removed"] {
+  background: var(--color-anchor-removed-fill) !important;
+}
 .staff-diff table tbody tr[data-anchored="true"] > td:first-child {
-  background:
-    linear-gradient(to right, var(--color-anchor) 3px, transparent 3px) no-repeat,
-    var(--color-anchor-fill) !important;
+  box-shadow: inset 1px 0 0 var(--color-anchor);
+}
+.staff-diff-split table tbody tr[data-anchored="true"] > td:nth-child(4) {
+  box-shadow: inset 1px 0 0 var(--color-anchor);
+}
+.staff-diff
+  table
+  tbody
+  tr[data-anchored="true"]
+  > td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]),
+.staff-diff
+  table
+  tbody
+  tr[data-anchored="true"]
+  > td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+  box-shadow: inset 1px 0 0 var(--color-anchor);
 }
 
 /* react-diff-viewer's `empty-gutter:hover` ties on specificity with
@@ -148,14 +208,14 @@
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 22%, transparent) !important;
+  background: color-mix(in oklch, var(--color-success) 11%, transparent) !important;
 }
 .staff-diff
   table
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 22%, transparent) !important;
+  background: color-mix(in oklch, var(--color-destructive) 10%, transparent) !important;
 }
 .dark
   .staff-diff
@@ -163,7 +223,7 @@
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 40%, transparent) !important;
+  background: color-mix(in oklch, var(--color-success) 17%, transparent) !important;
 }
 .dark
   .staff-diff
@@ -171,7 +231,7 @@
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 40%, transparent) !important;
+  background: color-mix(in oklch, var(--color-destructive) 18%, transparent) !important;
 }
 
 /* Markdown comment bodies (rendered by <Markdown>) and the WYSIWYG
@@ -334,33 +394,46 @@
   outline: 2px solid var(--color-ring);
 }
 
-/* Center the per-hunk code-fold expand icon within the line-number
- * gutter so it lines up with the line numbers above/below it (the
- * library renders it flush-left otherwise). */
-.staff-diff tr[class*="code-fold"] > td[class*="code-fold-gutter"]:first-child {
-  text-align: center;
-  padding: 0;
+.staff-diff tr[class*="code-fold"] {
+  background: transparent !important;
 }
-.staff-diff tr[class*="code-fold"] > td[class*="code-fold-gutter"]:first-child svg {
-  display: inline-block;
+.staff-diff tr[class*="code-fold"] > td {
+  height: 60px;
+  vertical-align: middle;
+  background:
+    linear-gradient(
+      to bottom,
+      transparent calc(50% - 0.5px),
+      var(--color-border) calc(50% - 0.5px),
+      var(--color-border) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
+    var(--color-card) !important;
 }
-
-/* react-diff-viewer renders an expand/fold-all button in its summary row.
- * It only does something when unchanged context is folded (showDiffOnly).
- * In "Expanded" mode the whole file is shown, so the button is inert —
- * hide it to avoid the dead control, while keeping the change count.
- * (Emotion includes the css `label` in the class name, so the substring
- * match is stable.) */
-.staff-diff-expanded [class*="all-expand-button"] {
+.staff-diff tr[class*="code-fold"] > td[class*="code-fold-gutter"] svg {
   display: none;
 }
-
-/* Align the file-level expand-all icon (in the summary row) with the
- * per-hunk code-fold icons, which are centered on the line-number
- * column. The summary's left padding (~13px) plus a 26px-wide button
- * lands the icon center on the gutter column. */
-.staff-diff [class*="all-expand-button"] {
-  width: 26px;
+.staff-diff tr[class*="code-fold"] button[class*="code-fold-expand-button"] {
+  position: relative;
+  transform: translate(var(--staff-code-fold-shift, 0px), 2px);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.staff-diff tr[class*="code-fold"]:hover button[class*="code-fold-expand-button"] {
+  color: var(--color-foreground);
+  border-color: var(--color-muted-foreground);
 }
 
 /* scrollbar polish */

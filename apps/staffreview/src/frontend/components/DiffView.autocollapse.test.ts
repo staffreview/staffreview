@@ -6,6 +6,7 @@ import {
   computeActiveCommentedPaths,
   computeAutoCollapsed,
   computeCommentLineIds,
+  fileChangeStats,
   fileLineCount,
   MAX_AUTO_EXPANDED_COMMENTED_FILES,
   MAX_AUTO_EXPANDED_FILES,
@@ -123,6 +124,88 @@ test("precomputed lineCounts produce the same decision as recomputing", () => {
   const withCounts = computeAutoCollapsed(files, NONE, counts);
   const without = computeAutoCollapsed(files, NONE);
   expect([...withCounts].sort()).toEqual([...without].sort());
+});
+
+test("fileChangeStats counts changed lines without counting a trailing newline", () => {
+  const stats = fileChangeStats(
+    file("changed.ts", 1, {
+      oldContent: "a\nb\n",
+      newContent: "a\nc\n",
+    }),
+  );
+  expect(stats).toEqual({ additions: 1, deletions: 1 });
+});
+
+test("fileChangeStats counts content without a trailing newline", () => {
+  // No final "\n": diffLineCount's `replace(/\n$/, "")` is a no-op here, so the
+  // last line must still be counted. This mirrors git's `\ No newline at end of
+  // file` line accounting — lock it in.
+  const stats = fileChangeStats(
+    file("changed.ts", 1, {
+      oldContent: "a\nb",
+      newContent: "a\nc",
+    }),
+  );
+  expect(stats).toEqual({ additions: 1, deletions: 1 });
+});
+
+test("fileChangeStats reports +1/-1 for a final-newline-only change", () => {
+  // Dropping just the trailing newline ("a\nb\n" → "a\nb") rewrites the last
+  // line, so the badge surprisingly shows +1/-1 even though no visible content
+  // changed. Pin the current behavior so it can't drift silently.
+  const stats = fileChangeStats(
+    file("changed.ts", 1, {
+      oldContent: "a\nb\n",
+      newContent: "a\nb",
+    }),
+  );
+  expect(stats).toEqual({ additions: 1, deletions: 1 });
+});
+
+test("fileChangeStats handles added and deleted files", () => {
+  expect(
+    fileChangeStats(
+      file("added.ts", 1, {
+        status: "added",
+        oldContent: "",
+        newContent: "a\nb\n",
+      }),
+    ),
+  ).toEqual({ additions: 2, deletions: 0 });
+  expect(
+    fileChangeStats(
+      file("deleted.ts", 1, {
+        status: "deleted",
+        oldContent: "a\nb\n",
+        newContent: "",
+      }),
+    ),
+  ).toEqual({ additions: 0, deletions: 2 });
+});
+
+test("fileChangeStats reports {0,0} for symlink files", () => {
+  // git.ts stores the link-target path string as old/new content for symlinks,
+  // so without the guard a repointed symlink would report +1/-1. The diff body
+  // renders a compact "symlink target" row, not added/deleted code lines, so the
+  // badge must stay hidden.
+  expect(
+    fileChangeStats(
+      file("link", 1, {
+        isSymlink: true,
+        symlinkTarget: "new/target",
+        oldContent: "old/target",
+        newContent: "new/target",
+      }),
+    ),
+  ).toEqual({ additions: 0, deletions: 0 });
+});
+
+test("fileChangeStats reports {0,0} for binary files", () => {
+  // Binary content is blanked to "" by git.ts so it already yields {0,0}, but
+  // pin the explicit guard so the badge can't reappear if that ever changes.
+  expect(
+    fileChangeStats(file("img.png", 1, { isBinary: true, oldContent: "", newContent: "" })),
+  ).toEqual({ additions: 0, deletions: 0 });
 });
 
 // ── computeCommentLineIds / computeActiveCommentedPaths ─────────────────────

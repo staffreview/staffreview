@@ -15,6 +15,21 @@ async function openFeatureDiff(page: import("@playwright/test").Page) {
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
 }
 
+async function renderedBackgroundRgb(locator: import("@playwright/test").Locator) {
+  return locator.evaluate((el) => {
+    const color = getComputedStyle(el).backgroundColor;
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("missing canvas context");
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const [red, green, blue] = ctx.getImageData(0, 0, 1, 1).data;
+    return { blue, color, green, red };
+  });
+}
+
 test("Shiki syntax-highlights TypeScript files in the diff", async ({ page }) => {
   await openFeatureDiff(page);
   const mathCard = page.getByTestId("file-card-math.ts");
@@ -31,38 +46,29 @@ test("Shiki syntax-highlights TypeScript files in the diff", async ({ page }) =>
   await expect(stringToken).toBeVisible();
 });
 
-test("structured highlighting is off by default and can be enabled from the gear menu", async ({
+test("structured highlighting is on by default and can be disabled from the gear menu", async ({
   page,
 }) => {
   await openFeatureDiff(page);
   const bigCard = page.getByTestId("file-card-big.ts");
 
-  // Default off: the same-line `const v20 = 20` -> `const v20 = 200` change
-  // should render as a changed row without intra-line highlighted blocks.
-  // Anchor to a rendered line first so the count-0 assertion proves the
-  // feature is off rather than just passing because the card hasn't mounted.
+  // Default on: the same-line `const v20 = 20` -> `const v20 = 200` change
+  // should render intra-line highlighted blocks.
   await expect(bigCard.getByText(/const v20/).first()).toBeVisible({ timeout: 10_000 });
   const wordBlocks = bigCard.locator('[class*="word-added"], [class*="word-removed"]');
-  await expect(wordBlocks).toHaveCount(0);
+  await expect(wordBlocks.first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByTestId("settings-menu-button").click();
-  await expect(page.getByTestId("structured-highlighting-off")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  const structureToggle = page.getByTestId("structured-highlighting-toggle");
+  await expect(structureToggle).toHaveAttribute("aria-checked", "true");
   const postSettings = page.waitForResponse(
     (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
   );
-  await page.getByTestId("structured-highlighting-on").click();
+  await structureToggle.click();
   await postSettings;
-  await expect(page.getByTestId("structured-highlighting-on")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await expect(structureToggle).toHaveAttribute("aria-checked", "false");
 
-  // Enabled: react-diff-viewer's word diff should paint the changed blocks
-  // inside the line.
-  await expect(wordBlocks.first()).toBeVisible({ timeout: 10_000 });
+  await expect(wordBlocks).toHaveCount(0);
 });
 
 test("structured highlighting preference persists across reload", async ({ page }) => {
@@ -71,26 +77,64 @@ test("structured highlighting preference persists across reload", async ({ page 
     .getByTestId("file-card-big.ts")
     .locator('[class*="word-added"], [class*="word-removed"]');
 
+  await expect(wordBlocks.first()).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("settings-menu-button").click();
   const postSettings = page.waitForResponse(
     (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
   );
-  await page.getByTestId("structured-highlighting-on").click();
+  await page.getByTestId("structured-highlighting-toggle").click();
   await postSettings;
   await page.keyboard.press("Escape");
-  await expect(wordBlocks.first()).toBeVisible({ timeout: 10_000 });
+  await expect(wordBlocks).toHaveCount(0);
 
   await page.reload();
   await openFeatureDiff(page);
   await expect(
-    page
-      .getByTestId("file-card-big.ts")
-      .locator('[class*="word-added"], [class*="word-removed"]')
-      .first(),
-  ).toBeVisible({ timeout: 10_000 });
+    page.getByTestId("file-card-big.ts").locator('[class*="word-added"], [class*="word-removed"]'),
+  ).toHaveCount(0);
   await page.getByTestId("settings-menu-button").click();
-  await expect(page.getByTestId("structured-highlighting-on")).toHaveAttribute(
+  await expect(page.getByTestId("structured-highlighting-toggle")).toHaveAttribute(
     "aria-checked",
-    "true",
+    "false",
   );
+});
+
+test("anchored changed-line highlight stays blue with subtle change tint in dark mode", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openFeatureDiff(page);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(true);
+
+  const bigCard = page.getByTestId("file-card-big.ts");
+  const changedRow = bigCard.locator("table tbody tr", { hasText: /const v20/ }).first();
+  await expect(changedRow).toBeVisible({ timeout: 10_000 });
+  await changedRow.locator("td").nth(3).click();
+  await expect(changedRow).toHaveAttribute("data-anchored", "true");
+  await expect
+    .poll(() =>
+      changedRow
+        .locator("td")
+        .nth(0)
+        .evaluate((el) => getComputedStyle(el).boxShadow),
+    )
+    .not.toBe("none");
+  await expect
+    .poll(() =>
+      changedRow
+        .locator("td")
+        .nth(3)
+        .evaluate((el) => getComputedStyle(el).boxShadow),
+    )
+    .not.toBe("none");
+
+  const removedCell = await renderedBackgroundRgb(changedRow.locator("td").nth(2));
+  const addedCell = await renderedBackgroundRgb(changedRow.locator("td").nth(5));
+
+  expect(addedCell.blue, addedCell.color).toBeGreaterThan(addedCell.red + 10);
+  expect(addedCell.green, addedCell.color).toBeGreaterThan(addedCell.red + 10);
+  expect(removedCell.blue, removedCell.color).toBeGreaterThan(removedCell.green + 10);
+  expect(removedCell.red, removedCell.color).toBeGreaterThan(removedCell.green);
 });

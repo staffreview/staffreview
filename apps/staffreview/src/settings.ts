@@ -26,8 +26,14 @@ export { DEFAULT_OPEN_BROWSER };
 
 import { parseBooleanSetting } from "./boolean-setting.ts";
 
+// Word-level diff highlighting default lives in a dependency-free module so the
+// frontend bundle shares one source of truth; re-exported so existing
+// `settings.*` callers (e.g. cli.ts) keep working.
+import { DEFAULT_STRUCTURED_HIGHLIGHTING } from "./structured-highlighting-config.ts";
+
+export { DEFAULT_STRUCTURED_HIGHLIGHTING };
+
 export type ColorScheme = "system" | "light" | "dark";
-export const DEFAULT_STRUCTURED_HIGHLIGHTING = false;
 
 export type GlobalSettings = {
   splitView?: boolean;
@@ -79,6 +85,10 @@ export async function readSettings(): Promise<GlobalSettings> {
   }
 }
 
+// Server-side subset of the default set. Kept in sync with the two frontend
+// default enumerations: `DEFAULT_SETTINGS` (SettingsMenu.tsx, persisted on
+// reset) and `resetDisplaySettings` (App.tsx, applied to live React state). A
+// new setting whose materialized default the server must surface goes here too.
 export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
   return {
     openBrowser: DEFAULT_OPEN_BROWSER,

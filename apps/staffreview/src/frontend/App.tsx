@@ -4,6 +4,7 @@ import {
   MessageSquarePlus,
   PanelRightClose,
   PanelRightOpen,
+  RefreshCw,
   Settings,
   X,
 } from "lucide-react";
@@ -15,6 +16,15 @@ import { TargetPicker } from "./components/TargetPicker.tsx";
 import { TopLevelComments } from "./components/TopLevelComments.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import {
+  DEFAULT_DIFF_FONT_SIZE,
+  DEFAULT_FILES_EXPANDED_BY_DEFAULT,
+  DEFAULT_SPLIT_VIEW,
+  DEFAULT_STRUCTURED_HIGHLIGHTING,
+  DEFAULT_SYNTAX_THEME_DARK,
+  DEFAULT_SYNTAX_THEME_LIGHT,
+  DEFAULT_THEME,
+} from "./default-settings.ts";
 import { api, type ColorScheme, openSocket, type WSEvent } from "./lib/api.ts";
 import { ensureShikiTheme } from "./lib/highlight.ts";
 import { baseName, cn, shortenSlug } from "./lib/utils.ts";
@@ -23,12 +33,18 @@ import logoUrl from "./logo.png";
 const importSettingsMenu = () =>
   import("./components/SettingsMenu.tsx").then((mod) => ({ default: mod.SettingsMenu }));
 
+const preloadSettingsMenu = () => {
+  importSettingsMenu().catch(() => {});
+};
+
 function SettingsMenuFallback({
   loading = false,
   onClick,
+  onPreload,
 }: {
   loading?: boolean;
   onClick?: () => void;
+  onPreload?: () => void;
 }) {
   return (
     <Button
@@ -37,6 +53,8 @@ function SettingsMenuFallback({
       aria-label="Settings"
       data-testid="settings-menu-button"
       onClick={onClick}
+      onFocus={onPreload}
+      onPointerEnter={onPreload}
       disabled={loading}
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />}
@@ -85,20 +103,23 @@ export function App() {
   const [diff, setDiff] = useState<Diff | null>(null);
   const [files, setFiles] = useState<FileDiff[]>([]);
   const [loadingDiff, setLoadingDiff] = useState(false);
-  const [splitView, setSplitViewState] = useState(true);
-  const DEFAULT_DIFF_FONT_SIZE = 14;
+  const [splitView, setSplitViewState] = useState(DEFAULT_SPLIT_VIEW);
   const MIN_DIFF_FONT_SIZE = 9;
   const MAX_DIFF_FONT_SIZE = 22;
   const [diffFontSize, setDiffFontSizeState] = useState<number>(DEFAULT_DIFF_FONT_SIZE);
-  const [theme, setThemeState] = useState<ColorScheme>("system");
+  const [theme, setThemeState] = useState<ColorScheme>(DEFAULT_THEME);
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">("light");
-  const [syntaxThemeLight, setSyntaxThemeLightState] = useState<string>("catppuccin-latte");
-  const [syntaxThemeDark, setSyntaxThemeDarkState] = useState<string>("catppuccin-mocha");
-  const [structuredHighlighting, setStructuredHighlightingState] = useState(false);
+  const [syntaxThemeLight, setSyntaxThemeLightState] = useState<string>(DEFAULT_SYNTAX_THEME_LIGHT);
+  const [syntaxThemeDark, setSyntaxThemeDarkState] = useState<string>(DEFAULT_SYNTAX_THEME_DARK);
+  const [structuredHighlighting, setStructuredHighlightingState] = useState(
+    DEFAULT_STRUCTURED_HIGHLIGHTING,
+  );
   // Collapsed by default (showDiffOnly): only the changed hunks show,
   // with react-diff-viewer's expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
-  const [filesExpandedByDefault, setFilesExpandedByDefaultState] = useState(false);
+  const [filesExpandedByDefault, setFilesExpandedByDefaultState] = useState(
+    DEFAULT_FILES_EXPANDED_BY_DEFAULT,
+  );
   // Load preferences from the global settings file at startup, then
   // persist any user-driven change through the server so they survive
   // ports and projects.
@@ -169,6 +190,21 @@ export function App() {
       api.setSettings({ syntaxThemeDark: name }).catch(() => {});
     }
   }, []);
+  // Display subset of the default set. Kept in sync with the two other default
+  // enumerations: `DEFAULT_SETTINGS` (SettingsMenu.tsx, persisted on reset) and
+  // `settingsWithDefaults` (settings.ts, server-side). A new persisted display
+  // setting must be added here too, or reset won't reflect in the live UI.
+  const resetDisplaySettings = useCallback(() => {
+    setSplitViewState(DEFAULT_SPLIT_VIEW);
+    setDiffFontSizeState(DEFAULT_DIFF_FONT_SIZE);
+    setThemeState(DEFAULT_THEME);
+    setFilesExpandedByDefaultState(DEFAULT_FILES_EXPANDED_BY_DEFAULT);
+    setStructuredHighlightingState(DEFAULT_STRUCTURED_HIGHLIGHTING);
+    setSyntaxThemeLightState(DEFAULT_SYNTAX_THEME_LIGHT);
+    setSyntaxThemeDarkState(DEFAULT_SYNTAX_THEME_DARK);
+    ensureShikiTheme(DEFAULT_SYNTAX_THEME_LIGHT).catch(() => {});
+    ensureShikiTheme(DEFAULT_SYNTAX_THEME_DARK).catch(() => {});
+  }, []);
 
   // Reflect the active theme on <html>. For "system", track the OS
   // preference live so the page flips with the OS without a reload.
@@ -207,6 +243,16 @@ export function App() {
   const [composing, setComposing] = useState(false);
   const [settingsRequested, setSettingsRequested] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (settingsRequested) return;
+    const preload = () => preloadSettingsMenu();
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(preload, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(preload, 500);
+    return () => window.clearTimeout(id);
+  }, [settingsRequested]);
 
   // Hold the current slug in a ref so the WS handler can read it without
   // having to be torn down and recreated on every diff change.
@@ -459,7 +505,7 @@ export function App() {
       style={{ "--staff-diff-font-size": `${diffFontSize}px` } as React.CSSProperties}
     >
       <header className="shrink-0 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="w-full px-4 lg:pr-2.5 pt-3 pb-2 flex items-center gap-3 overflow-x-auto">
+        <div className="w-full px-4 pt-3 pb-2 flex items-center gap-3 overflow-x-auto">
           <img
             src={logoUrl}
             alt="Staff Review"
@@ -512,15 +558,12 @@ export function App() {
 
           <div className="flex-1" />
 
-          <Badge variant={wsHello ? "success" : "muted"}>{wsHello ? "Live" : "Connecting…"}</Badge>
           {settingsRequested ? (
             <LazyBoundary
               importer={importSettingsMenu}
               props={{
                 open: settingsOpen,
                 onOpenChange: setSettingsOpen,
-                loadingDiff,
-                onRefresh: reload,
                 splitView,
                 onSplitViewChange: setSplitView,
                 filesExpandedByDefault,
@@ -535,18 +578,36 @@ export function App() {
                 structuredHighlighting,
                 onStructuredHighlightingChange: setStructuredHighlighting,
                 onSyntaxThemeChange: setSyntaxTheme,
+                onResetDisplaySettings: resetDisplaySettings,
               }}
               loadingFallback={<SettingsMenuFallback loading />}
               errorFallback={(retry) => <SettingsMenuFallback onClick={retry} />}
             />
           ) : (
             <SettingsMenuFallback
+              onPreload={preloadSettingsMenu}
               onClick={() => {
                 setSettingsRequested(true);
                 setSettingsOpen(true);
               }}
             />
           )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh"
+            title="Refresh"
+            onClick={reload}
+            disabled={loadingDiff}
+            data-testid="header-refresh"
+          >
+            {loadingDiff ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
+          <Badge variant={wsHello ? "success" : "muted"}>{wsHello ? "Live" : "Connecting…"}</Badge>
         </div>
       </header>
 
