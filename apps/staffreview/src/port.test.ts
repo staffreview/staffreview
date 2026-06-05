@@ -1,10 +1,10 @@
-import { test, expect, describe, beforeEach, afterEach, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
-  resolvePort,
-  listenOnRange,
   isAddrInUse,
-  PORT_RANGE_START,
+  listenOnRange,
   PORT_RANGE_END,
+  PORT_RANGE_START,
+  resolvePort,
 } from "./port.ts";
 
 // The shape Bun.serve throws on a taken port: an Error with code "EADDRINUSE".
@@ -92,9 +92,9 @@ describe("isAddrInUse", () => {
   });
 
   test("true for a code-less 'address already in use' message", () => {
-    expect(
-      isAddrInUse(new Error("listen EADDRINUSE: address already in use 0.0.0.0:4300")),
-    ).toBe(true);
+    expect(isAddrInUse(new Error("listen EADDRINUSE: address already in use 0.0.0.0:4300"))).toBe(
+      true,
+    );
   });
 
   test("false for unrelated errors and non-errors", () => {

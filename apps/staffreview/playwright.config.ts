@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { SCRATCH_DIR, TEST_PORT } from "./tests/e2e/setup.ts";
+import { TEST_PORT } from "./tests/e2e/setup.ts";
 
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
 

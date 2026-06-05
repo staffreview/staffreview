@@ -1,11 +1,13 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, fillEditor } from "./helpers.ts";
+import { expect, test } from "@playwright/test";
+import { fillEditor, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
 });
 
-test("clicking the floating + button opens the composer inline below the line", async ({ page }) => {
+test("clicking the floating + button opens the composer inline below the line", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
@@ -52,7 +54,9 @@ test("clicking the floating + button opens the composer inline below the line", 
   await expect(mathCard.getByText("inline composer works")).toBeVisible();
 });
 
-test("clicking a line number updates the URL hash and does NOT open the composer", async ({ page }) => {
+test("clicking a line number updates the URL hash and does NOT open the composer", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
@@ -82,10 +86,7 @@ test("clicking a line number highlights that row, clicking another moves it", as
   const ifRow = mathCard
     .locator("table tbody tr")
     .filter({ hasText: 'if (typeof a !== "number")' });
-  const returnRow = mathCard
-    .locator("table tbody tr")
-    .filter({ hasText: "return a + b;" })
-    .first();
+  const returnRow = mathCard.locator("table tbody tr").filter({ hasText: "return a + b;" }).first();
 
   await ifRow.locator("td").nth(3).click();
   await expect(ifRow).toHaveAttribute("data-anchored", "true");
@@ -127,20 +128,18 @@ test("shift-click extends the anchor to a range — URL + multi-row highlight", 
   const ifRow = mathCard
     .locator("table tbody tr")
     .filter({ hasText: 'if (typeof a !== "number")' });
-  const returnRow = mathCard
-    .locator("table tbody tr")
-    .filter({ hasText: "return a + b;" })
-    .first();
+  const returnRow = mathCard.locator("table tbody tr").filter({ hasText: "return a + b;" }).first();
 
   // Anchor on `if (typeof…)` (R2), then shift-click `return a + b;` (R3)
   // to form an R2-R3 range.
   await ifRow.locator("td").nth(3).click();
   await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe("#math.ts:R2");
 
-  await returnRow.locator("td").nth(3).click({ modifiers: ["Shift"] });
-  await expect
-    .poll(() => decodeURIComponent(new URL(page.url()).hash))
-    .toBe("#math.ts:R2-R3");
+  await returnRow
+    .locator("td")
+    .nth(3)
+    .click({ modifiers: ["Shift"] });
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe("#math.ts:R2-R3");
 
   // Both rows in the range should be marked anchored.
   await expect(mathCard.locator('table tbody tr[data-anchored="true"]')).toHaveCount(2);
@@ -156,15 +155,15 @@ test("range anchor flows through to the comment (line + endLine)", async ({ page
   const ifRow = mathCard
     .locator("table tbody tr")
     .filter({ hasText: 'if (typeof a !== "number")' });
-  const returnRow = mathCard
-    .locator("table tbody tr")
-    .filter({ hasText: "return a + b;" })
-    .first();
+  const returnRow = mathCard.locator("table tbody tr").filter({ hasText: "return a + b;" }).first();
 
   // Select R2-R3, then hover the last row and click "+" to open a
   // range-attached composer.
   await ifRow.locator("td").nth(3).click();
-  await returnRow.locator("td").nth(3).click({ modifiers: ["Shift"] });
+  await returnRow
+    .locator("td")
+    .nth(3)
+    .click({ modifiers: ["Shift"] });
   await returnRow.locator("td").nth(5).hover();
   await mathCard.locator("[data-staff-plus]").click();
 
@@ -198,9 +197,7 @@ test("range anchor flows through to the comment (line + endLine)", async ({ page
   const sidebarLink = page.locator("[data-testid^=sidebar-inline-thread-]").first();
   await expect(sidebarLink).toContainText("math.ts:2-3");
   await sidebarLink.click();
-  await expect
-    .poll(() => decodeURIComponent(new URL(page.url()).hash))
-    .toBe("#math.ts:R2-R3");
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe("#math.ts:R2-R3");
 });
 
 test("loading the page with a #file:line hash scrolls to that line", async ({ page }) => {
@@ -249,10 +246,7 @@ test("multiple composers can be open simultaneously", async ({ page }) => {
   await expect(mathCard.locator('tr[data-composer-host="true"]')).toHaveCount(1);
 
   // Open another on the unchanged `return a + b;` line.
-  const returnRow = mathCard
-    .locator("table tbody tr")
-    .filter({ hasText: "return a + b;" })
-    .first();
+  const returnRow = mathCard.locator("table tbody tr").filter({ hasText: "return a + b;" }).first();
   await returnRow.locator("td").nth(5).hover();
   await mathCard.locator("[data-staff-plus]").click();
   await expect(mathCard.locator('tr[data-composer-host="true"]')).toHaveCount(2);

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -50,7 +50,9 @@ test("inline comments appear in the sidebar and clicking scrolls to them", async
 // Note: collapsed-expand-then-scroll has a known timing race because
 // react-diff-viewer-continued takes more than one frame to mount its
 // <table>. Skipped until we move off the library.
-test.skip("clicking a sidebar inline thread expands the file if it's collapsed", async ({ page }) => {
+test.skip("clicking a sidebar inline thread expands the file if it's collapsed", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();

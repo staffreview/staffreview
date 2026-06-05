@@ -1,30 +1,30 @@
-import Image from 'next/image';
-import { Bot, Library, Repeat, Search } from 'lucide-react';
-import { gitConfig } from '@/lib/shared';
-import { HeroCtas, ClosingCtas } from '@/components/home-ctas';
+import { Bot, Library, Repeat, Search } from "lucide-react";
+import Image from "next/image";
+import { ClosingCtas, HeroCtas } from "@/components/home-ctas";
+import { gitConfig } from "@/lib/shared";
 
 const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 
 const features = [
   {
     icon: Search,
-    title: 'Review any diff, locally, in seconds',
-    body: 'Compare a branch, a commit, a range, your staged changes, or your uncommitted working tree — main..WT, <sha>..<sha>, release..main. A clean split/unified diff opens in your browser with inline comments, replies, and resolutions. Catch issues before you push — no GitHub PR required.',
+    title: "Review any diff, locally, in seconds",
+    body: "Compare a branch, a commit, a range, your staged changes, or your uncommitted working tree — main..WT, <sha>..<sha>, release..main. A clean split/unified diff opens in your browser with inline comments, replies, and resolutions. Catch issues before you push — no GitHub PR required.",
   },
   {
     icon: Bot,
-    title: 'A thorough review from any harness or model',
-    body: 'Staff Review ships editable skills that drive a staff-engineer-level review: trace every changed hunk through its edge cases, read the callers and tests, and leave concrete, actionable comments. Use Claude Code out of the box, or any agent that can read a SKILL.md and run a shell command.',
+    title: "A thorough review from any harness or model",
+    body: "Staff Review ships editable skills that drive a staff-engineer-level review: trace every changed hunk through its edge cases, read the callers and tests, and leave concrete, actionable comments. Use Claude Code out of the box, or any agent that can read a SKILL.md and run a shell command.",
   },
   {
     icon: Library,
-    title: 'Capture project-specific concerns once',
-    body: 'Flag a comment with Document, then run /staff-resolve — the agent writes it up as a library entry. Every future review cross-checks the diff against that library, so the gotcha your team keeps re-learning gets caught automatically. Commit the library and the whole team benefits.',
+    title: "Capture project-specific concerns once",
+    body: "Flag a comment with Document, then run /staff-resolve — the agent writes it up as a library entry. Every future review cross-checks the diff against that library, so the gotcha your team keeps re-learning gets caught automatically. Commit the library and the whole team benefits.",
   },
   {
     icon: Repeat,
-    title: 'Loop review → resolve for higher quality',
-    body: '/staff-loop runs the review and the fixes in isolated subagents, round after round, until a fresh review finds nothing new (or a cap you set). Each round’s fixes get re-reviewed, so regressions and missed issues surface on their own.',
+    title: "Loop review → resolve for higher quality",
+    body: "/staff-loop runs the review and the fixes in isolated subagents, round after round, until a fresh review finds nothing new (or a cap you set). Each round’s fixes get re-reviewed, so regressions and missed issues surface on their own.",
   },
 ];
 
@@ -37,7 +37,7 @@ export default function HomePage() {
           className="pointer-events-none absolute inset-0 -z-10 opacity-60"
           style={{
             background:
-              'radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklch, var(--color-fd-primary) 22%, transparent), transparent)',
+              "radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklch, var(--color-fd-primary) 22%, transparent), transparent)",
           }}
         />
         <div className="mx-auto flex max-w-3xl flex-col items-center px-4 py-20 text-center sm:py-28">
@@ -53,14 +53,13 @@ export default function HomePage() {
             Staff Review
           </h1>
           <p className="mt-4 text-balance text-lg text-fd-muted-foreground sm:text-xl">
-            A local, staff-engineer-grade code review — for your working tree,
-            before anyone else sees it.
+            A local, staff-engineer-grade code review — for your working tree, before anyone else
+            sees it.
           </p>
           <p className="mt-4 max-w-2xl text-balance text-fd-muted-foreground">
-            Open a GitHub-style review of <em>any</em> diff in your browser and
-            let <strong>any AI coding agent</strong> leave a thorough, inline
-            review on it — then fix, document, or skip each comment. No PR, no
-            cloud, no waiting.
+            Open a GitHub-style review of <em>any</em> diff in your browser and let{" "}
+            <strong>any AI coding agent</strong> leave a thorough, inline review on it — then fix,
+            document, or skip each comment. No PR, no cloud, no waiting.
           </p>
 
           <HeroCtas githubUrl={githubUrl} />
@@ -77,17 +76,15 @@ export default function HomePage() {
                 <span className="text-fd-muted-foreground">
                   # set up the repo (writes the /staff-* skills)
                 </span>
-                {'\n'}
-                <span className="text-fd-primary">staff</span> install{'\n\n'}
+                {"\n"}
+                <span className="text-fd-primary">staff</span> install{"\n\n"}
                 <span className="text-fd-muted-foreground">
                   # open “main vs. working tree” in your browser
                 </span>
-                {'\n'}
-                <span className="text-fd-primary">staff</span> main..WT{'\n\n'}
-                <span className="text-fd-muted-foreground">
-                  # then, in your agent:
-                </span>
-                {'\n'}/staff-review main..WT{'  →  '}/staff-resolve
+                {"\n"}
+                <span className="text-fd-primary">staff</span> main..WT{"\n\n"}
+                <span className="text-fd-muted-foreground"># then, in your agent:</span>
+                {"\n"}/staff-review main..WT{"  →  "}/staff-resolve
               </code>
             </pre>
           </div>
@@ -114,10 +111,9 @@ export default function HomePage() {
           ))}
         </div>
         <p className="mx-auto mt-8 max-w-2xl text-balance text-center text-sm text-fd-muted-foreground">
-          Staff Review itself is <strong>100% local</strong> — a small web
-          server reading your local git history. Your agent still talks to
-          whatever model you choose; pick a local one if you want zero data to
-          leave the machine.
+          Staff Review itself is <strong>100% local</strong> — a small web server reading your local
+          git history. Your agent still talks to whatever model you choose; pick a local one if you
+          want zero data to leave the machine.
         </p>
       </section>
 

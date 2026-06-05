@@ -1,7 +1,7 @@
-import { rm, mkdir, writeFile, symlink } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const SCRATCH_DIR = join(__dirname, ".tmp", "repo");
@@ -92,12 +92,18 @@ export default async function globalSetup() {
   // exercises the "Binary file not shown" handling instead of a text diff.
   await writeFile(
     join(SCRATCH_DIR, "pixel.png"),
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0xff, 0xd8, 0xff]),
+    Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0xff, 0xd8, 0xff,
+    ]),
   );
   await run("git", ["add", "-A"], SCRATCH_DIR);
   await run("git", ["commit", "-qm", "feature changes"], SCRATCH_DIR);
+  for (let i = 1; i <= 6; i++) {
+    await run("git", ["tag", `tag/release-${i}`], SCRATCH_DIR);
+  }
 
   await run("git", ["checkout", "-q", "main"], SCRATCH_DIR);
+  await run("git", ["tag", "tag/release-old"], SCRATCH_DIR);
 
   // Extra branches pointing at the (older) initial commit so the total
   // exceeds the target picker's idle cap of 5. They sort below
@@ -107,8 +113,5 @@ export default async function globalSetup() {
     await run("git", ["branch", `legacy/branch-${i}`, "main"], SCRATCH_DIR);
   }
 
-  await writeFile(
-    join(SCRATCH_DIR, "math.ts"),
-    FILE_A_OLD.replace("a + b", "a + b /* sum */"),
-  );
+  await writeFile(join(SCRATCH_DIR, "math.ts"), FILE_A_OLD.replace("a + b", "a + b /* sum */"));
 }

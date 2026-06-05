@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, staff } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson, staff } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -9,7 +9,9 @@ test.beforeEach(async () => {
   await rm(STAFF_CONFIG_DIR, { recursive: true, force: true });
 });
 
-test("reviewAgents: CLI default, gear-menu stepper persists, and the [1,20] clamp holds", async ({ page }) => {
+test("reviewAgents: CLI default, gear-menu stepper persists, and the [1,20] clamp holds", async ({
+  page,
+}) => {
   // Default when unset (the /staff-review skill reads this).
   expect((await staff(["settings", "get", "reviewAgents"])).trim()).toBe("2");
 

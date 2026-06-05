@@ -1,11 +1,11 @@
-import { type ReactNode, useMemo, useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import type { Comment, FileDiff } from "../../types.ts";
+import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
+import { setLineHash } from "./DiffView.tsx";
 import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group.tsx";
-import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
-import { setLineHash } from "./DiffView.tsx";
 
 function groupByThread(comments: Comment[]) {
   const map = new Map<string, Comment[]>();
@@ -27,9 +27,7 @@ function scrollToThread(
   endLine?: number,
 ) {
   if (file) {
-    window.dispatchEvent(
-      new CustomEvent("staff:expand-file", { detail: { path: file } }),
-    );
+    window.dispatchEvent(new CustomEvent("staff:expand-file", { detail: { path: file } }));
   }
   // Reflect the thread's anchor in the URL so the address bar is a shareable
   // deep-link to the line (or range), just like clicking the line number
@@ -53,9 +51,7 @@ function scrollToThread(
 function scrollToFile(path: string) {
   // Expand the file first in case it's collapsed, then scroll its card
   // into view. Poll briefly because the expand triggers a re-render.
-  window.dispatchEvent(
-    new CustomEvent("staff:expand-file", { detail: { path } }),
-  );
+  window.dispatchEvent(new CustomEvent("staff:expand-file", { detail: { path } }));
   const selector = `[data-testid="file-card-${path.replace(/"/g, '\\"')}"]`;
   const start = performance.now();
   const tick = () => {
@@ -117,7 +113,11 @@ export function TopLevelComments({
           {/* `bg-foreground/15` is darker than both the default tab
            * background and the `bg-accent` selected state, so the count
            * badges stay visible in either tab state. */}
-          <ToggleGroupItem value="comments" className="flex-1 gap-1.5" data-testid="sidebar-tab-comments">
+          <ToggleGroupItem
+            value="comments"
+            className="flex-1 gap-1.5"
+            data-testid="sidebar-tab-comments"
+          >
             Comments
             <Badge className="bg-foreground/15 text-foreground border-transparent px-1.5 py-0 text-[10px] leading-4">
               {threads.length}
@@ -160,9 +160,8 @@ export function TopLevelComments({
 
           {threads.length === 0 && !composing && (
             <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              No review comments yet. Click <em>New comment</em>, click any line
-              in the diff, or run <code className="font-mono">/staff-review</code>{" "}
-              in your coding agent.
+              No review comments yet. Click <em>New comment</em>, click any line in the diff, or run{" "}
+              <code className="font-mono">/staff-review</code> in your coding agent.
             </div>
           )}
 
@@ -181,13 +180,7 @@ export function TopLevelComments({
                   <button
                     type="button"
                     onClick={() =>
-                      scrollToThread(
-                        root.threadId,
-                        root.file,
-                        root.side,
-                        root.line,
-                        root.endLine,
-                      )
+                      scrollToThread(root.threadId, root.file, root.side, root.line, root.endLine)
                     }
                     data-testid={`sidebar-inline-thread-${root.threadId}`}
                     title={fullLocation}
@@ -206,11 +199,7 @@ export function TopLevelComments({
                     </span>
                   </button>
                 )}
-                <CommentThread
-                  slug={slug}
-                  comments={thread}
-                  onChange={onChange}
-                />
+                <CommentThread slug={slug} comments={thread} onChange={onChange} />
               </div>
             );
           })}
@@ -218,7 +207,10 @@ export function TopLevelComments({
       )}
 
       {tab === "files" && (
-        <div className="rounded-md border border-border bg-muted/30" data-testid="sidebar-files-list">
+        <div
+          className="rounded-md border border-border bg-muted/30"
+          data-testid="sidebar-files-list"
+        >
           {files.length === 0 ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               No files in this diff.

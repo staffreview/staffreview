@@ -1,6 +1,6 @@
-import type { DiffTarget, FileDiff, GitRefInfo } from "./types.ts";
-import { join } from "node:path";
 import { lstat, readlink } from "node:fs/promises";
+import { join } from "node:path";
+import type { DiffTarget, FileDiff, GitRefInfo } from "./types.ts";
 
 async function run(
   cmd: string[],
@@ -42,47 +42,64 @@ export async function currentBranch(cwd = process.cwd()): Promise<string | null>
 export async function listRefs(cwd = process.cwd()): Promise<GitRefInfo[]> {
   const refs: GitRefInfo[] = [];
 
-  const branches = (await run([
-    "git",
-    "for-each-ref",
-    "--sort=-committerdate", // most recently committed first
-    "--format=%(refname:short)\t%(objectname)\t%(subject)",
-    "refs/heads",
-  ], { cwd })).trim();
+  const branches = (
+    await run(
+      [
+        "git",
+        "for-each-ref",
+        "--sort=-committerdate", // most recently committed first
+        "--format=%(refname:short)\t%(objectname)\t%(subject)",
+        "refs/heads",
+      ],
+      { cwd },
+    )
+  ).trim();
   for (const line of branches.split("\n").filter(Boolean)) {
     const [name, sha, subject] = line.split("\t");
     refs.push({ name: name!, kind: "branch", sha, subject });
   }
 
-  const remotes = (await run([
-    "git",
-    "for-each-ref",
-    "--sort=-committerdate",
-    "--format=%(refname:short)\t%(objectname)\t%(subject)",
-    "refs/remotes",
-  ], { cwd })).trim();
+  const remotes = (
+    await run(
+      [
+        "git",
+        "for-each-ref",
+        "--sort=-committerdate",
+        "--format=%(refname:short)\t%(objectname)\t%(subject)",
+        "refs/remotes",
+      ],
+      { cwd },
+    )
+  ).trim();
   for (const line of remotes.split("\n").filter(Boolean)) {
     const [name, sha, subject] = line.split("\t");
     if (name?.endsWith("/HEAD")) continue;
     refs.push({ name: name!, kind: "remote", sha, subject });
   }
 
-  const tags = (await run([
-    "git",
-    "for-each-ref",
-    "--sort=-committerdate",
-    "--format=%(refname:short)\t%(objectname)\t%(subject)",
-    "refs/tags",
-  ], { cwd })).trim();
+  const tags = (
+    await run(
+      [
+        "git",
+        "for-each-ref",
+        "--sort=-committerdate",
+        "--format=%(refname:short)\t%(objectname)\t%(subject)",
+        "refs/tags",
+      ],
+      { cwd },
+    )
+  ).trim();
   for (const line of tags.split("\n").filter(Boolean)) {
     const [name, sha, subject] = line.split("\t");
     refs.push({ name: name!, kind: "tag", sha, subject });
   }
 
-  const recent = (await run(["git", "log", "-50", "--pretty=%H%x09%s"], {
-    cwd,
-    allowFail: true,
-  })).trim();
+  const recent = (
+    await run(["git", "log", "-50", "--pretty=%H%x09%s"], {
+      cwd,
+      allowFail: true,
+    })
+  ).trim();
   for (const line of recent.split("\n").filter(Boolean)) {
     const [sha, subject] = line.split("\t");
     refs.push({ name: sha!.slice(0, 12), kind: "commit", sha, subject });
@@ -139,11 +156,7 @@ export function targetsForSlug(slug: string): { base: DiffTarget; head: DiffTarg
  * WT/STAGED, already-pinned commits, and anything unresolvable are returned
  * unchanged.
  */
-async function resolveTarget(
-  t: DiffTarget,
-  refs: GitRefInfo[],
-  cwd: string,
-): Promise<DiffTarget> {
+async function resolveTarget(t: DiffTarget, refs: GitRefInfo[], cwd: string): Promise<DiffTarget> {
   if (t.kind !== "ref" || !t.ref) return t;
 
   const peel = async (rev: string): Promise<string> =>
@@ -220,10 +233,12 @@ async function listChangedFiles(
   if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
     const out = (await run(["git", "diff", "--name-status", baseRef!], { cwd })).trim();
     parseStatus(out, results);
-    const untracked = (await run(["git", "ls-files", "--others", "--exclude-standard"], {
-      cwd,
-      allowFail: true,
-    })).trim();
+    const untracked = (
+      await run(["git", "ls-files", "--others", "--exclude-standard"], {
+        cwd,
+        allowFail: true,
+      })
+    ).trim();
     for (const p of untracked.split("\n").filter(Boolean)) {
       if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
     }
@@ -245,10 +260,12 @@ async function listChangedFiles(
   if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
     const out = (await run(["git", "diff", "--name-status", "HEAD"], { cwd })).trim();
     parseStatus(out, results);
-    const untracked = (await run(["git", "ls-files", "--others", "--exclude-standard"], {
-      cwd,
-      allowFail: true,
-    })).trim();
+    const untracked = (
+      await run(["git", "ls-files", "--others", "--exclude-standard"], {
+        cwd,
+        allowFail: true,
+      })
+    ).trim();
     for (const p of untracked.split("\n").filter(Boolean)) {
       if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
     }
@@ -318,7 +335,12 @@ async function isSymlinkAt(t: DiffTarget, path: string, cwd: string): Promise<bo
  * mode-120000 blob already yields the target path, so refs/staged are
  * fine through `readContent`.
  */
-async function readSide(t: DiffTarget, path: string, cwd: string, isSymlink: boolean): Promise<string> {
+async function readSide(
+  t: DiffTarget,
+  path: string,
+  cwd: string,
+  isSymlink: boolean,
+): Promise<string> {
   if (isSymlink && t.kind === "working-tree") {
     try {
       return await readlink(join(cwd, path));
@@ -354,11 +376,13 @@ export async function getDiff(
   );
   const diffs: FileDiff[] = [];
   for (const f of files) {
-    const status =
-      f.status.startsWith("A") ? "added" :
-      f.status.startsWith("D") ? "deleted" :
-      f.status.startsWith("R") ? "renamed" :
-      "modified";
+    const status = f.status.startsWith("A")
+      ? "added"
+      : f.status.startsWith("D")
+        ? "deleted"
+        : f.status.startsWith("R")
+          ? "renamed"
+          : "modified";
 
     const oldPath = f.oldPath ?? f.path;
     const baseIsSymlink = status === "added" ? false : await isSymlinkAt(base, oldPath, cwd);

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson, staff } from "./helpers.ts";
 
 // A diff's base must be pinned to a concrete commit, never the moving `HEAD`
@@ -11,9 +11,7 @@ test.beforeEach(async () => {
 });
 
 test("--base HEAD is pinned to a real commit, not the literal HEAD", async () => {
-  const d = JSON.parse(
-    await staff(["diff", "--base", "HEAD", "--head", "working-tree", "--json"]),
-  );
+  const d = JSON.parse(await staff(["diff", "--base", "HEAD", "--head", "working-tree", "--json"]));
   expect(d.slug).not.toContain("HEAD");
   expect(d.slug).toMatch(/^[0-9a-f]{40}\.\.WT$/);
   expect(d.base.kind).toBe("commit");

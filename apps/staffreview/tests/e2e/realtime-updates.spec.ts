@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson, staff } from "./helpers.ts";
 
 // Regression guard for the live-update WebSocket: it must stay open across

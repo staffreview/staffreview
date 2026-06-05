@@ -14,12 +14,10 @@ export function Markdown({ children, className }: { children: string; className?
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ node, ...props }) => (
-            <a {...props} target="_blank" rel="noreferrer noopener" />
-          ),
-          img: ({ node, ...props }) => (
+          a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+          img: ({ node, alt, ...props }) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img {...props} loading="lazy" />
+            <img {...props} alt={alt ?? ""} loading="lazy" />
           ),
         }}
       >

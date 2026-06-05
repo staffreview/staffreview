@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -16,7 +16,9 @@ async function openDiff(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("file-card-big.ts")).toBeVisible();
 }
 
-test("Collapsed (default) folds unchanged context; the expand button reveals it", async ({ page }) => {
+test("Collapsed (default) folds unchanged context; the expand button reveals it", async ({
+  page,
+}) => {
   await page.goto("/");
   await openDiff(page);
 

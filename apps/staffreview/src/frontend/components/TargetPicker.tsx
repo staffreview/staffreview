@@ -1,11 +1,18 @@
-import { useMemo, useState } from "react";
 import { ChevronsUpDown, GitBranch, GitCommit, GitMerge, Tag } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { DiffTarget, GitRefInfo } from "../../types.ts";
-import { Button } from "./ui/button.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command.tsx";
-import { Badge } from "./ui/badge.tsx";
 import { cn, shortSha } from "../lib/utils.ts";
+import { Badge } from "./ui/badge.tsx";
+import { Button } from "./ui/button.tsx";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "./ui/command.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 
 type Special = { id: string; label: string; target: DiffTarget };
 
@@ -35,6 +42,31 @@ function iconForKind(kind: GitRefInfo["kind"]) {
   return <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />;
 }
 
+function refMatchesTarget(r: GitRefInfo, value: DiffTarget) {
+  if (value.kind === "working-tree" || value.kind === "staged" || !value.ref) return false;
+
+  if (r.kind === "commit") {
+    return value.ref === r.sha || (!value.label && value.ref === r.name);
+  }
+
+  if (value.label) {
+    return r.name === value.label && (value.ref === r.name || value.ref === r.sha);
+  }
+
+  return value.ref === r.name || value.ref === r.sha;
+}
+
+function withSelected<T extends GitRefInfo>(
+  refs: T[],
+  limit: number,
+  isSelected: (r: T) => boolean,
+) {
+  const shown = refs.slice(0, limit);
+  const selected = refs.find(isSelected);
+  if (selected && !shown.includes(selected)) return [...shown, selected];
+  return shown;
+}
+
 export function TargetPicker({
   label,
   value,
@@ -54,6 +86,8 @@ export function TargetPicker({
   const INITIAL = 5;
   const STEP = 10;
   const [branchLimit, setBranchLimit] = useState(INITIAL);
+  const [remoteLimit, setRemoteLimit] = useState(INITIAL);
+  const [tagLimit, setTagLimit] = useState(INITIAL);
   const [commitLimit, setCommitLimit] = useState(INITIAL);
 
   const groups = useMemo(() => {
@@ -65,9 +99,7 @@ export function TargetPicker({
     // branch and powers the stale-base banner).
     const namedShas = new Set(
       refs
-        .filter(
-          (r) => (r.kind === "branch" || r.kind === "remote" || r.kind === "tag") && r.sha,
-        )
+        .filter((r) => (r.kind === "branch" || r.kind === "remote" || r.kind === "tag") && r.sha)
         .map((r) => r.sha as string),
     );
     const commits = refs.filter((r) => r.kind === "commit" && !namedShas.has(r.sha ?? ""));
@@ -76,41 +108,66 @@ export function TargetPicker({
 
   // When idle (no query) the lists are capped so the picker stays scannable
   // — "View more" reveals the next batch. Typing a query shows everything so
-  // all branches/commits stay searchable (no cap). Branches are ordered
-  // most-recent-first (git --sort=-committerdate); the branch cap always
-  // pins `main`/`master` if present, even when it's not recent.
+  // refs stay searchable (no cap). The current selection is kept visible even
+  // when it falls outside the latest page.
   const searching = search.trim().length > 0;
-  const branchesShown = useMemo(() => {
-    if (searching) return groups.branches;
-    const top = groups.branches.slice(0, branchLimit);
-    const main = groups.branches.find((b) => b.name === "main" || b.name === "master");
-    if (main && !top.includes(main)) top.push(main);
-    return top;
-  }, [searching, groups.branches, branchLimit]);
-  const commitsShown = searching ? groups.commits : groups.commits.slice(0, commitLimit);
+  const isSelected = (r: GitRefInfo) => refMatchesTarget(r, value);
+  const branchesShown = searching
+    ? groups.branches
+    : withSelected(groups.branches, branchLimit, isSelected);
+  const remotesShown = searching
+    ? groups.remotes
+    : withSelected(groups.remotes, remoteLimit, isSelected);
+  const tagsShown = searching ? groups.tags : withSelected(groups.tags, tagLimit, isSelected);
+  const commitsShown = searching
+    ? groups.commits
+    : withSelected(groups.commits, commitLimit, isSelected);
   const branchesHidden = groups.branches.length - branchesShown.length;
+  const remotesHidden = groups.remotes.length - remotesShown.length;
+  const tagsHidden = groups.tags.length - tagsShown.length;
   const commitsHidden = groups.commits.length - commitsShown.length;
+
+  const resetTransientState = () => {
+    setSearch("");
+    setBranchLimit(INITIAL);
+    setRemoteLimit(INITIAL);
+    setTagLimit(INITIAL);
+    setCommitLimit(INITIAL);
+  };
+  const closePicker = () => {
+    resetTransientState();
+    setOpen(false);
+  };
 
   return (
     <div className="flex items-center gap-2" data-testid={`target-picker-${label}`}>
-      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground w-9">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground w-9">
+        {label}
+      </span>
       <Popover
         open={open}
         onOpenChange={(o) => {
           setOpen(o);
           if (!o) {
             // Reset so the cap (and search) applies fresh next open.
-            setSearch("");
-            setBranchLimit(INITIAL);
-            setCommitLimit(INITIAL);
+            resetTransientState();
           }
         }}
       >
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="min-w-0 justify-between gap-2 font-mono text-xs" data-testid={`target-picker-${label}-button`} aria-label={`${label} target`} title={targetTitle(value)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-w-0 justify-between gap-2 font-mono text-xs"
+            data-testid={`target-picker-${label}-button`}
+            aria-label={`${label} target`}
+            title={targetTitle(value)}
+          >
             <span className="flex items-center gap-2 truncate">
               {value.kind === "working-tree" || value.kind === "staged" ? (
-                <Badge variant="outline" className="font-sans">{targetLabel(value)}</Badge>
+                <Badge variant="outline" className="font-sans">
+                  {targetLabel(value)}
+                </Badge>
               ) : (
                 <>
                   <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -123,11 +180,7 @@ export function TargetPicker({
         </PopoverTrigger>
         <PopoverContent className="w-[360px] p-0">
           <Command>
-            <CommandInput
-              placeholder="Search refs…"
-              value={search}
-              onValueChange={setSearch}
-            />
+            <CommandInput placeholder="Search refs…" value={search} onValueChange={setSearch} />
             <CommandList>
               <CommandEmpty>No matches.</CommandEmpty>
               {includeWorkingState && (
@@ -139,7 +192,7 @@ export function TargetPicker({
                       keywords={[s.label]}
                       onSelect={() => {
                         onChange(s.target);
-                        setOpen(false);
+                        closePicker();
                       }}
                       className={cn(value.kind === s.target.kind && "bg-accent")}
                     >
@@ -155,9 +208,9 @@ export function TargetPicker({
                       key={`b:${r.name}`}
                       ref={r}
                       prefix="b"
-                      selected={value.ref === r.sha}
+                      selected={isSelected(r)}
                       onPick={onChange}
-                      close={() => setOpen(false)}
+                      close={closePicker}
                     />
                   ))}
                   {branchesHidden > 0 && (
@@ -170,32 +223,48 @@ export function TargetPicker({
                   )}
                 </CommandGroup>
               )}
-              {groups.remotes.length > 0 && (
+              {remotesShown.length > 0 && (
                 <CommandGroup heading="Remote branches">
-                  {groups.remotes.map((r) => (
+                  {remotesShown.map((r) => (
                     <NamedRefItem
                       key={`r:${r.name}`}
                       ref={r}
                       prefix="r"
-                      selected={value.ref === r.sha}
+                      selected={isSelected(r)}
                       onPick={onChange}
-                      close={() => setOpen(false)}
+                      close={closePicker}
                     />
                   ))}
+                  {remotesHidden > 0 && (
+                    <ViewMore
+                      testid="view-more-remote-branches"
+                      hidden={remotesHidden}
+                      step={STEP}
+                      onClick={() => setRemoteLimit((n) => n + STEP)}
+                    />
+                  )}
                 </CommandGroup>
               )}
-              {groups.tags.length > 0 && (
+              {tagsShown.length > 0 && (
                 <CommandGroup heading="Tags">
-                  {groups.tags.map((r) => (
+                  {tagsShown.map((r) => (
                     <NamedRefItem
                       key={`t:${r.name}`}
                       ref={r}
                       prefix="t"
-                      selected={value.ref === r.sha}
+                      selected={isSelected(r)}
                       onPick={onChange}
-                      close={() => setOpen(false)}
+                      close={closePicker}
                     />
                   ))}
+                  {tagsHidden > 0 && (
+                    <ViewMore
+                      testid="view-more-tags"
+                      hidden={tagsHidden}
+                      step={STEP}
+                      onClick={() => setTagLimit((n) => n + STEP)}
+                    />
+                  )}
                 </CommandGroup>
               )}
               {commitsShown.length > 0 && (
@@ -220,7 +289,7 @@ export function TargetPicker({
                             ref: r.sha,
                             label: headOf?.name ?? `${r.name} ${r.subject ?? ""}`.trim(),
                           });
-                          setOpen(false);
+                          closePicker();
                         }}
                       >
                         {iconForKind(r.kind)}
@@ -318,9 +387,7 @@ function NamedRefItem({
     >
       {iconForKind(r.kind)}
       <span className="font-mono text-xs">{r.name}</span>
-      {r.subject && (
-        <span className="text-xs text-muted-foreground truncate">{r.subject}</span>
-      )}
+      {r.subject && <span className="text-xs text-muted-foreground truncate">{r.subject}</span>}
       {r.sha && (
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
           {r.sha.slice(0, 7)}

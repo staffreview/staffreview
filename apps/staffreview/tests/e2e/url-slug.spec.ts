@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -7,19 +7,21 @@ test.beforeEach(async () => {
 
 test("active diff slug is reflected in the URL as ?diff=", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
-  // Default base is pinned to the current branch's commit SHA, head is WT.
-  await expect.poll(() => new URL(page.url()).searchParams.get("diff")).toMatch(
-    /^[0-9a-f]{40}\.\.WT$/,
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
   );
+  // Default base is pinned to the current branch's commit SHA, head is WT.
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("diff"))
+    .toMatch(/^[0-9a-f]{40}\.\.WT$/);
 
   // Switching head to a branch should update the URL — head is also SHA-pinned.
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
-  await expect.poll(() => new URL(page.url()).searchParams.get("diff")).toMatch(
-    /^[0-9a-f]{40}\.\.[0-9a-f]{40}$/,
-  );
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("diff"))
+    .toMatch(/^[0-9a-f]{40}\.\.[0-9a-f]{40}$/);
 });
 
 test("loading the page with ?diff=<slug> opens that diff", async ({ page }) => {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -7,7 +7,9 @@ test.beforeEach(async () => {
 
 test("base picker typeahead filters refs and ranks an exact name match first", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   await page.getByTestId("target-picker-base-button").click();
   const search = page.getByPlaceholder(/Search refs/);
@@ -27,9 +29,13 @@ test("base picker typeahead filters refs and ranks an exact name match first", a
   await expect(options.first()).toContainText("main");
 });
 
-test("branch list is capped when idle, expandable via View more, fully searchable", async ({ page }) => {
+test("branch list is capped when idle, expandable via View more, fully searchable", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   await page.getByTestId("target-picker-base-button").click();
 
@@ -38,7 +44,7 @@ test("branch list is capped when idle, expandable via View more, fully searchabl
   const viewMore = page.getByTestId("view-more-branches");
   await expect(viewMore).toBeVisible();
   await expect(page.getByRole("option", { name: /legacy\/branch-5/ })).toHaveCount(0);
-  // main and the newest branch are always shown.
+  // The selected main branch and the newest branch are shown.
   await expect(page.getByRole("option", { name: /\bmain\b/ }).first()).toBeVisible();
   await expect(page.getByRole("option", { name: /feature\/improve-math/ })).toBeVisible();
 
@@ -48,9 +54,42 @@ test("branch list is capped when idle, expandable via View more, fully searchabl
   await expect(page.getByTestId("view-more-branches")).toHaveCount(0);
 });
 
+test("tag list is capped, expandable, and keeps the selected hidden tag visible", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
+
+  await page.getByTestId("target-picker-base-button").click();
+
+  await expect(page.getByRole("option", { name: /tag\/release-/ })).toHaveCount(5);
+  await expect(page.getByRole("option", { name: /tag\/release-old/ })).toHaveCount(0);
+  const viewMore = page.getByTestId("view-more-tags");
+  await expect(viewMore).toBeVisible();
+
+  await viewMore.click();
+  await expect(page.getByRole("option", { name: /tag\/release-/ })).toHaveCount(7);
+  await expect(page.getByTestId("view-more-tags")).toHaveCount(0);
+
+  const diffReload = page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
+  await page.getByRole("option", { name: /tag\/release-old/ }).click();
+  await diffReload;
+
+  await page.getByTestId("target-picker-base-button").click();
+  await expect(page.getByRole("option", { name: /tag\/release-old/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /tag\/release-/ })).toHaveCount(6);
+  await expect(page.getByTestId("view-more-tags")).toHaveText("View 1 more");
+});
+
 test("search results are not capped", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   await page.getByTestId("target-picker-base-button").click();
   // Typing a query that matches all legacy branches shows them all with no

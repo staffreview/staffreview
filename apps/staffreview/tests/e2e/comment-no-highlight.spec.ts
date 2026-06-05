@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -9,7 +9,9 @@ test.beforeEach(async () => {
 // A line highlight is reserved for an explicit selection — clicking/dragging a
 // line number or arriving via a URL anchor. (The bug fed comment lines into
 // react-diff-viewer's `highlightLines`, tinting every commented line.)
-test("a comment does not highlight its line; clicking the line number still does", async ({ page }) => {
+test("a comment does not highlight its line; clicking the line number still does", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
@@ -17,10 +19,18 @@ test("a comment does not highlight its line; clicking the line number still does
 
   // An agent comments on math.ts:2 (new side) — no user interaction.
   await staff([
-    "comment", "add",
-    "--file", "math.ts", "--line", "2", "--side", "new",
-    "--author", "cli",
-    "--body", "no highlight please",
+    "comment",
+    "add",
+    "--file",
+    "math.ts",
+    "--line",
+    "2",
+    "--side",
+    "new",
+    "--author",
+    "cli",
+    "--body",
+    "no highlight please",
   ]);
 
   const mathCard = page.getByTestId("file-card-math.ts");

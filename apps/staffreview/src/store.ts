@@ -1,7 +1,7 @@
 import { mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { Diff, DiffTarget, Comment, Resolution } from "./types.ts";
 import { slugForDiff } from "./git.ts";
+import type { Comment, Diff, DiffTarget, Resolution } from "./types.ts";
 
 export function staffDir(cwd = process.cwd()) {
   return join(cwd, ".staffreview");
@@ -166,9 +166,9 @@ export async function addComment(
   const c = await loadDiff(slug, cwd);
   if (!c) throw new Error(`diff not found: ${slug}`);
   const id = newId();
-  const threadId = partial.threadId ?? (partial.parentId
-    ? c.comments.find((x) => x.id === partial.parentId)?.threadId ?? id
-    : id);
+  const threadId =
+    partial.threadId ??
+    (partial.parentId ? (c.comments.find((x) => x.id === partial.parentId)?.threadId ?? id) : id);
   const comment: Comment = {
     id,
     threadId,
@@ -221,7 +221,11 @@ export async function resolveThread(
   return c;
 }
 
-export async function unresolveThread(slug: string, threadId: string, cwd = process.cwd()): Promise<Diff> {
+export async function unresolveThread(
+  slug: string,
+  threadId: string,
+  cwd = process.cwd(),
+): Promise<Diff> {
   const c = await loadDiff(slug, cwd);
   if (!c) throw new Error(`diff not found: ${slug}`);
   const root = findThread(c, threadId);

@@ -1,23 +1,48 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Loader2,
   MessageSquarePlus,
   PanelRightClose,
   PanelRightOpen,
+  Settings,
   X,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Diff, DiffTarget, FileDiff, GitRefInfo } from "../types.ts";
-import logoUrl from "./logo.png";
-import { api, openSocket, type ColorScheme, type WSEvent } from "./lib/api.ts";
-import { ensureShikiTheme } from "./lib/highlight.ts";
-import { cn, baseName, shortenSlug } from "./lib/utils.ts";
-import { Button } from "./components/ui/button.tsx";
-import { Badge } from "./components/ui/badge.tsx";
-import { TargetPicker } from "./components/TargetPicker.tsx";
 import { DiffView } from "./components/DiffView.tsx";
+import { LazyBoundary } from "./components/LazyBoundary.tsx";
+import { TargetPicker } from "./components/TargetPicker.tsx";
 import { TopLevelComments } from "./components/TopLevelComments.tsx";
-import { SettingsMenu } from "./components/SettingsMenu.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { api, type ColorScheme, openSocket, type WSEvent } from "./lib/api.ts";
+import { ensureShikiTheme } from "./lib/highlight.ts";
+import { baseName, cn, shortenSlug } from "./lib/utils.ts";
+import logoUrl from "./logo.png";
+
+const importSettingsMenu = () =>
+  import("./components/SettingsMenu.tsx").then((mod) => ({ default: mod.SettingsMenu }));
+
+function SettingsMenuFallback({
+  loading = false,
+  onClick,
+}: {
+  loading?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-label="Settings"
+      data-testid="settings-menu-button"
+      onClick={onClick}
+      disabled={loading}
+    >
+      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />}
+    </Button>
+  );
+}
 
 function parseSlug(slug: string): { base: DiffTarget; head: DiffTarget } | null {
   const sep = slug.indexOf("..");
@@ -39,9 +64,7 @@ function defaultTargets(
   // Pin the default base to the current branch's commit so the slug doesn't
   // silently follow a moving branch — see the same-named user request that
   // motivated the SHA-pinned picker.
-  const branchRef = branch
-    ? refs.find((r) => r.kind === "branch" && r.name === branch)
-    : undefined;
+  const branchRef = branch ? refs.find((r) => r.kind === "branch" && r.name === branch) : undefined;
   return {
     base: branchRef?.sha
       ? { kind: "commit", ref: branchRef.sha, label: branchRef.name }
@@ -53,7 +76,9 @@ function defaultTargets(
 }
 
 export function App() {
-  const [info, setInfo] = useState<{ cwd: string; root: string; branch: string | null } | null>(null);
+  const [info, setInfo] = useState<{ cwd: string; root: string; branch: string | null } | null>(
+    null,
+  );
   const [refs, setRefs] = useState<GitRefInfo[]>([]);
   const [base, setBase] = useState<DiffTarget>({ kind: "ref", ref: "HEAD" });
   const [head, setHead] = useState<DiffTarget>({ kind: "working-tree" });
@@ -132,21 +157,18 @@ export function App() {
     setStructuredHighlightingState(next);
     api.setSettings({ structuredHighlighting: next }).catch(() => {});
   }, []);
-  const setSyntaxTheme = useCallback(
-    async (mode: "light" | "dark", name: string) => {
-      try {
-        await ensureShikiTheme(name);
-      } catch {}
-      if (mode === "light") {
-        setSyntaxThemeLightState(name);
-        api.setSettings({ syntaxThemeLight: name }).catch(() => {});
-      } else {
-        setSyntaxThemeDarkState(name);
-        api.setSettings({ syntaxThemeDark: name }).catch(() => {});
-      }
-    },
-    [],
-  );
+  const setSyntaxTheme = useCallback(async (mode: "light" | "dark", name: string) => {
+    try {
+      await ensureShikiTheme(name);
+    } catch {}
+    if (mode === "light") {
+      setSyntaxThemeLightState(name);
+      api.setSettings({ syntaxThemeLight: name }).catch(() => {});
+    } else {
+      setSyntaxThemeDarkState(name);
+      api.setSettings({ syntaxThemeDark: name }).catch(() => {});
+    }
+  }, []);
 
   // Reflect the active theme on <html>. For "system", track the OS
   // preference live so the page flips with the OS without a reload.
@@ -183,6 +205,8 @@ export function App() {
     } catch {}
   }, [sidebarOpen]);
   const [composing, setComposing] = useState(false);
+  const [settingsRequested, setSettingsRequested] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Hold the current slug in a ref so the WS handler can read it without
   // having to be torn down and recreated on every diff change.
@@ -275,8 +299,10 @@ export function App() {
   const reloadFilesQuiet = useCallback(async () => {
     if (!info) return;
     const dynamic =
-      base.kind === "working-tree" || base.kind === "staged" ||
-      head.kind === "working-tree" || head.kind === "staged";
+      base.kind === "working-tree" ||
+      base.kind === "staged" ||
+      head.kind === "working-tree" ||
+      head.kind === "staged";
     if (!dynamic) return;
     try {
       const filesResp = await api.files(base, head);
@@ -318,8 +344,7 @@ export function App() {
     if (!base || base.kind !== "commit" || !base.label) return null;
     const r = refs.find(
       (x) =>
-        (x.kind === "branch" || x.kind === "remote" || x.kind === "tag") &&
-        x.name === base.label,
+        (x.kind === "branch" || x.kind === "remote" || x.kind === "tag") && x.name === base.label,
     );
     if (!r?.sha || r.sha === base.ref) return null;
     return { branch: base.label, latestSha: r.sha };
@@ -446,9 +471,7 @@ export function App() {
             <div className="text-sm font-mono font-semibold truncate" title={info?.root}>
               {info?.root ? baseName(info.root) : ""}
             </div>
-            {info?.branch && (
-              <Badge className="font-mono shrink-0">{info.branch}</Badge>
-            )}
+            {info?.branch && <Badge className="font-mono shrink-0">{info.branch}</Badge>}
           </div>
 
           <div className="h-6 w-px bg-border mx-1" />
@@ -463,11 +486,7 @@ export function App() {
           <TargetPicker label="head" value={head} refs={refs} onChange={setHead} />
 
           {diff && (
-            <Badge
-              asChild
-              variant="secondary"
-              className="cursor-pointer select-none shrink-0"
-            >
+            <Badge asChild variant="secondary" className="cursor-pointer select-none shrink-0">
               <button
                 type="button"
                 title={slugCopied ? "Slug copied" : `Click to copy · ${diff.slug}`}
@@ -485,10 +504,7 @@ export function App() {
               >
                 <span data-testid="diff-slug-text">{shortenSlug(diff.slug)}</span>
                 {slugCopied && (
-                  <Check
-                    className="h-3 w-3 text-success"
-                    data-testid="diff-slug-copied"
-                  />
+                  <Check className="h-3 w-3 text-success" data-testid="diff-slug-copied" />
                 )}
               </button>
             </Badge>
@@ -497,24 +513,40 @@ export function App() {
           <div className="flex-1" />
 
           <Badge variant={wsHello ? "success" : "muted"}>{wsHello ? "Live" : "Connecting…"}</Badge>
-          <SettingsMenu
-            loadingDiff={loadingDiff}
-            onRefresh={reload}
-            splitView={splitView}
-            onSplitViewChange={setSplitView}
-            filesExpandedByDefault={filesExpandedByDefault}
-            onFilesExpandedByDefaultChange={setFilesExpandedByDefault}
-            diffFontSize={diffFontSize}
-            onDiffFontSizeChange={setDiffFontSize}
-            theme={theme}
-            onThemeChange={setTheme}
-            effectiveTheme={effectiveTheme}
-            syntaxThemeLight={syntaxThemeLight}
-            syntaxThemeDark={syntaxThemeDark}
-            structuredHighlighting={structuredHighlighting}
-            onStructuredHighlightingChange={setStructuredHighlighting}
-            onSyntaxThemeChange={setSyntaxTheme}
-          />
+          {settingsRequested ? (
+            <LazyBoundary
+              importer={importSettingsMenu}
+              props={{
+                open: settingsOpen,
+                onOpenChange: setSettingsOpen,
+                loadingDiff,
+                onRefresh: reload,
+                splitView,
+                onSplitViewChange: setSplitView,
+                filesExpandedByDefault,
+                onFilesExpandedByDefaultChange: setFilesExpandedByDefault,
+                diffFontSize,
+                onDiffFontSizeChange: setDiffFontSize,
+                theme,
+                onThemeChange: setTheme,
+                effectiveTheme,
+                syntaxThemeLight,
+                syntaxThemeDark,
+                structuredHighlighting,
+                onStructuredHighlightingChange: setStructuredHighlighting,
+                onSyntaxThemeChange: setSyntaxTheme,
+              }}
+              loadingFallback={<SettingsMenuFallback loading />}
+              errorFallback={(retry) => <SettingsMenuFallback onClick={retry} />}
+            />
+          ) : (
+            <SettingsMenuFallback
+              onClick={() => {
+                setSettingsRequested(true);
+                setSettingsOpen(true);
+              }}
+            />
+          )}
         </div>
       </header>
 
@@ -574,58 +606,58 @@ export function App() {
               : "flex flex-col items-end gap-2",
           )}
         >
-          {sidebarOpen
-            ? diff && (
-                <TopLevelComments
-                  slug={diff.slug}
-                  comments={comments}
-                  files={files}
-                  onChange={refreshDiffOnly}
-                  composing={composing}
-                  onComposingChange={setComposing}
-                  headerLeft={
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Hide review sidebar"
-                      aria-pressed="false"
-                      title="Hide review sidebar"
-                      onClick={() => setSidebarOpen(false)}
-                      data-testid="sidebar-toggle"
-                    >
-                      <PanelRightClose className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-              )
-            : (
-              <>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Show review sidebar"
-                  aria-pressed="true"
-                  title="Show review sidebar"
-                  onClick={() => setSidebarOpen(true)}
-                  data-testid="sidebar-toggle"
-                >
-                  <PanelRightOpen className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="New comment"
-                  title="New comment"
-                  onClick={() => {
-                    setSidebarOpen(true);
-                    setComposing(true);
-                  }}
-                  data-testid="sidebar-new-comment"
-                >
-                  <MessageSquarePlus className="h-4 w-4" />
-                </Button>
-              </>
-            )}
+          {sidebarOpen ? (
+            diff && (
+              <TopLevelComments
+                slug={diff.slug}
+                comments={comments}
+                files={files}
+                onChange={refreshDiffOnly}
+                composing={composing}
+                onComposingChange={setComposing}
+                headerLeft={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Hide review sidebar"
+                    aria-pressed="false"
+                    title="Hide review sidebar"
+                    onClick={() => setSidebarOpen(false)}
+                    data-testid="sidebar-toggle"
+                  >
+                    <PanelRightClose className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            )
+          ) : (
+            <>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Show review sidebar"
+                aria-pressed="true"
+                title="Show review sidebar"
+                onClick={() => setSidebarOpen(true)}
+                data-testid="sidebar-toggle"
+              >
+                <PanelRightOpen className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="New comment"
+                title="New comment"
+                onClick={() => {
+                  setSidebarOpen(true);
+                  setComposing(true);
+                }}
+                data-testid="sidebar-new-comment"
+              >
+                <MessageSquarePlus className="h-4 w-4" />
+              </Button>
+            </>
+          )}
         </aside>
       </main>
 

@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, staff } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson, staff } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -34,10 +34,18 @@ test("a comment on a folded line renders inline, not just in the sidebar", async
   // An agent posts a comment on line 3 — far from the only change, so it sits
   // inside a folded block and has no rendered row to host a thread.
   await staff([
-    "comment", "add",
-    "--file", "big.ts", "--line", "3", "--side", "new",
-    "--author", "Opus 4.8",
-    "--body", "Folded-region finding.",
+    "comment",
+    "add",
+    "--file",
+    "big.ts",
+    "--line",
+    "3",
+    "--side",
+    "new",
+    "--author",
+    "Opus 4.8",
+    "--body",
+    "Folded-region finding.",
   ]);
 
   // Reload + reopen so the persisted comment is fetched fresh (independent of
@@ -51,8 +59,10 @@ test("a comment on a folded line renders inline, not just in the sidebar", async
   await expect(inlineThread).toBeVisible();
 
   // And the line it's anchored to (line 3) is now unfolded and present.
-  await expect.poll(async () => {
-    const nums = await card2.locator("table tbody tr td:first-child").allInnerTexts();
-    return nums.map((t) => t.trim());
-  }).toContain("3");
+  await expect
+    .poll(async () => {
+      const nums = await card2.locator("table tbody tr td:first-child").allInnerTexts();
+      return nums.map((t) => t.trim());
+    })
+    .toContain("3");
 });

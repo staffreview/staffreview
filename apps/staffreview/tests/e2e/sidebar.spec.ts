@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -8,7 +8,9 @@ test.beforeEach(async () => {
 
 test("sidebar collapses and expands; state persists across reloads", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   // Default: sidebar open with content visible.
   const sidebar = page.getByTestId("review-sidebar");
@@ -31,7 +33,9 @@ test("sidebar collapses and expands; state persists across reloads", async ({ pa
 
   // Reload — state should persist via localStorage.
   await page.reload();
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
   await expect(page.getByTestId("review-sidebar")).toHaveAttribute("data-state", "collapsed");
   await expect(page.getByTestId("sidebar-toggle")).toHaveAttribute("aria-pressed", "true");
 
@@ -41,9 +45,13 @@ test("sidebar collapses and expands; state persists across reloads", async ({ pa
   await expect(page.getByTestId("sidebar-toggle")).toHaveAttribute("aria-pressed", "false");
 });
 
-test("collapsed-strip Plus button expands the sidebar, opens the composer, and focuses the editor", async ({ page }) => {
+test("collapsed-strip Plus button expands the sidebar, opens the composer, and focuses the editor", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   // Collapse the sidebar first.
   await page.getByTestId("sidebar-toggle").click();
@@ -62,9 +70,13 @@ test("collapsed-strip Plus button expands the sidebar, opens the composer, and f
   await expect(editor).toContainText("typed-after-plus-click");
 });
 
-test("collapsed strip buttons share an X column with the header's gear button", async ({ page }) => {
+test("collapsed strip buttons share an X column with the header's gear button", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   // Collapse the sidebar.
   await page.getByTestId("sidebar-toggle").click();
@@ -78,11 +90,15 @@ test("collapsed strip buttons share an X column with the header's gear button", 
 
   // All three live in the same vertical column — their right edges should
   // line up within a 2px tolerance for sub-pixel rendering.
-  expect(Math.abs(gearBox.x + gearBox.width - (toggleBox.x + toggleBox.width))).toBeLessThanOrEqual(2);
+  expect(Math.abs(gearBox.x + gearBox.width - (toggleBox.x + toggleBox.width))).toBeLessThanOrEqual(
+    2,
+  );
   expect(Math.abs(gearBox.x + gearBox.width - (plusBox.x + plusBox.width))).toBeLessThanOrEqual(2);
 });
 
-test("the diff and sidebar are independent scroll panes; the page itself doesn't scroll", async ({ page }) => {
+test("the diff and sidebar are independent scroll panes; the page itself doesn't scroll", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
@@ -104,7 +120,9 @@ test("the diff and sidebar are independent scroll panes; the page itself doesn't
 
 test("Storage card and Review heading are gone from the sidebar", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
   await expect(page.getByText("Storage", { exact: true })).toHaveCount(0);
   await expect(page.locator("text=.staffreview/diffs/")).toHaveCount(0);
   // The "Review · N threads" heading was replaced by the collapse button.

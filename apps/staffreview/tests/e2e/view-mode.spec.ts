@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -14,7 +14,9 @@ async function openGear(page: import("@playwright/test").Page) {
   await page.getByTestId("settings-menu-button").click();
 }
 
-test("view-mode tabs (inside gear menu) flip the diff between split and unified", async ({ page }) => {
+test("view-mode tabs (inside gear menu) flip the diff between split and unified", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
@@ -44,7 +46,9 @@ test("view-mode tabs (inside gear menu) flip the diff between split and unified"
   await expect(page.locator("table tbody tr").first().locator("td")).toHaveCount(6);
 });
 
-test("view-mode preference is persisted to the global settings file and survives reload", async ({ page }) => {
+test("view-mode preference is persisted to the global settings file and survives reload", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();

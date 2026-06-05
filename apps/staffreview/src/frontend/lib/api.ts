@@ -1,10 +1,4 @@
-import type {
-  Diff,
-  DiffTarget,
-  Comment,
-  FileDiff,
-  GitRefInfo,
-} from "../../types.ts";
+import type { Comment, Diff, DiffTarget, FileDiff, GitRefInfo } from "../../types.ts";
 
 export type ColorScheme = "system" | "light" | "dark";
 
@@ -38,8 +32,7 @@ export const api = {
   info: () => jfetch<{ cwd: string; root: string; branch: string | null }>("/api/info"),
   refs: () => jfetch<{ refs: GitRefInfo[] }>("/api/refs"),
   diffs: () => jfetch<{ diffs: Diff[] }>("/api/diffs"),
-  diff: (slug: string) =>
-    jfetch<{ diff: Diff }>(`/api/diff?slug=${encodeURIComponent(slug)}`),
+  diff: (slug: string) => jfetch<{ diff: Diff }>(`/api/diff?slug=${encodeURIComponent(slug)}`),
   createDiff: (base: DiffTarget, head: DiffTarget, setActive = true) =>
     jfetch<{ diff: Diff }>("/api/diff", {
       method: "POST",

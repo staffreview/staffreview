@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, readActiveDiff } from "./helpers.ts";
+import { expect, test } from "@playwright/test";
+import { readActiveDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -11,7 +11,9 @@ function editor(page: import("@playwright/test").Page) {
 
 async function openComposer(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
   await page.getByRole("button", { name: /new comment/i }).click();
   await editor(page).click();
 }
@@ -68,18 +70,22 @@ test("heading input rule renders a real heading while editing", async ({ page })
   expect(root.body).toContain("# Heading");
 });
 
-test("persists an in-progress draft to localStorage and restores it on reload", async ({ page }) => {
+test("persists an in-progress draft to localStorage and restores it on reload", async ({
+  page,
+}) => {
   await openComposer(page);
   await page.keyboard.type("half-written thought");
 
-  const stored = await page.evaluate(() =>
-    Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
+  const stored = await page.evaluate(
+    () => Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
   );
   expect(stored).toBeGreaterThan(0);
 
   // Reload — the composer should reopen with the draft restored.
   await page.reload();
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
   await page.getByRole("button", { name: /new comment/i }).click();
   await expect(editor(page)).toContainText("half-written thought");
 });
@@ -90,13 +96,15 @@ test("clears the draft from localStorage after a successful post", async ({ page
   await page.getByRole("button", { name: /^Comment$/ }).click();
   await expect(page.getByText("ship it")).toBeVisible();
 
-  const remaining = await page.evaluate(() =>
-    Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
+  const remaining = await page.evaluate(
+    () => Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
   );
   expect(remaining).toBe(0);
 });
 
-test("attaching an image inserts an inline image and uploads to /api/attachment", async ({ page }) => {
+test("attaching an image inserts an inline image and uploads to /api/attachment", async ({
+  page,
+}) => {
   await openComposer(page);
 
   // A 1x1 transparent PNG.

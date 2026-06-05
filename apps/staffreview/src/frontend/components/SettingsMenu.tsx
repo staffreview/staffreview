@@ -1,6 +1,6 @@
 import {
-  ChevronsUpDown,
   Check,
+  ChevronsUpDown,
   Columns2,
   ExternalLink,
   FoldVertical,
@@ -17,17 +17,13 @@ import {
   UnfoldVertical,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "../../loop-config.ts";
+import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "../../docs-config.ts";
+import { DEFAULT_LOOP_ROUNDS, MAX_LOOP_ROUNDS, MIN_LOOP_ROUNDS } from "../../loop-config.ts";
 import { DEFAULT_OPEN_BROWSER } from "../../open-browser-config.ts";
 import {
-  DEFAULT_DOCS_AGENTS,
-  MIN_DOCS_AGENTS,
-  MAX_DOCS_AGENTS,
-} from "../../docs-config.ts";
-import {
   DEFAULT_REVIEW_AGENTS,
-  MIN_REVIEW_AGENTS,
   MAX_REVIEW_AGENTS,
+  MIN_REVIEW_AGENTS,
 } from "../../review-config.ts";
 import { api, type ColorScheme } from "../lib/api.ts";
 import { DARK_SYNTAX_THEMES, LIGHT_SYNTAX_THEMES } from "../lib/highlight.ts";
@@ -48,17 +44,15 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "./ui/popover.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group.tsx";
 
 const MIN_DIFF_FONT_SIZE = 9;
 const MAX_DIFF_FONT_SIZE = 22;
 
 export interface SettingsMenuProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   loadingDiff: boolean;
   onRefresh: () => void;
   splitView: boolean;
@@ -78,6 +72,8 @@ export interface SettingsMenuProps {
 }
 
 export function SettingsMenu({
+  open,
+  onOpenChange,
   loadingDiff,
   onRefresh,
   splitView,
@@ -158,7 +154,7 @@ export function SettingsMenu({
   };
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           size="icon-sm"
@@ -186,8 +182,8 @@ export function SettingsMenu({
         <DropdownMenuLabel>Open web UI in browser</DropdownMenuLabel>
         <div className="px-2 py-1">
           <p className="mb-1.5 text-xs text-muted-foreground">
-            When you run <span className="font-mono">staff serve</span>, open this
-            web UI in your browser automatically.
+            When you run <span className="font-mono">staff serve</span>, open this web UI in your
+            browser automatically.
           </p>
           <ToggleGroup
             type="single"
@@ -256,11 +252,19 @@ export function SettingsMenu({
             aria-label="Default file expansion"
             className="w-full"
           >
-            <ToggleGroupItem value="expanded" className="flex-1" data-testid="files-default-expanded">
+            <ToggleGroupItem
+              value="expanded"
+              className="flex-1"
+              data-testid="files-default-expanded"
+            >
               <UnfoldVertical className="h-3.5 w-3.5" />
               Expanded
             </ToggleGroupItem>
-            <ToggleGroupItem value="collapsed" className="flex-1" data-testid="files-default-collapsed">
+            <ToggleGroupItem
+              value="collapsed"
+              className="flex-1"
+              data-testid="files-default-collapsed"
+            >
               <FoldVertical className="h-3.5 w-3.5" />
               Collapsed
             </ToggleGroupItem>
@@ -345,11 +349,7 @@ export function SettingsMenu({
             aria-label="Structured highlighting"
             className="w-full"
           >
-            <ToggleGroupItem
-              value="on"
-              className="flex-1"
-              data-testid="structured-highlighting-on"
-            >
+            <ToggleGroupItem value="on" className="flex-1" data-testid="structured-highlighting-on">
               <Check className="h-3.5 w-3.5" />
               On
             </ToggleGroupItem>

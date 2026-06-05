@@ -7,7 +7,9 @@
   "bin": {
     "staff": "./dist/staff.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "bun --hot src/cli.ts",
     "test": "bun test src/",
@@ -49,6 +51,7 @@
     "tiptap-markdown": "^0.9.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.10.1",
     "@playwright/test": "^1.60.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",

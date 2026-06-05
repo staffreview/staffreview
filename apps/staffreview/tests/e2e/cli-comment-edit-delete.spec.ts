@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, staff, readActiveDiff } from "./helpers.ts";
+import { expect, test } from "@playwright/test";
+import { readActiveDiff, resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -12,7 +12,20 @@ test("comment edit revises the body; delete removes the full reply subtree", asy
   await staff(["diff", "--base", "HEAD", "--head", "working-tree"]); // creates + activates
 
   const root = JSON.parse(
-    await staff(["comment", "add", "--file", "math.ts", "--line", "2", "--side", "new", "--author", "cli", "--body", "original"]),
+    await staff([
+      "comment",
+      "add",
+      "--file",
+      "math.ts",
+      "--line",
+      "2",
+      "--side",
+      "new",
+      "--author",
+      "cli",
+      "--body",
+      "original",
+    ]),
   );
   expect(root.body).toBe("original");
 
@@ -24,7 +37,9 @@ test("comment edit revises the body; delete removes the full reply subtree", asy
   expect(diff.comments.find((c: any) => c.id === root.id).body).toBe("revised");
 
   // Build a nested thread: reply -> reply-to-the-reply.
-  const reply = JSON.parse(await staff(["comment", "add", "--reply-to", root.id, "--author", "cli", "--body", "reply"]));
+  const reply = JSON.parse(
+    await staff(["comment", "add", "--reply-to", root.id, "--author", "cli", "--body", "reply"]),
+  );
   await staff(["comment", "add", "--reply-to", reply.id, "--author", "cli", "--body", "sub-reply"]);
   diff = await readActiveDiff();
   expect(diff.comments).toHaveLength(3);
@@ -37,5 +52,7 @@ test("comment edit revises the body; delete removes the full reply subtree", asy
   expect(diff.comments).toHaveLength(0);
 
   // Unknown id errors rather than silently no-op'ing.
-  await expect(staff(["comment", "delete", "--id", "deadbeef"])).rejects.toThrow(/comment not found/);
+  await expect(staff(["comment", "delete", "--id", "deadbeef"])).rejects.toThrow(
+    /comment not found/,
+  );
 });

@@ -1,6 +1,3 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import {
   Binary,
   Check,
@@ -13,20 +10,35 @@ import {
   Link2,
   Plus,
 } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { createPortal } from "react-dom";
 import type { Comment, FileDiff } from "../../types.ts";
-import { Badge } from "./ui/badge.tsx";
-import { Button } from "./ui/button.tsx";
-import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
-import { cn } from "../lib/utils.ts";
 import {
   ensureShikiLanguage,
   ensureShikiTheme,
   getHighlighter,
   langForPath,
+  type StaffHighlighter,
   shikiThemeFor,
   tokenizeLine,
-  type StaffHighlighter,
 } from "../lib/highlight.ts";
+import { cn } from "../lib/utils.ts";
+import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
+import { Badge } from "./ui/badge.tsx";
+import { Button } from "./ui/button.tsx";
+
+type ComposingTarget = { line: number; side: "old" | "new"; endLine?: number };
+
+/**
+ * Inline composer hosts and existing threads are keyed by `(side, host line)`.
+ * The host line is the visual position of the comment — for a range, that's
+ * the END line (matching GitHub's convention of putting the composer below the
+ * last line of the selection).
+ */
+function composingKey(t: ComposingTarget) {
+  return `${t.side}:${t.endLine ?? t.line}`;
+}
 
 function statusIcon(s: FileDiff["status"]) {
   if (s === "added") return <FilePlus2 className="h-4 w-4 text-success" />;
@@ -187,11 +199,7 @@ export function pruneCollapseOverrides(keep: string) {
   } catch {}
 }
 
-export function setCollapseOverride(
-  slug: string,
-  path: string,
-  collapsed: boolean,
-) {
+export function setCollapseOverride(slug: string, path: string, collapsed: boolean) {
   try {
     const key = collapseOverridesKey(slug);
     const map = loadCollapseOverrides(slug);
@@ -272,8 +280,7 @@ export function computeAutoCollapsed(
       continue;
     }
     const overBudget =
-      expandedFiles >= MAX_AUTO_EXPANDED_FILES ||
-      expandedLines + lines > MAX_AUTO_EXPANDED_LINES;
+      expandedFiles >= MAX_AUTO_EXPANDED_FILES || expandedLines + lines > MAX_AUTO_EXPANDED_LINES;
     if (NOISE_FILE.test(f.path) || lines > PER_FILE_COLLAPSE_LINES || overBudget) {
       collapsed.add(f.path);
     } else {
@@ -291,7 +298,9 @@ function groupCommentsByThread(comments: Comment[]) {
     list.push(c);
     map.set(c.threadId, list);
   }
-  return Array.from(map.values()).map((cs) => cs.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+  return Array.from(map.values()).map((cs) =>
+    cs.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+  );
 }
 
 /**
@@ -303,9 +312,7 @@ function groupCommentsByThread(comments: Comment[]) {
  */
 export function computeActiveCommentedPaths(comments: Comment[]): Set<string> {
   return new Set(
-    comments
-      .filter((c) => !c.parentId && !c.resolution && c.file)
-      .map((c) => c.file as string),
+    comments.filter((c) => !c.parentId && !c.resolution && c.file).map((c) => c.file as string),
   );
 }
 
@@ -389,11 +396,7 @@ export function setLineHash(
  */
 export function clearLineHash() {
   if (window.location.hash) {
-    history.replaceState(
-      null,
-      "",
-      window.location.pathname + window.location.search,
-    );
+    history.replaceState(null, "", window.location.pathname + window.location.search);
   }
   window.dispatchEvent(new CustomEvent("staff:hashchange"));
 }
@@ -437,14 +440,10 @@ export function parseLineHash(
  * after a layout change.
  */
 export function scrollToLine(file: string, side: "old" | "new", line: number) {
-  window.dispatchEvent(
-    new CustomEvent("staff:expand-file", { detail: { path: file } }),
-  );
+  window.dispatchEvent(new CustomEvent("staff:expand-file", { detail: { path: file } }));
   const start = performance.now();
   const tick = () => {
-    const card = document.querySelector(
-      `[data-testid="file-card-${file.replace(/"/g, '\\"')}"]`,
-    );
+    const card = document.querySelector(`[data-testid="file-card-${file.replace(/"/g, '\\"')}"]`);
     if (card) {
       const row = findRowForLine(card as HTMLElement, { line, side });
       if (row) {
@@ -501,15 +500,6 @@ export function DiffFile({
   autoCollapsed: boolean;
   onChange?: () => void;
 }) {
-  type ComposingTarget = { line: number; side: "old" | "new"; endLine?: number };
-  /**
-   * Inline composer hosts and existing threads are keyed by `(side, host
-   * line)`. The host line is the visual position of the comment — for a
-   * range, that's the END line (matching GitHub's convention of putting
-   * the composer below the last line of the selection).
-   */
-  const composingKey = (t: ComposingTarget) => `${t.side}:${t.endLine ?? t.line}`;
-
   const [composingLines, setComposingLines] = useState<ComposingTarget[]>([]);
   const [pathCopied, setPathCopied] = useState(false);
   // Whole-card collapse (the header chevron) — independent of the
@@ -583,9 +573,7 @@ export function DiffFile({
   }, [lang, syntaxTheme]);
 
   const closeComposer = (target: ComposingTarget) => {
-    setComposingLines((prev) =>
-      prev.filter((t) => composingKey(t) !== composingKey(target)),
-    );
+    setComposingLines((prev) => prev.filter((t) => composingKey(t) !== composingKey(target)));
   };
 
   const renderContent = useMemo(() => {
@@ -608,11 +596,10 @@ export function DiffFile({
       const html = tokens
         .map((t) => {
           const text = escapeHtml(t.content);
-          return t.color
-            ? `<span style="color:${escapeHtmlAttr(t.color)}">${text}</span>`
-            : text;
+          return t.color ? `<span style="color:${escapeHtmlAttr(t.color)}">${text}</span>` : text;
         })
         .join("");
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki token text and style values are escaped above before being passed to the diff renderer.
       return <span dangerouslySetInnerHTML={{ __html: html }} />;
     };
   }, [highlighter, lang, syntaxTheme]);
@@ -664,6 +651,7 @@ export function DiffFile({
   // Sync `hostsRef` with `inlineLines`: ensure exactly one <tr> host exists
   // immediately after each line that has any inline content (threads and/or
   // a composer). Hosts whose key is no longer wanted are removed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The extra diff-rendering props intentionally restart the host repair loop after the third-party diff table redraws.
   useLayoutEffect(() => {
     // When the file is collapsed the diff div is unmounted; drop our hosts
     // so the next expand starts from a clean slate.
@@ -775,7 +763,15 @@ export function DiffFile({
     // re-renders all diff <tr> rows and detaches our injected comment-host
     // <tr>s. Re-running this effect restarts the repair loop so the inline
     // comment portals get re-anchored instead of pointing at detached <td>s.
-  }, [collapsed, inlineLines, composingLines, splitView, structuredHighlighting, file.oldContent, file.newContent]);
+  }, [
+    collapsed,
+    inlineLines,
+    composingLines,
+    splitView,
+    structuredHighlighting,
+    file.oldContent,
+    file.newContent,
+  ]);
 
   // Track the currently anchored range — driven by the URL hash. Browser
   // navigation fires `hashchange`; our own `setLineHash` helper
@@ -784,9 +780,11 @@ export function DiffFile({
   // single-line anchor. This anchored range is the *only* thing that gets a
   // line highlight (painted via `data-anchored` below, on click/drag or a URL
   // anchor) — a comment on a line must NOT light it up.
-  const [anchored, setAnchored] = useState<
-    { side: "old" | "new"; startLine: number; endLine: number } | null
-  >(null);
+  const [anchored, setAnchored] = useState<{
+    side: "old" | "new";
+    startLine: number;
+    endLine: number;
+  } | null>(null);
 
   // Keep line-comment anchors visible even while unchanged context is folded
   // (resolved roots included — see computeCommentLineIds). For range comments,
@@ -837,9 +835,7 @@ export function DiffFile({
    * composer host row), return its side + line number. Used by the
    * mousedown/mouseover selection path to recognize anchor clicks.
    */
-  function getLineNumberCell(
-    el: HTMLElement,
-  ): { side: "old" | "new"; line: number } | null {
+  function getLineNumberCell(el: HTMLElement): { side: "old" | "new"; line: number } | null {
     const td = el.closest("td") as HTMLTableCellElement | null;
     if (!td) return null;
     const tr = td.closest("tr") as HTMLElement | null;
@@ -924,13 +920,19 @@ export function DiffFile({
     if (endLine == null) {
       for (let n: Element | null = tr.nextElementSibling; n; n = n.nextElementSibling) {
         const v = lineOnSide(n);
-        if (v != null) { endLine = v; break; }
+        if (v != null) {
+          endLine = v;
+          break;
+        }
       }
     }
     if (endLine == null) {
       for (let p: Element | null = tr.previousElementSibling; p; p = p.previousElementSibling) {
         const v = lineOnSide(p);
-        if (v != null) { endLine = v; break; }
+        if (v != null) {
+          endLine = v;
+          break;
+        }
       }
     }
     if (endLine == null) return;
@@ -947,10 +949,12 @@ export function DiffFile({
 
   // Hover-tracked "+" button — a real React element so clicks can open the
   // composer (the CSS pseudo we used before swallowed clicks).
-  const [plus, setPlus] = useState<
-    | { line: number; side: "old" | "new"; top: number; left: number }
-    | null
-  >(null);
+  const [plus, setPlus] = useState<{
+    line: number;
+    side: "old" | "new";
+    top: number;
+    left: number;
+  } | null>(null);
   const lastHoveredTr = useRef<HTMLElement | null>(null);
   function handleDiffMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     const td = (e.target as HTMLElement).closest("td");
@@ -1027,6 +1031,7 @@ export function DiffFile({
   // links land in the right place. Skip when `staff:hashchange` fires
   // (it's a click on our own line numbers; the user is already looking
   // at it).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: File content changes remount/redraw the third-party diff table and should re-apply the current hash anchor.
   useEffect(() => {
     if (collapsed) return;
     const apply = () => {
@@ -1050,6 +1055,7 @@ export function DiffFile({
   // on every childList change. The observer's `childList`/`subtree`
   // config doesn't watch attribute mutations, so our own
   // `dataset.anchored` writes don't re-trigger it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Diff render props and content changes redraw table rows that need the anchored marker re-applied.
   useLayoutEffect(() => {
     if (collapsed || !diffRef.current) return;
     const container = diffRef.current;
@@ -1131,11 +1137,7 @@ export function DiffFile({
           }}
           data-testid={`copy-path-${file.path}`}
         >
-          {pathCopied ? (
-            <Check className="h-3 w-3 text-success" />
-          ) : (
-            <Copy className="h-3 w-3" />
-          )}
+          {pathCopied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
         </Button>
         {file.oldPath && file.oldPath !== file.path && (
           <span className="text-xs text-muted-foreground font-mono">← {file.oldPath}</span>
@@ -1146,7 +1148,9 @@ export function DiffFile({
           </Badge>
         )}
         <div className="flex-1" />
-        <Badge variant="outline" className="capitalize">{file.status}</Badge>
+        <Badge variant="outline" className="capitalize">
+          {file.status}
+        </Badge>
       </div>
 
       {/* Symlinks render a compact target row instead of the file content —
@@ -1180,6 +1184,7 @@ export function DiffFile({
       )}
 
       {!collapsed && !file.isSymlink && !file.isBinary && (
+        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithMouseEvents: Mouse handlers target third-party diff rows for line selection and hover state.
         <div
           className={cn(
             "staff-diff relative",
@@ -1264,45 +1269,36 @@ export function DiffFile({
         </div>
       )}
 
-      {!collapsed && inlineLines.map(([key, target]) => {
-        const host = hostsRef.current.get(key);
-        if (!host) return null;
-        const lineThread = rootByLine.get(key);
-        const rootThread = lineThread?.find((c) => !c.parentId);
-        const hasComposer = composingLines.some(
-          (t) => composingKey(t) === key,
-        );
-        return createPortal(
-          <div
-            key={key}
-            data-thread-id={rootThread?.threadId}
-            className="space-y-3 p-3"
-          >
-            {lineThread && (
-              <CommentThread
-                slug={slug}
-                comments={lineThread}
-                onChange={onChange}
-              />
-            )}
-            {hasComposer && (
-              <NewCommentEditor
-                slug={slug}
-                file={file.path}
-                line={target.line}
-                endLine={target.endLine}
-                side={target.side}
-                onPosted={() => {
-                  closeComposer(target);
-                  onChange?.();
-                }}
-                onCancel={() => closeComposer(target)}
-              />
-            )}
-          </div>,
-          host,
-        );
-      })}
+      {!collapsed &&
+        inlineLines.map(([key, target]) => {
+          const host = hostsRef.current.get(key);
+          if (!host) return null;
+          const lineThread = rootByLine.get(key);
+          const rootThread = lineThread?.find((c) => !c.parentId);
+          const hasComposer = composingLines.some((t) => composingKey(t) === key);
+          return createPortal(
+            <div key={key} data-thread-id={rootThread?.threadId} className="space-y-3 p-3">
+              {lineThread && (
+                <CommentThread slug={slug} comments={lineThread} onChange={onChange} />
+              )}
+              {hasComposer && (
+                <NewCommentEditor
+                  slug={slug}
+                  file={file.path}
+                  line={target.line}
+                  endLine={target.endLine}
+                  side={target.side}
+                  onPosted={() => {
+                    closeComposer(target);
+                    onChange?.();
+                  }}
+                  onCancel={() => closeComposer(target)}
+                />
+              )}
+            </div>,
+            host,
+          );
+        })}
 
       {!collapsed && orphanThreads.length > 0 && (
         <div className="border-t border-border bg-muted/30 p-3 space-y-3">
@@ -1356,10 +1352,7 @@ export function DiffView({
     for (const f of files) map.set(f.path, fileLineCount(f));
     return map;
   }, [files]);
-  const activeCommentedPaths = useMemo(
-    () => computeActiveCommentedPaths(comments),
-    [comments],
-  );
+  const activeCommentedPaths = useMemo(() => computeActiveCommentedPaths(comments), [comments]);
   const autoCollapsed = useMemo(
     () => computeAutoCollapsed(files, activeCommentedPaths, lineCounts),
     [files, activeCommentedPaths, lineCounts],

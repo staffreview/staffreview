@@ -2,8 +2,20 @@
   "name": "staffreview-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build:binary": "bun run --cwd apps/staffreview build:binary",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write ."
+  },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
     "@types/bun": "latest"
   },
   "peerDependencies": {

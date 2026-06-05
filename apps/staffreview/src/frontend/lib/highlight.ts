@@ -52,14 +52,14 @@ async function loadLanguageData(name: StaffLanguage): Promise<LanguageRegistrati
 const FILENAME_LANGUAGE_OVERRIDES: Record<string, string> = {
   ".bashrc": "bash",
   ".zshrc": "bash",
-  "brewfile": "ruby",
+  brewfile: "ruby",
   "cmakelists.txt": "cmake",
-  "dockerfile": "docker",
-  "gemfile": "ruby",
-  "jenkinsfile": "groovy",
-  "justfile": "just",
-  "makefile": "make",
-  "rakefile": "ruby",
+  dockerfile: "docker",
+  gemfile: "ruby",
+  jenkinsfile: "groovy",
+  justfile: "just",
+  makefile: "make",
+  rakefile: "ruby",
 };
 
 const EXTENSION_LANGUAGE_OVERRIDES: Record<string, string> = {

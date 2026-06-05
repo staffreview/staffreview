@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
-import posthog from 'posthog-js';
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+import posthog from "posthog-js";
 
 const githubSvg = (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4 fill-current">
@@ -19,7 +19,7 @@ export function HeroCtas({ githubUrl }: HeroCtasProps) {
     <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
       <Link
         href="/docs"
-        onClick={() => posthog.capture('get_started_clicked', { location: 'hero' })}
+        onClick={() => posthog.capture("get_started_clicked", { location: "hero" })}
         className="inline-flex items-center gap-2 rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-semibold text-fd-primary-foreground transition-opacity hover:opacity-90"
       >
         Get started
@@ -29,7 +29,7 @@ export function HeroCtas({ githubUrl }: HeroCtasProps) {
         href={githubUrl}
         target="_blank"
         rel="noreferrer noopener"
-        onClick={() => posthog.capture('github_clicked', { location: 'hero' })}
+        onClick={() => posthog.capture("github_clicked", { location: "hero" })}
         className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-fd-muted"
       >
         {githubSvg}
@@ -44,7 +44,7 @@ export function ClosingCtas() {
     <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
       <Link
         href="/docs/installation"
-        onClick={() => posthog.capture('install_clicked', { location: 'closing_cta' })}
+        onClick={() => posthog.capture("install_clicked", { location: "closing_cta" })}
         className="inline-flex items-center gap-2 rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-semibold text-fd-primary-foreground transition-opacity hover:opacity-90"
       >
         Install Staff Review
@@ -52,7 +52,7 @@ export function ClosingCtas() {
       </Link>
       <Link
         href="/docs/quickstart"
-        onClick={() => posthog.capture('quickstart_clicked', { location: 'closing_cta' })}
+        onClick={() => posthog.capture("quickstart_clicked", { location: "closing_cta" })}
         className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-fd-muted"
       >
         Read the quickstart

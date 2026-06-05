@@ -5,12 +5,15 @@ import {
   ensureShikiLanguage,
   ensureShikiTheme,
   getHighlighter,
-  langForPath,
   LIGHT_SYNTAX_THEMES,
+  langForPath,
   tokenizeLine,
 } from "./highlight.ts";
 
-function colorOf(tokens: { content: string; color?: string }[], content: string): string | undefined {
+function colorOf(
+  tokens: { content: string; color?: string }[],
+  content: string,
+): string | undefined {
   return tokens.find((token) => token.content === content)?.color;
 }
 

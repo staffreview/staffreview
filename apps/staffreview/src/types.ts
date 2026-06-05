@@ -1,9 +1,4 @@
-export type TargetKind =
-  | "working-tree"
-  | "staged"
-  | "branch"
-  | "commit"
-  | "ref";
+export type TargetKind = "working-tree" | "staged" | "branch" | "commit" | "ref";
 
 export type DiffTarget = {
   kind: TargetKind;

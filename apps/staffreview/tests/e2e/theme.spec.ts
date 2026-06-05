@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -19,19 +19,27 @@ test("theme picker toggles the `dark` class on <html>", async ({ page }) => {
   await page.goto("/");
 
   // Default is "System" → with a light OS, no `dark` class on <html>.
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(false);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(false);
 
   await openGear(page);
   await page.getByTestId("theme-dark").click();
   await expect(page.getByTestId("theme-dark")).toHaveAttribute("aria-checked", "true");
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(true);
 
   await page.getByTestId("theme-light").click();
   await expect(page.getByTestId("theme-light")).toHaveAttribute("aria-checked", "true");
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(false);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(false);
 });
 
-test("syntax-theme typeahead is closed by default, filters the list, persists the pick", async ({ page }) => {
+test("syntax-theme typeahead is closed by default, filters the list, persists the pick", async ({
+  page,
+}) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
@@ -85,7 +93,9 @@ test("theme preference is persisted and survives reload; System follows OS", asy
   await postSettings;
 
   await page.reload();
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(true);
   await openGear(page);
   await expect(page.getByTestId("theme-dark")).toHaveAttribute("aria-checked", "true");
 
@@ -93,8 +103,12 @@ test("theme preference is persisted and survives reload; System follows OS", asy
   // dark without a reload.
   await page.getByTestId("theme-system").click();
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(true);
 
   await page.emulateMedia({ colorScheme: "light" });
-  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(false);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+    .toBe(false);
 });

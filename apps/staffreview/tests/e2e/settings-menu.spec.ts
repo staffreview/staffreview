@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -7,7 +7,9 @@ test.beforeEach(async () => {
 
 test("gear menu opens and Refresh re-runs the diff fetch", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   // Refresh is hidden inside the menu now, not in the header.
   await expect(page.getByRole("button", { name: /^Refresh$/ })).toHaveCount(0);

@@ -1,7 +1,7 @@
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { readdir, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SCRATCH_DIR, STAFF_CONFIG_DIR } from "./setup.ts";
 
 /**

@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { staff, resetDiffsJson } from "./helpers.ts";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -24,9 +24,7 @@ test("Tailwind utility classes are loaded (CSS smoke)", async ({ page }) => {
   await page.goto("/");
 
   // body should have the resolved Tailwind background color, not browser default white
-  const bg = await page.evaluate(() =>
-    getComputedStyle(document.body).backgroundColor,
-  );
+  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   // oklch(0.99 0 0) renders to a near-white rgb(252,252,252) or similar — assert it's NOT the user-agent transparent/empty
   expect(bg).not.toBe("");
   expect(bg).not.toBe("rgba(0, 0, 0, 0)");
@@ -52,7 +50,9 @@ test("renders a diff between two branches", async ({ page }) => {
 test("active diff is created on first load and matches CLI", async ({ page }) => {
   await page.goto("/");
   // Allow the initial diff creation roundtrip
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   const active = JSON.parse(await staff(["active", "--json"]));
   expect(active).not.toBeNull();

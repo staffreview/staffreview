@@ -15,12 +15,11 @@ command = "claude --permission-mode auto --effort xhigh --name ${SPAREHOST_WORKT
 
 [[services]]
 name = "Shell"
-command = "''"
 
 [[services]]
 name = "Staff Review"
+working_dir = "apps/staffreview"
 command = "bun dev --base main"
 local_domains = [
   "staff.sr",
 ]
-working_dir = "apps/staffreview"

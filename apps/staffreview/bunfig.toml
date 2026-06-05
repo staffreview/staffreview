@@ -3,3 +3,7 @@ plugins = [ "bun-plugin-tailwind" ]
 
 [bundle]
 plugins = [ "bun-plugin-tailwind" ]
+
+[test]
+# Register happy-dom globals so React component tests can render into a DOM.
+preload = [ "./tests/happydom.ts" ]

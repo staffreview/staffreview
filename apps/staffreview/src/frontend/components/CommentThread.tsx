@@ -1,19 +1,78 @@
-import { useMemo, useState } from "react";
-import { BookMarked, Check, CheckCircle2, ChevronDown, ChevronRight, MessageSquare, Pencil, SkipForward, Trash2, Undo2 } from "lucide-react";
+import {
+  BookMarked,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  Pencil,
+  SkipForward,
+  Trash2,
+  Undo2,
+} from "lucide-react";
+import { useState } from "react";
 import type { Comment, CommentPriority, ResolutionStatus } from "../../types.ts";
-import { Button } from "./ui/button.tsx";
+import { api } from "../lib/api.ts";
+import { clearDraft, loadDraft } from "../lib/draft.ts";
+import { cn, formatTime } from "../lib/utils.ts";
+import { LazyBoundary } from "./LazyBoundary.tsx";
+import { Markdown } from "./Markdown.tsx";
+import type { MarkdownEditorProps } from "./MarkdownEditor.tsx";
 import { Badge } from "./ui/badge.tsx";
+import { Button } from "./ui/button.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
-import { Markdown } from "./Markdown.tsx";
-import { MarkdownEditor } from "./MarkdownEditor.tsx";
-import { api } from "../lib/api.ts";
-import { clearDraft, loadDraft } from "../lib/draft.ts";
-import { cn, formatTime } from "../lib/utils.ts";
+
+const importMarkdownEditor = () =>
+  import("./MarkdownEditor.tsx").then((mod) => ({
+    default: mod.MarkdownEditor,
+  }));
+
+function MarkdownEditorFallback({ minHeightClass = "min-h-[80px]" }: { minHeightClass?: string }) {
+  return (
+    <div>
+      <div
+        className={cn(
+          "rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground",
+          minHeightClass,
+        )}
+      >
+        Loading...
+      </div>
+    </div>
+  );
+}
+
+function DeferredMarkdownEditor(props: MarkdownEditorProps) {
+  return (
+    <LazyBoundary
+      importer={importMarkdownEditor}
+      props={props}
+      loadingFallback={<MarkdownEditorFallback minHeightClass={props.minHeightClass} />}
+      errorFallback={(retry) => (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground",
+            props.minHeightClass ?? "min-h-[80px]",
+          )}
+        >
+          <span>Couldn't load the editor.</span>
+          <Button variant="outline" size="sm" onClick={retry} className="ml-auto">
+            Retry
+          </Button>
+          {/* Render the host's actions (Cancel/Submit) on the error path too, so
+              a user who can't reach the chunk can still dismiss the form without
+              reloading the page — honouring the drop-in MarkdownEditor contract. */}
+          {props.actions}
+        </div>
+      )}
+    />
+  );
+}
 
 type Props = {
   slug: string;
@@ -35,7 +94,12 @@ function statusBadge(s: ResolutionStatus) {
 function priorityBadge(p: CommentPriority) {
   const variant = p === "P1" ? "destructive" : p === "P2" ? "warning" : "muted";
   return (
-    <Badge variant={variant} className="px-1.5 py-0 font-mono" title={`Priority ${p} (set by an AI reviewer)`} data-testid={`priority-${p}`}>
+    <Badge
+      variant={variant}
+      className="px-1.5 py-0 font-mono"
+      title={`Priority ${p} (set by an AI reviewer)`}
+      data-testid={`priority-${p}`}
+    >
       {p}
     </Badge>
   );
@@ -97,7 +161,6 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
     onChange?.();
   }
 
-
   // Fixed and Skipped threads collapse to a compact single-row card.
   // Clicking the row (but not the Reopen button) expands it in place to
   // show the comment content, so the user can read it without changing
@@ -106,7 +169,10 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
   if (resolution && (resolution.status === "fixed" || resolution.status === "skipped")) {
     return (
       <div
-        className={cn("min-w-0 overflow-hidden rounded-md border border-border bg-muted/40", className)}
+        className={cn(
+          "min-w-0 overflow-hidden rounded-md border border-border bg-muted/40",
+          className,
+        )}
         data-thread-card="true"
         data-testid={`thread-collapsed-${resolution.status}`}
       >
@@ -130,7 +196,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             {/* This row summarizes the resolution: who resolved it and when.
              * The original author + creation time live on the comment's own
              * header in the expanded body. */}
-            <span className="ml-1 min-w-0 truncate font-medium text-foreground">{resolution.author || root.author}</span>
+            <span className="ml-1 min-w-0 truncate font-medium text-foreground">
+              {resolution.author || root.author}
+            </span>
             <span>·</span>
             <span className="shrink-0">{formatTime(resolution.at)}</span>
           </button>
@@ -157,9 +225,17 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
   }
 
   return (
-    <div className={cn("min-w-0 overflow-hidden rounded-md border border-border bg-muted/40", className)} data-thread-card="true">
+    <div
+      className={cn(
+        "min-w-0 overflow-hidden rounded-md border border-border bg-muted/40",
+        className,
+      )}
+      data-thread-card="true"
+    >
       {context && (
-        <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">{context}</div>
+        <div className="px-3 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+          {context}
+        </div>
       )}
       <div className="divide-y divide-border">
         <CommentBubble
@@ -181,7 +257,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
           {statusBadge(resolution.status)}
           <span className="min-w-0 break-words text-muted-foreground">— {resolution.body}</span>
           {resolution.documentedAs && (
-            <code className="min-w-0 break-all text-xs text-muted-foreground">{resolution.documentedAs}</code>
+            <code className="min-w-0 break-all text-xs text-muted-foreground">
+              {resolution.documentedAs}
+            </code>
           )}
           <Button variant="outline" size="sm" onClick={unresolve} className="ml-auto">
             <Undo2 />
@@ -200,17 +278,11 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuItem
-                onSelect={() => resolveQuick("fixed")}
-                data-testid="thread-fixed"
-              >
+              <DropdownMenuItem onSelect={() => resolveQuick("fixed")} data-testid="thread-fixed">
                 <CheckCircle2 className="text-success" />
                 Fixed
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => resolveQuick("skipped")}
-                data-testid="thread-skip"
-              >
+              <DropdownMenuItem onSelect={() => resolveQuick("skipped")} data-testid="thread-skip">
                 <SkipForward />
                 Skip
               </DropdownMenuItem>
@@ -232,11 +304,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             {documentRequested ? <Check className="text-success" /> : <BookMarked />}
             Document
           </Button>
-          <Button
-            size="sm"
-            onClick={() => setReplyOpen((v) => !v)}
-            data-testid="thread-reply"
-          >
+          <Button size="sm" onClick={() => setReplyOpen((v) => !v)} data-testid="thread-reply">
             <MessageSquare />
             Reply
           </Button>
@@ -245,11 +313,13 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
 
       {!collapsed && replyOpen && !resolution && (
         <div className="border-t border-border bg-background p-2">
-          <MarkdownEditor
+          <DeferredMarkdownEditor
             value={replyText}
             onChange={setReplyText}
             draftKey={replyDraftKey}
-            onSubmit={() => { if (replyText.trim()) postReply(); }}
+            onSubmit={() => {
+              if (replyText.trim()) postReply();
+            }}
             placeholder="Reply… (⌘↩ to submit, paste or drop images)"
             minHeightClass="min-h-[60px]"
             actions={
@@ -257,7 +327,11 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => { setReplyOpen(false); clearDraft(replyDraftKey); setReplyText(""); }}
+                  onClick={() => {
+                    setReplyOpen(false);
+                    clearDraft(replyDraftKey);
+                    setReplyText("");
+                  }}
                 >
                   Cancel
                 </Button>
@@ -274,7 +348,6 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
           />
         </div>
       )}
-
     </div>
   );
 }
@@ -326,9 +399,7 @@ function CommentBubble({
   async function deleteSelf() {
     const isRoot = !comment.parentId;
     const ok = confirm(
-      isRoot
-        ? "Delete this thread? Replies will also be removed."
-        : "Delete this comment?",
+      isRoot ? "Delete this thread? Replies will also be removed." : "Delete this comment?",
     );
     if (!ok) return;
     await api.deleteComment(slug, comment.id);
@@ -340,7 +411,12 @@ function CommentBubble({
       {/* Fixed row height (matches the icon-xs action buttons) so collapsing —
           which hides those buttons — doesn't reflow the header and shift the
           chevron/author. */}
-      <div className={cn("flex min-h-6 min-w-0 items-center gap-2 text-xs text-muted-foreground", !collapsed && "mb-1")}>
+      <div
+        className={cn(
+          "flex min-h-6 min-w-0 items-center gap-2 text-xs text-muted-foreground",
+          !collapsed && "mb-1",
+        )}
+      >
         {collapsible && (
           <button
             type="button"
@@ -391,7 +467,7 @@ function CommentBubble({
         </div>
       </div>
       {collapsed ? null : editing ? (
-        <MarkdownEditor
+        <DeferredMarkdownEditor
           value={draft}
           onChange={setDraft}
           draftKey={editDraftKey}
@@ -477,11 +553,13 @@ export function NewCommentEditor({
 
   return (
     <div className="space-y-2 p-2">
-      <MarkdownEditor
+      <DeferredMarkdownEditor
         value={text}
         onChange={setText}
         draftKey={draftKey}
-        onSubmit={() => { if (!posting && text.trim()) post(); }}
+        onSubmit={() => {
+          if (!posting && text.trim()) post();
+        }}
         autoFocus
         placeholder={
           file
@@ -491,7 +569,9 @@ export function NewCommentEditor({
         actions={
           <>
             {onCancel && (
-              <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+              <Button size="sm" variant="ghost" onClick={onCancel}>
+                Cancel
+              </Button>
             )}
             <Button size="sm" onClick={post} disabled={posting || !text.trim()}>
               Comment

@@ -1,11 +1,11 @@
-import { source } from '@/lib/source';
-import { createFromSource } from 'fumadocs-core/search/server';
-import { after } from 'next/server';
-import { getPostHogClient } from '@/lib/posthog-server';
-import { POSTHOG_PUBLIC_TOKEN } from '@/lib/posthog-config';
+import { createFromSource } from "fumadocs-core/search/server";
+import { after } from "next/server";
+import { POSTHOG_PUBLIC_TOKEN } from "@/lib/posthog-config";
+import { getPostHogClient } from "@/lib/posthog-server";
+import { source } from "@/lib/source";
 
 const { GET: searchGET } = createFromSource(source, {
-  language: 'english',
+  language: "english",
 });
 
 // Reads the visitor's real anonymous `distinct_id` from the posthog-js cookie
@@ -14,15 +14,15 @@ const { GET: searchGET } = createFromSource(source, {
 // user. Returns null if the cookie/token isn't present.
 function getDistinctId(request: Request): string | null {
   if (!POSTHOG_PUBLIC_TOKEN) return null;
-  const cookieHeader = request.headers.get('cookie');
+  const cookieHeader = request.headers.get("cookie");
   if (!cookieHeader) return null;
   const name = `ph_${POSTHOG_PUBLIC_TOKEN}_posthog`;
-  for (const part of cookieHeader.split(';')) {
-    const [rawKey, ...rawVal] = part.split('=');
+  for (const part of cookieHeader.split(";")) {
+    const [rawKey, ...rawVal] = part.split("=");
     if (rawKey.trim() !== name) continue;
     try {
-      const parsed = JSON.parse(decodeURIComponent(rawVal.join('=')));
-      return typeof parsed?.distinct_id === 'string' ? parsed.distinct_id : null;
+      const parsed = JSON.parse(decodeURIComponent(rawVal.join("=")));
+      return typeof parsed?.distinct_id === "string" ? parsed.distinct_id : null;
     } catch {
       return null;
     }
@@ -40,7 +40,7 @@ function captureSearch(request: Request, query: string) {
     if (!client) return;
     client.capture({
       distinctId,
-      event: 'docs_searched',
+      event: "docs_searched",
       // Deliberately do NOT send the raw query string (possible PII: users
       // sometimes paste secrets/emails). We retain analytic value by recording
       // only the query length.
@@ -64,7 +64,7 @@ function captureSearch(request: Request, query: string) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const query = url.searchParams.get('query');
+  const query = url.searchParams.get("query");
 
   if (query) {
     captureSearch(request, query);

@@ -1,24 +1,28 @@
 #!/usr/bin/env bun
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { startServer } from "./server.ts";
-import { resolvePort, PORT_RANGE_START } from "./port.ts";
-import * as store from "./store.ts";
-import * as git from "./git.ts";
-import * as settings from "./settings.ts";
-import { parseBooleanSetting } from "./boolean-setting.ts";
-import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
-import { COMMENT_PRIORITIES, type CommentPriority, type DiffTarget, type ResolutionStatus } from "./types.ts";
-
+import skillComment from "../skills/staff-comment.md" with { type: "text" };
+import skillDocs from "../skills/staff-docs.md" with { type: "text" };
+import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
+import skillDocument from "../skills/staff-document.md" with { type: "text" };
+import skillLoop from "../skills/staff-loop.md" with { type: "text" };
+import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
 import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
 import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
-import skillComment from "../skills/staff-comment.md" with { type: "text" };
-import skillDocument from "../skills/staff-document.md" with { type: "text" };
-import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
-import skillLoop from "../skills/staff-loop.md" with { type: "text" };
-import skillDocs from "../skills/staff-docs.md" with { type: "text" };
-import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
+import { parseBooleanSetting } from "./boolean-setting.ts";
+import * as git from "./git.ts";
+import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
+import { PORT_RANGE_START, resolvePort } from "./port.ts";
+import { startServer } from "./server.ts";
+import * as settings from "./settings.ts";
+import * as store from "./store.ts";
+import {
+  COMMENT_PRIORITIES,
+  type CommentPriority,
+  type DiffTarget,
+  type ResolutionStatus,
+} from "./types.ts";
 
 const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
@@ -84,15 +88,19 @@ function booleanFlag(value: string | boolean | undefined): boolean {
 function parseTarget(spec: string | undefined): DiffTarget {
   if (!spec) return { kind: "ref", ref: "HEAD" };
   const lower = spec.toLowerCase();
-  if (lower === "working-tree" || lower === "wt" || lower === "working") return { kind: "working-tree" };
+  if (lower === "working-tree" || lower === "wt" || lower === "working")
+    return { kind: "working-tree" };
   if (lower === "staged" || lower === "index") return { kind: "staged" };
   return { kind: "ref", ref: spec };
 }
 
 async function openBrowser(url: string) {
-  const cmd = process.platform === "darwin" ? ["open", url]
-    : process.platform === "win32" ? ["cmd", "/c", "start", "", url]
-    : ["xdg-open", url];
+  const cmd =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
   Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
 }
 
@@ -189,7 +197,15 @@ async function main(argv: string[]) {
   // a specific diff targeted. A slug isn't a known subcommand and always
   // contains the ".." separator (e.g. `main..WT`, `<sha>..WT`).
   const KNOWN_COMMANDS = new Set([
-    "serve", "active", "diff", "files", "comment", "settings", "install", "version", "help",
+    "serve",
+    "active",
+    "diff",
+    "files",
+    "comment",
+    "settings",
+    "install",
+    "version",
+    "help",
   ]);
   const first = positional[0] ?? "serve";
   const firstIsSlug = !KNOWN_COMMANDS.has(first) && first.includes("..");
@@ -235,7 +251,9 @@ async function main(argv: string[]) {
             }
           }
         } catch (e) {
-          console.error(`\x1b[31mwarning:\x1b[0m could not target ${serveSlug}: ${(e as Error).message}`);
+          console.error(
+            `\x1b[31mwarning:\x1b[0m could not target ${serveSlug}: ${(e as Error).message}`,
+          );
         }
       }
 
@@ -246,7 +264,9 @@ async function main(argv: string[]) {
         const msg = (e as Error)?.message ?? String(e);
         if (port !== undefined) {
           console.error(`\x1b[31merror:\x1b[0m could not bind port ${port}: ${msg}`);
-          console.error("  Pass a different --port (or $PORT), or omit it to auto-pick a free port.");
+          console.error(
+            "  Pass a different --port (or $PORT), or omit it to auto-pick a free port.",
+          );
         } else {
           console.error(`\x1b[31merror:\x1b[0m could not start the server: ${msg}`);
         }
@@ -317,9 +337,7 @@ async function main(argv: string[]) {
       const giPath = join(cwd, ".gitignore");
       const giFile = Bun.file(giPath);
       let existing = (await giFile.exists()) ? await giFile.text() : "";
-      const present = new Set(
-        existing.split("\n").map((l) => l.trim().replace(/\/$/, "")),
-      );
+      const present = new Set(existing.split("\n").map((l) => l.trim().replace(/\/$/, "")));
       const missing = ignoreEntries.filter((e) => !present.has(e.replace(/\/$/, "")));
       if (missing.length > 0) {
         const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
@@ -392,7 +410,10 @@ async function main(argv: string[]) {
     }
 
     case "files": {
-      const slug = await activeSlugOrThrow(cwd, typeof flags.slug === "string" ? flags.slug : undefined);
+      const slug = await activeSlugOrThrow(
+        cwd,
+        typeof flags.slug === "string" ? flags.slug : undefined,
+      );
       const c = await store.loadDiff(slug, cwd);
       if (!c) throw new Error(`diff not found: ${slug}`);
       const files = await git.getDiff(c.base, c.head, cwd);
@@ -409,7 +430,10 @@ async function main(argv: string[]) {
         help();
         return;
       }
-      const slug = await activeSlugOrThrow(cwd, typeof flags.slug === "string" ? flags.slug : undefined);
+      const slug = await activeSlugOrThrow(
+        cwd,
+        typeof flags.slug === "string" ? flags.slug : undefined,
+      );
 
       if (sub === "add") {
         let body = typeof flags.body === "string" ? flags.body : "";
@@ -419,22 +443,29 @@ async function main(argv: string[]) {
         const line = typeof flags.line === "string" ? Number(flags.line) : undefined;
         // Optional end of a multi-line range; only meaningful with --line
         // and when it differs from it. Mirrors the UI's range comments.
-        const endLineRaw = typeof flags["end-line"] === "string" ? Number(flags["end-line"]) : undefined;
+        const endLineRaw =
+          typeof flags["end-line"] === "string" ? Number(flags["end-line"]) : undefined;
         const endLine =
           endLineRaw != null && Number.isFinite(endLineRaw) && line != null && endLineRaw !== line
             ? endLineRaw
             : undefined;
         const side = (flags.side === "old" ? "old" : flags.side === "new" ? "new" : undefined) as
-          | "old" | "new" | undefined;
+          | "old"
+          | "new"
+          | undefined;
         const author = typeof flags.author === "string" ? flags.author : "agent";
-        const parentId = typeof flags["reply-to"] === "string" ? (flags["reply-to"] as string) : undefined;
+        const parentId =
+          typeof flags["reply-to"] === "string" ? (flags["reply-to"] as string) : undefined;
         // Optional agent-only severity (P1 = most urgent). Accept P1/P2/P3 or a
         // bare 1/2/3, validated against the canonical set so they can't drift.
         let priority: CommentPriority | undefined;
         if (typeof flags.priority === "string") {
-          const norm = `P${flags.priority.trim().toUpperCase().replace(/^P/, "")}` as CommentPriority;
+          const norm =
+            `P${flags.priority.trim().toUpperCase().replace(/^P/, "")}` as CommentPriority;
           if (!COMMENT_PRIORITIES.includes(norm)) {
-            throw new Error(`--priority must be one of: ${COMMENT_PRIORITIES.join(", ")} (P1 = most urgent/serious)`);
+            throw new Error(
+              `--priority must be one of: ${COMMENT_PRIORITIES.join(", ")} (P1 = most urgent/serious)`,
+            );
           }
           priority = norm;
         }
@@ -472,7 +503,10 @@ async function main(argv: string[]) {
         const removed = before.comments.length - after.comments.length;
         const replies = removed - 1;
         if (flags.json) console.log(JSON.stringify({ deleted: id, removed }, null, 2));
-        else console.log(`deleted comment ${id.slice(0, 8)}${replies > 0 ? ` (+${replies} repl${replies === 1 ? "y" : "ies"})` : ""}`);
+        else
+          console.log(
+            `deleted comment ${id.slice(0, 8)}${replies > 0 ? ` (+${replies} repl${replies === 1 ? "y" : "ies"})` : ""}`,
+          );
         return;
       }
 
@@ -520,18 +554,25 @@ async function main(argv: string[]) {
 
       if (sub === "resolve") {
         const threadId = typeof flags.thread === "string" ? flags.thread : undefined;
-        const status = (flags.status as ResolutionStatus | undefined);
+        const status = flags.status as ResolutionStatus | undefined;
         let body = typeof flags.body === "string" ? flags.body : "";
         if (!body) body = await readBodyFromStdin();
         const documentedAs =
-          typeof flags["documented-as"] === "string" ? (flags["documented-as"] as string) : undefined;
+          typeof flags["documented-as"] === "string"
+            ? (flags["documented-as"] as string)
+            : undefined;
         if (!threadId) throw new Error("--thread is required");
         if (!status || !["fixed", "skipped", "documented"].includes(status)) {
           throw new Error("--status must be one of: fixed | skipped | documented");
         }
         if (!body.trim()) throw new Error("--body is required (or pipe via stdin)");
         const author = typeof flags.author === "string" ? flags.author : "agent";
-        const c = await store.resolveThread(slug, threadId, { status, body, author, documentedAs }, cwd);
+        const c = await store.resolveThread(
+          slug,
+          threadId,
+          { status, body, author, documentedAs },
+          cwd,
+        );
         if (flags.json) console.log(JSON.stringify(c, null, 2));
         else console.log(`thread ${threadId.slice(0, 8)} → ${status}`);
         return;
@@ -578,9 +619,7 @@ async function main(argv: string[]) {
         }
         const value = parseBooleanSetting(positional[3], key);
         await settings.writeSettings(
-          key === "openBrowser"
-            ? { openBrowser: value }
-            : { structuredHighlighting: value },
+          key === "openBrowser" ? { openBrowser: value } : { structuredHighlighting: value },
         );
         if (flags.json) console.log(JSON.stringify({ [key]: value }, null, 2));
         else console.log(`${key}: ${value}`);

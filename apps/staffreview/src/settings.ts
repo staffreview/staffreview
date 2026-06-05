@@ -4,26 +4,26 @@ import { join } from "node:path";
 // `/staff-loop` round cap default + bounds live in a dependency-free module so
 // the frontend can share them; re-export below so existing `settings.*` callers
 // (e.g. cli.ts) keep working.
-import { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS } from "./loop-config.ts";
-export { DEFAULT_LOOP_ROUNDS, MIN_LOOP_ROUNDS, MAX_LOOP_ROUNDS };
+import { DEFAULT_LOOP_ROUNDS, MAX_LOOP_ROUNDS, MIN_LOOP_ROUNDS } from "./loop-config.ts";
+
+export { DEFAULT_LOOP_ROUNDS, MAX_LOOP_ROUNDS, MIN_LOOP_ROUNDS };
+
 // `/staff-review` agent fan-out default + bounds, likewise shared with the
 // frontend; re-exported so `settings.*` callers (e.g. cli.ts) can reach them.
-import {
-  DEFAULT_REVIEW_AGENTS,
-  MIN_REVIEW_AGENTS,
-  MAX_REVIEW_AGENTS,
-} from "./review-config.ts";
-export { DEFAULT_REVIEW_AGENTS, MIN_REVIEW_AGENTS, MAX_REVIEW_AGENTS };
+import { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS } from "./review-config.ts";
+
+export { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS };
+
 // `/staff-docs` scout fan-out default + bounds, same dependency-free pattern
 // so the frontend bundle can share them with the server.
-import {
-  DEFAULT_DOCS_AGENTS,
-  MIN_DOCS_AGENTS,
-  MAX_DOCS_AGENTS,
-} from "./docs-config.ts";
-export { DEFAULT_DOCS_AGENTS, MIN_DOCS_AGENTS, MAX_DOCS_AGENTS };
+import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "./docs-config.ts";
+
+export { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS };
+
 import { DEFAULT_OPEN_BROWSER } from "./open-browser-config.ts";
+
 export { DEFAULT_OPEN_BROWSER };
+
 import { parseBooleanSetting } from "./boolean-setting.ts";
 
 export type ColorScheme = "system" | "light" | "dark";
@@ -132,10 +132,7 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       next.openBrowser = DEFAULT_OPEN_BROWSER;
     }
   }
-  if (
-    "structuredHighlighting" in next &&
-    typeof next.structuredHighlighting !== "boolean"
-  ) {
+  if ("structuredHighlighting" in next && typeof next.structuredHighlighting !== "boolean") {
     try {
       next.structuredHighlighting = parseBooleanSetting(
         String(next.structuredHighlighting),

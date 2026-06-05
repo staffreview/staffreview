@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -56,7 +56,9 @@ test("clicking a file in the Files tab scrolls that file's card into view", asyn
   expect(after).toBeLessThan(before);
 });
 
-test("the New comment button is icon-only and switches back to the Comments tab", async ({ page }) => {
+test("the New comment button is icon-only and switches back to the Comments tab", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();

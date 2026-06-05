@@ -1,8 +1,8 @@
-import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { request } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { expect, test } from "@playwright/test";
 import { staff } from "./helpers.ts";
 import { SCRATCH_DIR, STAFF_CONFIG_DIR, TEST_PORT } from "./setup.ts";
 
@@ -61,7 +61,11 @@ function requestWithHost(
   url: URL,
   host: string,
   path = "/api/settings",
-): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
+): Promise<{
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = request(
       {
@@ -103,9 +107,9 @@ test("serve rejects an invalid --port with a clear error", async () => {
 test("serve fails cleanly when the requested port is already bound", async () => {
   // The Playwright web server is already listening on TEST_PORT, so binding it
   // again must fail with the friendly message rather than an uncaught stack.
-  await expect(
-    staff(["serve", "--port", String(TEST_PORT), "--no-open"]),
-  ).rejects.toThrow(new RegExp(`could not bind port ${TEST_PORT}`, "i"));
+  await expect(staff(["serve", "--port", String(TEST_PORT), "--no-open"])).rejects.toThrow(
+    new RegExp(`could not bind port ${TEST_PORT}`, "i"),
+  );
 });
 
 test("serve accepts proxy hostnames over IPv4 loopback", async () => {

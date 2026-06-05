@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
@@ -16,7 +16,7 @@ test("slug badge pins the default base to the current branch's commit", async ({
   await expect(slug).toHaveAttribute("data-full-slug", /^[0-9a-f]{40}\.\.WT$/);
 });
 
-test("clicking the slug badge copies it to the clipboard", async ({ page, context, browserName }) => {
+test("clicking the slug badge copies it to the clipboard", async ({ page, context }) => {
   // The clipboard API requires the page to have permission.
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 

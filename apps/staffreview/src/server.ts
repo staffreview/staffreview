@@ -1,15 +1,15 @@
-import type { ServerWebSocket } from "bun";
 import { Buffer } from "node:buffer";
 import { watch } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
+import type { ServerWebSocket } from "bun";
 import logoPngPath from "./frontend/logo.png";
 import { frontendAssets, frontendHtml } from "./generated/frontend-assets.ts";
-import { userInfo } from "node:os";
 import * as git from "./git.ts";
-import * as store from "./store.ts";
-import * as settings from "./settings.ts";
-import type { DiffTarget } from "./types.ts";
 import { listenOnRange } from "./port.ts";
+import * as settings from "./settings.ts";
+import * as store from "./store.ts";
+import type { DiffTarget } from "./types.ts";
 
 /** Extension → mime for the handful of image types we accept. */
 const ATTACHMENT_TYPES: Record<string, string> = {
@@ -193,7 +193,12 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
       proc.stdin.end();
       const out = await new Response(proc.stdout).text();
       await proc.exited;
-      const ignored = new Set(out.split("\n").map((s) => s.trim()).filter(Boolean));
+      const ignored = new Set(
+        out
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
       changed = batch.filter((p) => !ignored.has(p));
     } catch {
       // If check-ignore is unavailable, fall back to broadcasting.
@@ -240,270 +245,276 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   let cachedFrontendAssets: Promise<FrontendAssets> | null = null;
   const currentFrontendAssets = async (): Promise<FrontendAssets> => {
     if (!serverUrl) return {};
-    const load = () => fetch(new URL("/", serverUrl!))
-      .then((res) => res.text())
-      .then(parseFrontendAssets)
-      .catch(() => ({}));
+    const load = () =>
+      fetch(new URL("/", serverUrl!))
+        .then((res) => res.text())
+        .then(parseFrontendAssets)
+        .catch(() => ({}));
     if (isDev) return load();
     cachedFrontendAssets ??= load();
     return cachedFrontendAssets;
   };
-  const makeServer = (port: number) => Bun.serve<WSData, {}>({
-    port,
-    // Bind the port *exclusively*. Otherwise a second `staff` (e.g. for another
-    // project) can SO_REUSEPORT-share a port that's already serving instead of
-    // walking up to a free one — so http://localhost:<port> load-balances
-    // between the two projects. Forcing reuse off makes a taken port throw
-    // EADDRINUSE, so listenOnRange walks to the next free port as intended.
-    reusePort: false,
-    development: isDev ? { hmr: true, console: true } : false,
-    routes: {
-      "/": rootRoute as any,
+  const makeServer = (port: number) =>
+    Bun.serve<WSData, {}>({
+      port,
+      // Bind the port *exclusively*. Otherwise a second `staff` (e.g. for another
+      // project) can SO_REUSEPORT-share a port that's already serving instead of
+      // walking up to a free one — so http://localhost:<port> load-balances
+      // between the two projects. Forcing reuse off makes a taken port throw
+      // EADDRINUSE, so listenOnRange walks to the next free port as intended.
+      reusePort: false,
+      development: isDev ? { hmr: true, console: true } : false,
+      routes: {
+        "/": rootRoute as any,
 
-      "/api/info": async () => {
-        const branch = await git.currentBranch(cwd);
-        const root = await git.gitRoot(cwd);
-        return json({ cwd, root, branch });
-      },
+        "/api/info": async () => {
+          const branch = await git.currentBranch(cwd);
+          const root = await git.gitRoot(cwd);
+          return json({ cwd, root, branch });
+        },
 
-      "/api/refs": async () => {
-        const refs = await git.listRefs(cwd);
-        return json({ refs });
-      },
+        "/api/refs": async () => {
+          const refs = await git.listRefs(cwd);
+          return json({ refs });
+        },
 
-      "/api/diffs": async () => {
-        const all = await store.listDiffs(cwd);
-        return json({ diffs: all });
-      },
+        "/api/diffs": async () => {
+          const all = await store.listDiffs(cwd);
+          return json({ diffs: all });
+        },
 
-      "/api/diff": {
-        GET: async (req) => {
-          const url = new URL(req.url);
-          const slug = url.searchParams.get("slug");
-          if (slug) {
-            const c = await store.loadDiff(slug, cwd);
-            if (!c) return err("not found", 404);
+        "/api/diff": {
+          GET: async (req) => {
+            const url = new URL(req.url);
+            const slug = url.searchParams.get("slug");
+            if (slug) {
+              const c = await store.loadDiff(slug, cwd);
+              if (!c) return err("not found", 404);
+              return json({ diff: c });
+            }
+            return err("missing slug");
+          },
+          POST: async (req) => {
+            const body = await readJson<{
+              base: DiffTarget;
+              head: DiffTarget;
+              setActive?: boolean;
+            }>(req);
+            // Pin any moving refs (`HEAD`, a branch/tag name) to concrete commits
+            // before persisting, exactly like the `staff diff` CLI path does. The
+            // frontend usually pins via `defaultTargets`, but its branch-not-in-refs
+            // fallback and the shared-link slug fallback can still POST an unpinned
+            // ref — anchor it here so no creation path stores a moving base.
+            const { base, head } = await git.resolveTargets(body.base, body.head, cwd);
+            const c = await store.loadOrCreateDiff(base, head, cwd);
+            if (body.setActive !== false) await store.setActiveDiff(c.slug, cwd);
+            broadcast({ type: "diff:created", slug: c.slug });
             return json({ diff: c });
+          },
+        },
+
+        "/api/files": {
+          POST: async (req) => {
+            const body = await readJson<{ base: DiffTarget; head: DiffTarget }>(req);
+            const files = await git.getDiff(body.base, body.head, cwd);
+            return json({ files });
+          },
+        },
+
+        // Attachment upload: editors POST a pasted/dropped image here and
+        // get back a URL to embed in the comment's markdown. Files live
+        // under `.staffreview/attachments/` (gitignored, served below).
+        "/api/attachment": {
+          POST: async (req) => {
+            const form = await req.formData();
+            const file = form.get("file");
+            if (!(file instanceof File)) return err("missing file");
+            const ext = extForMime(file.type);
+            if (!ext) return err(`unsupported type: ${file.type || "unknown"}`);
+            const MAX = 10 * 1024 * 1024;
+            if (file.size > MAX) return err("file too large (max 10MB)", 413);
+            const name = `${crypto.randomUUID()}.${ext}`;
+            await store.ensureDirs(cwd);
+            await Bun.write(join(store.attachmentsDir(cwd), name), file);
+            return json({ url: `/attachments/${name}`, name });
+          },
+        },
+
+        // Serve uploaded attachments. The `:name` is a generated UUID, but
+        // we still reject path separators defensively.
+        "/attachments/:name": async (req) => {
+          const name = (req.params as { name: string }).name;
+          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+            return err("bad name", 400);
           }
-          return err("missing slug");
+          const ext = name.split(".").pop()?.toLowerCase() ?? "";
+          const type = ATTACHMENT_TYPES[ext];
+          if (!type) return err("not found", 404);
+          const f = Bun.file(join(store.attachmentsDir(cwd), name));
+          if (!(await f.exists())) return err("not found", 404);
+          return new Response(f, { headers: { "content-type": type } });
         },
-        POST: async (req) => {
-          const body = await readJson<{ base: DiffTarget; head: DiffTarget; setActive?: boolean }>(req);
-          // Pin any moving refs (`HEAD`, a branch/tag name) to concrete commits
-          // before persisting, exactly like the `staff diff` CLI path does. The
-          // frontend usually pins via `defaultTargets`, but its branch-not-in-refs
-          // fallback and the shared-link slug fallback can still POST an unpinned
-          // ref — anchor it here so no creation path stores a moving base.
-          const { base, head } = await git.resolveTargets(body.base, body.head, cwd);
-          const c = await store.loadOrCreateDiff(base, head, cwd);
-          if (body.setActive !== false) await store.setActiveDiff(c.slug, cwd);
-          broadcast({ type: "diff:created", slug: c.slug });
-          return json({ diff: c });
+
+        "/api/settings": {
+          GET: async () => {
+            const s = settings.settingsWithDefaults(await settings.readSettings());
+            return json({ settings: s });
+          },
+          POST: async (req) => {
+            const body = (await req.json()) as Partial<settings.GlobalSettings>;
+            const updated = await settings.writeSettings(body);
+            return json({ settings: updated });
+          },
+        },
+
+        "/api/active": {
+          GET: async () => {
+            const slug = await store.getActiveDiffSlug(cwd);
+            return json({ slug });
+          },
+          POST: async (req) => {
+            const body = await readJson<{ slug: string }>(req);
+            await store.setActiveDiff(body.slug, cwd);
+            broadcast({ type: "active:changed", slug: body.slug });
+            return json({ ok: true });
+          },
+        },
+
+        "/api/comment": {
+          POST: async (req) => {
+            const body = await readJson<{
+              slug: string;
+              file?: string;
+              line?: number;
+              endLine?: number;
+              side?: "old" | "new";
+              body: string;
+              author?: string;
+              parentId?: string;
+              threadId?: string;
+            }>(req);
+            const comment = await store.addComment(
+              body.slug,
+              {
+                file: body.file,
+                line: body.line,
+                endLine: body.endLine,
+                side: body.side,
+                body: body.body,
+                author: body.author?.trim() || defaultAuthor,
+                parentId: body.parentId,
+                threadId: body.threadId,
+              },
+              cwd,
+            );
+            broadcast({ type: "comment:added", slug: body.slug, comment });
+            return json({ comment });
+          },
+          DELETE: async (req) => {
+            const body = await readJson<{ slug: string; id: string }>(req);
+            const c = await store.deleteComment(body.slug, body.id, cwd);
+            broadcast({ type: "comment:deleted", slug: body.slug, id: body.id });
+            return json({ diff: c });
+          },
+          PATCH: async (req) => {
+            const body = await readJson<{ slug: string; id: string; body: string }>(req);
+            const c = await store.updateComment(body.slug, body.id, body.body, cwd);
+            broadcast({ type: "diff:changed", file: `${body.slug}.json` });
+            return json({ diff: c });
+          },
+        },
+
+        "/api/document": {
+          POST: async (req) => {
+            const body = await readJson<{
+              slug: string;
+              threadId: string;
+              requested: boolean;
+            }>(req);
+            const c = await store.setDocumentRequested(
+              body.slug,
+              body.threadId,
+              body.requested,
+              cwd,
+            );
+            broadcast({ type: "diff:changed", file: `${body.slug}.json` });
+            return json({ diff: c });
+          },
+        },
+
+        "/api/resolve": {
+          POST: async (req) => {
+            const body = await readJson<{
+              slug: string;
+              threadId: string;
+              status: "fixed" | "skipped" | "documented";
+              body: string;
+              author?: string;
+              documentedAs?: string;
+            }>(req);
+            const c = await store.resolveThread(
+              body.slug,
+              body.threadId,
+              {
+                status: body.status,
+                body: body.body,
+                author: body.author?.trim() || defaultAuthor,
+                documentedAs: body.documentedAs,
+              },
+              cwd,
+            );
+            broadcast({ type: "thread:resolved", slug: body.slug, threadId: body.threadId });
+            return json({ diff: c });
+          },
+          DELETE: async (req) => {
+            const body = await readJson<{ slug: string; threadId: string }>(req);
+            const c = await store.unresolveThread(body.slug, body.threadId, cwd);
+            broadcast({ type: "thread:unresolved", slug: body.slug, threadId: body.threadId });
+            return json({ diff: c });
+          },
+        },
+
+        "/api/ws": (req, server) => {
+          if (server.upgrade(req, { data: { id: crypto.randomUUID() } })) return;
+          return new Response("Upgrade failed", { status: 400 });
         },
       },
 
-      "/api/files": {
-        POST: async (req) => {
-          const body = await readJson<{ base: DiffTarget; head: DiffTarget }>(req);
-          const files = await git.getDiff(body.base, body.head, cwd);
-          return json({ files });
-        },
-      },
-
-      // Attachment upload: editors POST a pasted/dropped image here and
-      // get back a URL to embed in the comment's markdown. Files live
-      // under `.staffreview/attachments/` (gitignored, served below).
-      "/api/attachment": {
-        POST: async (req) => {
-          const form = await req.formData();
-          const file = form.get("file");
-          if (!(file instanceof File)) return err("missing file");
-          const ext = extForMime(file.type);
-          if (!ext) return err(`unsupported type: ${file.type || "unknown"}`);
-          const MAX = 10 * 1024 * 1024;
-          if (file.size > MAX) return err("file too large (max 10MB)", 413);
-          const name = `${crypto.randomUUID()}.${ext}`;
-          await store.ensureDirs(cwd);
-          await Bun.write(join(store.attachmentsDir(cwd), name), file);
-          return json({ url: `/attachments/${name}`, name });
-        },
-      },
-
-      // Serve uploaded attachments. The `:name` is a generated UUID, but
-      // we still reject path separators defensively.
-      "/attachments/:name": async (req) => {
-        const name = (req.params as { name: string }).name;
-        if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-          return err("bad name", 400);
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        if (!isDev) {
+          const asset = generatedFrontendResponse(url.pathname);
+          if (asset) return asset;
         }
-        const ext = name.split(".").pop()?.toLowerCase() ?? "";
-        const type = ATTACHMENT_TYPES[ext];
-        if (!type) return err("not found", 404);
-        const f = Bun.file(join(store.attachmentsDir(cwd), name));
-        if (!(await f.exists())) return err("not found", 404);
-        return new Response(f, { headers: { "content-type": type } });
-      },
-
-      "/api/settings": {
-        GET: async () => {
-          const s = settings.settingsWithDefaults(await settings.readSettings());
-          return json({ settings: s });
-        },
-        POST: async (req) => {
-          const body = (await req.json()) as Partial<settings.GlobalSettings>;
-          const updated = await settings.writeSettings(body);
-          return json({ settings: updated });
-        },
-      },
-
-      "/api/active": {
-        GET: async () => {
-          const slug = await store.getActiveDiffSlug(cwd);
-          return json({ slug });
-        },
-        POST: async (req) => {
-          const body = await readJson<{ slug: string }>(req);
-          await store.setActiveDiff(body.slug, cwd);
-          broadcast({ type: "active:changed", slug: body.slug });
-          return json({ ok: true });
-        },
-      },
-
-      "/api/comment": {
-        POST: async (req) => {
-          const body = await readJson<{
-            slug: string;
-            file?: string;
-            line?: number;
-            endLine?: number;
-            side?: "old" | "new";
-            body: string;
-            author?: string;
-            parentId?: string;
-            threadId?: string;
-          }>(req);
-          const comment = await store.addComment(
-            body.slug,
-            {
-              file: body.file,
-              line: body.line,
-              endLine: body.endLine,
-              side: body.side,
-              body: body.body,
-              author: body.author?.trim() || defaultAuthor,
-              parentId: body.parentId,
-              threadId: body.threadId,
-            },
-            cwd,
-          );
-          broadcast({ type: "comment:added", slug: body.slug, comment });
-          return json({ comment });
-        },
-        DELETE: async (req) => {
-          const body = await readJson<{ slug: string; id: string }>(req);
-          const c = await store.deleteComment(body.slug, body.id, cwd);
-          broadcast({ type: "comment:deleted", slug: body.slug, id: body.id });
-          return json({ diff: c });
-        },
-        PATCH: async (req) => {
-          const body = await readJson<{ slug: string; id: string; body: string }>(req);
-          const c = await store.updateComment(body.slug, body.id, body.body, cwd);
-          broadcast({ type: "diff:changed", file: `${body.slug}.json` });
-          return json({ diff: c });
-        },
-      },
-
-      "/api/document": {
-        POST: async (req) => {
-          const body = await readJson<{
-            slug: string;
-            threadId: string;
-            requested: boolean;
-          }>(req);
-          const c = await store.setDocumentRequested(
-            body.slug,
-            body.threadId,
-            body.requested,
-            cwd,
-          );
-          broadcast({ type: "diff:changed", file: `${body.slug}.json` });
-          return json({ diff: c });
-        },
-      },
-
-      "/api/resolve": {
-        POST: async (req) => {
-          const body = await readJson<{
-            slug: string;
-            threadId: string;
-            status: "fixed" | "skipped" | "documented";
-            body: string;
-            author?: string;
-            documentedAs?: string;
-          }>(req);
-          const c = await store.resolveThread(
-            body.slug,
-            body.threadId,
-            {
-              status: body.status,
-              body: body.body,
-              author: body.author?.trim() || defaultAuthor,
-              documentedAs: body.documentedAs,
-            },
-            cwd,
-          );
-          broadcast({ type: "thread:resolved", slug: body.slug, threadId: body.threadId });
-          return json({ diff: c });
-        },
-        DELETE: async (req) => {
-          const body = await readJson<{ slug: string; threadId: string }>(req);
-          const c = await store.unresolveThread(body.slug, body.threadId, cwd);
-          broadcast({ type: "thread:unresolved", slug: body.slug, threadId: body.threadId });
-          return json({ diff: c });
-        },
-      },
-
-      "/api/ws": (req, server) => {
-        if (server.upgrade(req, { data: { id: crypto.randomUUID() } })) return;
-        return new Response("Upgrade failed", { status: 400 });
-      },
-    },
-
-    fetch: async (req) => {
-      const url = new URL(req.url);
-      if (!isDev) {
-        const asset = generatedFrontendResponse(url.pathname);
-        if (asset) return asset;
-      }
-      if (isFrontendLogoPath(url.pathname)) {
-        return new Response(Bun.file(logoPngPath), { headers: { "content-type": "image/png" } });
-      }
-      const kind = frontendChunkKind(url.pathname);
-      if (kind) {
-        const target = (await currentFrontendAssets())[kind];
-        if (target && target !== url.pathname) {
-          return new Response(null, { status: 302, headers: { Location: target } });
+        if (isFrontendLogoPath(url.pathname)) {
+          return new Response(Bun.file(logoPngPath), { headers: { "content-type": "image/png" } });
         }
-      }
-      return new Response(null, { status: 404 });
-    },
-
-    websocket: {
-      open(ws) {
-        sockets.add(ws);
-        ws.send(JSON.stringify({ type: "hello", id: ws.data.id }));
+        const kind = frontendChunkKind(url.pathname);
+        if (kind) {
+          const target = (await currentFrontendAssets())[kind];
+          if (target && target !== url.pathname) {
+            return new Response(null, { status: 302, headers: { Location: target } });
+          }
+        }
+        return new Response(null, { status: 404 });
       },
-      close(ws) {
-        sockets.delete(ws);
-      },
-      message(_ws, _msg) {},
-    },
 
-    error(e) {
-      console.error("server error:", e);
-      return new Response(`Internal error: ${e.message}`, { status: 500 });
-    },
-  });
+      websocket: {
+        open(ws) {
+          sockets.add(ws);
+          ws.send(JSON.stringify({ type: "hello", id: ws.data.id }));
+        },
+        close(ws) {
+          sockets.delete(ws);
+        },
+        message(_ws, _msg) {},
+      },
+
+      error(e) {
+        console.error("server error:", e);
+        return new Response(`Internal error: ${e.message}`, { status: 500 });
+      },
+    });
 
   const server = listenOnRange(makeServer, opts.port);
   serverUrl = server.url;

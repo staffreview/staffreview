@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson, readActiveDiff, fillEditor } from "./helpers.ts";
+import { expect, test } from "@playwright/test";
+import { fillEditor, readActiveDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -7,7 +7,9 @@ test.beforeEach(async () => {
 
 test("creates a top-level comment from the UI", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   await page.getByRole("button", { name: /new comment/i }).click();
   await fillEditor(page.getByTestId("comment-editor"), "Overall LGTM, modulo nits below.");
@@ -61,7 +63,9 @@ test("Skip via the Resolve dropdown collapses the thread", async ({ page }) => {
   await expect(page.getByText("Consider memoizing.")).toBeVisible();
 });
 
-test("clicking a resolved card expands/collapses its content without reopening", async ({ page }) => {
+test("clicking a resolved card expands/collapses its content without reopening", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByRole("button", { name: /new comment/i }).click();
   await fillEditor(page.getByTestId("comment-editor"), "Body to peek at.");
@@ -138,7 +142,9 @@ test("Reply adds a child comment to the thread", async ({ page }) => {
   expect(reply.body).toBe("Reply text.");
 });
 
-test("an open (unresolved) thread can be collapsed and expanded via its chevron", async ({ page }) => {
+test("an open (unresolved) thread can be collapsed and expanded via its chevron", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.getByRole("button", { name: /new comment/i }).click();
   await fillEditor(page.getByTestId("comment-editor"), "Body to collapse.");
@@ -171,7 +177,9 @@ test("an open (unresolved) thread can be collapsed and expanded via its chevron"
 
 test("long inline-code paths wrap inside the comment card", async ({ page }) => {
   await page.goto("/");
-  await page.waitForResponse((r) => r.url().includes("/api/diff") && r.request().method() === "POST");
+  await page.waitForResponse(
+    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
+  );
 
   const diff = await readActiveDiff();
   const longPath =

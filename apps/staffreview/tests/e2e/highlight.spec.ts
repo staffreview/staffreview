@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
 import { rm } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { resetDiffsJson } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -31,7 +31,9 @@ test("Shiki syntax-highlights TypeScript files in the diff", async ({ page }) =>
   await expect(stringToken).toBeVisible();
 });
 
-test("structured highlighting is off by default and can be enabled from the gear menu", async ({ page }) => {
+test("structured highlighting is off by default and can be enabled from the gear menu", async ({
+  page,
+}) => {
   await openFeatureDiff(page);
   const bigCard = page.getByTestId("file-card-big.ts");
 

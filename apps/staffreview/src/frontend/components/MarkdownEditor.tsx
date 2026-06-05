@@ -1,13 +1,27 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ImagePlus, Loader2 } from "lucide-react";
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
+import { type Editor, EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { ImagePlus, Loader2 } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Markdown } from "tiptap-markdown";
 import { api } from "../lib/api.ts";
 import { saveDraft } from "../lib/draft.ts";
 import { cn } from "../lib/utils.ts";
+
+export interface MarkdownEditorProps {
+  value: string;
+  onChange: (v: string) => void;
+  draftKey: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onSubmit?: () => void;
+  className?: string;
+  minHeightClass?: string;
+  /** Submit/cancel buttons rendered in the footer, to the right of the
+   * attach-image control. */
+  actions?: ReactNode;
+}
 
 /**
  * WYSIWYG markdown comment editor shared by the new-comment, reply, and
@@ -33,19 +47,7 @@ export function MarkdownEditor({
   className,
   minHeightClass = "min-h-[80px]",
   actions,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  draftKey: string;
-  placeholder?: string;
-  autoFocus?: boolean;
-  onSubmit?: () => void;
-  className?: string;
-  minHeightClass?: string;
-  /** Submit/cancel buttons rendered in the footer, to the right of the
-   * attach-image control. */
-  actions?: ReactNode;
-}) {
+}: MarkdownEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -145,8 +147,8 @@ export function MarkdownEditor({
 
   return (
     <div className={className}>
-      <div
-        className="relative rounded-md border border-input bg-background"
+      <fieldset
+        className="relative min-w-0 rounded-md border border-input bg-background p-0"
         onDragOver={(e) => {
           if (Array.from(e.dataTransfer?.items ?? []).some((i) => i.kind === "file")) {
             e.preventDefault();
@@ -157,6 +159,7 @@ export function MarkdownEditor({
           if (e.currentTarget === e.target) setDragging(false);
         }}
       >
+        <legend className="sr-only">Comment editor</legend>
         <EditorContent editor={editor} />
 
         {dragging && (
@@ -164,7 +167,7 @@ export function MarkdownEditor({
             Drop image to attach
           </div>
         )}
-      </div>
+      </fieldset>
 
       {/* Footer: the attach control lives here (out of the text area, so it
           can't overlap the comment text), with submit/cancel on the right. */}
@@ -177,7 +180,11 @@ export function MarkdownEditor({
           onClick={() => fileInputRef.current?.click()}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+          {uploading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ImagePlus className="h-4 w-4" />
+          )}
         </button>
         <input
           ref={fileInputRef}

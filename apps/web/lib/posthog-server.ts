@@ -1,5 +1,5 @@
-import { PostHog } from 'posthog-node';
-import { POSTHOG_SERVER_HOST, POSTHOG_SERVER_TOKEN } from '@/lib/posthog-config';
+import { PostHog } from "posthog-node";
+import { POSTHOG_SERVER_HOST, POSTHOG_SERVER_TOKEN } from "@/lib/posthog-config";
 
 // Returns a server-side PostHog client, or `null` when no token is configured
 // so callers can cleanly skip analytics instead of constructing an unusable
