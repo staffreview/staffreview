@@ -163,8 +163,8 @@ test("no-wrap centers the fold pill on short-line files too (no horizontal scrol
 });
 
 test("no-wrap also overflows and scrolls in unified layout", async ({ page }) => {
-  // Unified view takes a different code path (`normalizeUnifiedGutters` pins the
-  // content column inline), so verify the no-wrap overflow there too.
+  // Unified view has a single sticky gutter and content column, so verify the
+  // no-wrap overflow there too.
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");
   const staffDiff = card.locator(".staff-diff");

@@ -119,7 +119,7 @@ export function App() {
   // past the pane and scroll horizontally — see `staff-diff-nowrap` in DiffView.
   const [wrapLines, setWrapLinesState] = useState(DEFAULT_WRAP_LINES);
   // Collapsed by default (showDiffOnly): only the changed hunks show,
-  // with react-diff-viewer's expand/fold-all controls to reveal the rest.
+  // with expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
   const [filesExpandedByDefault, setFilesExpandedByDefaultState] = useState(
     DEFAULT_FILES_EXPANDED_BY_DEFAULT,
