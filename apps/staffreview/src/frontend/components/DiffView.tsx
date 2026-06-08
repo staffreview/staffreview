@@ -121,19 +121,115 @@ function diffViewerBlocks(viewer: DiffViewerHandle | null, key?: string): { inde
   return Object.values(cache).at(-1)?.blocks ?? [];
 }
 
-function alignCodeFoldButtons(container: HTMLElement) {
+function alignCodeFoldButtons(container: HTMLElement, wrapLines: boolean) {
   const table = container.querySelector("table");
   if (!table) return;
-  const tableRect = table.getBoundingClientRect();
-  const tableCenter = tableRect.left + tableRect.width / 2;
+  // Wrapping: the table fills the pane, so its center *is* the pane center — the
+  // natural reference. No-wrap: the table is content-wide (and may be scrolled
+  // horizontally), so centering on it would push the "N unchanged lines" pill
+  // off-screen; center on the visible pane (`container`'s client box) instead.
+  // No-wrap positions the pill absolutely inside its fold cell so centering it
+  // does not expand the file's horizontal scroll range.
+  let center: number;
+  if (wrapLines) {
+    const tableRect = table.getBoundingClientRect();
+    center = tableRect.left + tableRect.width / 2;
+  } else {
+    const containerRect = container.getBoundingClientRect();
+    center = containerRect.left + container.clientWidth / 2;
+  }
   for (const button of container.querySelectorAll<HTMLButtonElement>(
     'button[class*="code-fold-expand-button"]',
   )) {
     button.style.setProperty("--staff-code-fold-shift", "0px");
+    button.style.removeProperty("--staff-code-fold-left");
     const buttonRect = button.getBoundingClientRect();
+    if (!wrapLines) {
+      const containerRect = container.getBoundingClientRect();
+      const offsetParent = button.offsetParent as HTMLElement | null;
+      const parentRect = offsetParent?.getBoundingClientRect() ?? containerRect;
+      const left =
+        containerRect.left + container.clientWidth / 2 - parentRect.left - buttonRect.width / 2;
+      button.style.setProperty("--staff-code-fold-left", `${left}px`);
+      continue;
+    }
     const buttonCenter = buttonRect.left + buttonRect.width / 2;
-    button.style.setProperty("--staff-code-fold-shift", `${tableCenter - buttonCenter}px`);
+    button.style.setProperty("--staff-code-fold-shift", `${center - buttonCenter}px`);
   }
+}
+
+/**
+ * Unified no-wrap uses a content-wide table so added/removed cell backgrounds
+ * extend behind the entire long line. Horizontal scroll should appear only when
+ * the table is genuinely wider than the visible pane. A no-op for split (the
+ * table always grows and scrolls there) and wrap (lines never overflow).
+ */
+function applyUnifiedXScroll(container: HTMLElement, splitView: boolean, wrapLines: boolean) {
+  if (splitView || wrapLines) {
+    container.classList.remove("staff-diff-xscroll");
+    return;
+  }
+  const table = container.querySelector("table");
+  const tableLeft = table?.getBoundingClientRect().left ?? 0;
+  const overflowing = table
+    ? Array.from(container.querySelectorAll<HTMLElement>('[class*="content-text"]')).some(
+        (line) => {
+          const textRect = renderedTextRect(line);
+          return textRect.right - tableLeft > container.clientWidth + 1;
+        },
+      )
+    : false;
+  container.classList.toggle("staff-diff-xscroll", overflowing);
+}
+
+function renderedTextRect(element: HTMLElement): DOMRect {
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  const rect = range.getBoundingClientRect();
+  range.detach();
+  return rect;
+}
+
+function applyNoWrapTableMinWidth(container: HTMLElement, wrapLines: boolean) {
+  if (wrapLines) {
+    container.style.removeProperty("--staff-nowrap-table-min-width");
+    return;
+  }
+  const table = container.querySelector("table");
+  if (!table) return;
+  container.style.removeProperty("--staff-nowrap-table-min-width");
+  const tableLeft = table.getBoundingClientRect().left;
+  let contentWidth = container.clientWidth;
+  for (const line of container.querySelectorAll<HTMLElement>('[class*="content-text"]')) {
+    const textRect = renderedTextRect(line);
+    contentWidth = Math.max(contentWidth, textRect.right - tableLeft);
+  }
+  container.style.setProperty("--staff-nowrap-table-min-width", `${Math.ceil(contentWidth)}px`);
+}
+
+function applyUnifiedNoWrapContentMinWidth(
+  container: HTMLElement,
+  splitView: boolean,
+  wrapLines: boolean,
+) {
+  if (splitView || wrapLines) {
+    container.style.removeProperty("--staff-unified-content-min-width");
+    return;
+  }
+  const row = container.querySelector<HTMLTableRowElement>(
+    'tbody > tr:not([data-composer-host="true"]):not([class*="code-fold"])',
+  );
+  if (!row) return;
+  const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>(":scope > td")).filter(
+    (cell) => getComputedStyle(cell).display !== "none",
+  );
+  const contentCell = [...cells].reverse().find((cell) => cell.className.includes("content"));
+  if (!contentCell) return;
+  const fixedWidth = cells
+    .filter((cell) => cell !== contentCell)
+    .reduce((sum, cell) => sum + cell.getBoundingClientRect().width, 0);
+  const minWidth = Math.max(0, container.clientWidth - fixedWidth);
+  container.style.setProperty("--staff-unified-content-min-width", `${minWidth}px`);
 }
 
 function clearUnifiedGutterNormalization(container: HTMLElement) {
@@ -180,7 +276,7 @@ function lineNumberText(cell: HTMLTableCellElement): string {
   return /^\d+$/.test(text) ? text : "";
 }
 
-function normalizeUnifiedGutters(container: HTMLElement) {
+function normalizeUnifiedGutters(container: HTMLElement, wrapLines: boolean) {
   const table = container.querySelector("table");
   if (!table) return;
   const cols = Array.from(table.querySelectorAll<HTMLTableColElement>(":scope > colgroup > col"));
@@ -189,7 +285,15 @@ function normalizeUnifiedGutters(container: HTMLElement) {
     cols[1].style.setProperty("display", "none", "important");
     cols[1].style.setProperty("width", "0px", "important");
     cols[3].dataset.staffUnifiedContentCol = "true";
-    cols[3].style.setProperty("width", "100%", "important");
+    if (wrapLines) {
+      // Pin the content column to 100% in wrap mode so short changed-line tints
+      // fill the visible pane. In no-wrap the table itself grows to the longest
+      // line (`width: max-content` in CSS), so forcing this column to 100% would
+      // make text spill past its tinted cell instead of expanding the cell.
+      cols[3].style.setProperty("width", "100%", "important");
+    } else {
+      cols[3].style.removeProperty("width");
+    }
   }
 
   const rows = table.querySelectorAll<HTMLTableRowElement>(
@@ -250,6 +354,89 @@ function normalizeUnifiedGutters(container: HTMLElement) {
     newCell.style.setProperty("padding", "0", "important");
     newCell.style.setProperty("border", "0", "important");
   }
+}
+
+const WORD_DIFF_SELECTOR =
+  'ins[class*="word-added"], del[class*="word-removed"], [data-staff-whitespace-word-diff="true"]';
+const WORD_CHANGE_CLASS = /word-(?:added|removed)/;
+const TEXT_NODE = 3;
+const SHOW_TEXT = 4;
+const WHITESPACE_ONLY = /^[\s\u00a0]*$/u;
+const WHITESPACE_CHAR = /^[\s\u00a0]$/u;
+
+function removeWordChangeClasses(node: HTMLElement) {
+  const changeClasses = Array.from(node.classList).filter((className) =>
+    WORD_CHANGE_CLASS.test(className),
+  );
+  if (changeClasses.length === 0) return;
+  node.dataset.staffWordDiffChangeClasses = changeClasses.join(" ");
+  for (const className of changeClasses) node.classList.remove(className);
+}
+
+function restoreWordChangeClasses(node: HTMLElement) {
+  const originalClasses = node.dataset.staffWordDiffChangeClasses;
+  if (originalClasses) node.classList.add(...originalClasses.split(" "));
+  delete node.dataset.staffWordDiffChangeClasses;
+}
+
+function textNodes(root: Node): Text[] {
+  const doc = root.ownerDocument ?? document;
+  const walker = doc.createTreeWalker(root, SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+    if (current.nodeType === TEXT_NODE) nodes.push(current as Text);
+  }
+  return nodes;
+}
+
+function trimLeadingWhitespace(root: Node): string {
+  let trimmed = "";
+  for (const node of textNodes(root)) {
+    const originalLength = node.data.length;
+    let i = 0;
+    while (i < node.data.length && WHITESPACE_CHAR.test(node.data[i])) i++;
+    if (i === 0) break;
+    trimmed += node.data.slice(0, i);
+    node.data = node.data.slice(i);
+    if (i < originalLength) break;
+  }
+  return trimmed;
+}
+
+function trimTrailingWhitespace(root: Node): string {
+  let trimmed = "";
+  const nodes = textNodes(root);
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const node = nodes[index];
+    let i = node.data.length;
+    while (i > 0 && WHITESPACE_CHAR.test(node.data[i - 1])) i--;
+    if (i === node.data.length) break;
+    trimmed = node.data.slice(i) + trimmed;
+    node.data = node.data.slice(0, i);
+    if (i > 0) break;
+  }
+  return trimmed;
+}
+
+export function normalizeWordDiffWhitespace(container: ParentNode): number {
+  let changed = 0;
+  for (const node of container.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR)) {
+    if (WHITESPACE_ONLY.test(node.textContent ?? "")) {
+      removeWordChangeClasses(node);
+      node.dataset.staffWhitespaceWordDiff = "true";
+      changed++;
+      continue;
+    }
+
+    restoreWordChangeClasses(node);
+    delete node.dataset.staffWhitespaceWordDiff;
+    const leading = trimLeadingWhitespace(node);
+    const trailing = trimTrailingWhitespace(node);
+    if (leading) node.before(node.ownerDocument.createTextNode(leading));
+    if (trailing) node.after(node.ownerDocument.createTextNode(trailing));
+    if (leading || trailing) changed++;
+  }
+  return changed;
 }
 
 /**
@@ -702,6 +889,7 @@ export function DiffFile({
   themeMode,
   syntaxTheme,
   structuredHighlighting,
+  wrapLines,
   expandedByDefault,
   autoCollapsed,
   onChange,
@@ -713,6 +901,7 @@ export function DiffFile({
   themeMode: "light" | "dark";
   syntaxTheme: string;
   structuredHighlighting: boolean;
+  wrapLines: boolean;
   expandedByDefault: boolean;
   autoCollapsed: boolean;
   onChange?: () => void;
@@ -1088,12 +1277,16 @@ export function DiffFile({
         raf = 0;
         observer?.disconnect();
         if (splitView) clearUnifiedGutterNormalization(container);
-        else normalizeUnifiedGutters(container);
+        else normalizeUnifiedGutters(container, wrapLines);
+        if (structuredHighlighting) normalizeWordDiffWhitespace(container);
+        applyUnifiedNoWrapContentMinWidth(container, splitView, wrapLines);
+        applyNoWrapTableMinWidth(container, wrapLines);
         const signature = foldSignature();
         if (forceAlign || signature !== lastFoldSignature) {
-          alignCodeFoldButtons(container);
+          alignCodeFoldButtons(container, wrapLines);
           lastFoldSignature = signature;
         }
+        applyUnifiedXScroll(container, splitView, wrapLines);
         observer?.observe(container, { childList: true, subtree: true });
       });
     };
@@ -1102,12 +1295,27 @@ export function DiffFile({
     observer.observe(container, { childList: true, subtree: true });
     const onResize = () => apply(true);
     window.addEventListener("resize", onResize);
+    // In no-wrap, the fold pill is centered on the *visible* pane, so it must be
+    // re-centered as the file scrolls horizontally. Re-align directly (the fold
+    // structure is unchanged, so `apply`'s signature guard would skip it), rAF-
+    // throttled. Wrapping has no horizontal scroll, so this is a no-op there.
+    let scrollRaf = 0;
+    const onScroll = () => {
+      if (wrapLines || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = 0;
+        alignCodeFoldButtons(container, wrapLines);
+      });
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
       observer.disconnect();
       window.removeEventListener("resize", onResize);
+      container.removeEventListener("scroll", onScroll);
     };
-  }, [collapsed, splitView]);
+  }, [collapsed, splitView, structuredHighlighting, wrapLines]);
 
   // Track the currently anchored range — driven by the URL hash. Browser
   // navigation fires `hashchange`; our own `setLineHash` helper
@@ -1638,6 +1846,7 @@ export function DiffFile({
             "staff-diff relative",
             splitView ? "staff-diff-split" : "staff-diff-unified",
             expandedByDefault ? "staff-diff-expanded" : "staff-diff-collapsed",
+            !wrapLines && "staff-diff-nowrap",
           )}
           ref={diffRef}
           onMouseDown={handleDiffMouseDown}
@@ -1785,6 +1994,7 @@ export function DiffView({
   themeMode,
   syntaxTheme,
   structuredHighlighting = true,
+  wrapLines = true,
   expandedByDefault = true,
   onChange,
 }: {
@@ -1795,6 +2005,7 @@ export function DiffView({
   themeMode: "light" | "dark";
   syntaxTheme?: string;
   structuredHighlighting?: boolean;
+  wrapLines?: boolean;
   expandedByDefault?: boolean;
   onChange?: () => void;
 }) {
@@ -1836,6 +2047,7 @@ export function DiffView({
           themeMode={themeMode}
           syntaxTheme={resolvedSyntaxTheme}
           structuredHighlighting={structuredHighlighting}
+          wrapLines={wrapLines}
           expandedByDefault={expandedByDefault}
           autoCollapsed={autoCollapsed.has(f.path)}
           onChange={onChange}

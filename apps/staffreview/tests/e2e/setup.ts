@@ -41,6 +41,16 @@ const BIG_LINES = Array.from({ length: 40 }, (_, i) => `const v${i} = ${i};`);
 const BIG_OLD = `${BIG_LINES.join("\n")}\n`;
 const BIG_NEW = `${BIG_LINES.map((l, i) => (i === 20 ? `const v20 = 200;` : l)).join("\n")}\n`;
 
+// A file whose changed line is far wider than any pane, padded with unchanged
+// context on both sides so showDiffOnly folds it into "N unchanged lines" pills.
+// Exercises the "Wrap lines" toggle (wrap-lines.spec.ts): wrapped, the long line
+// fits the pane; no-wrap, it overflows and the file scrolls horizontally, and
+// the fold pill stays centered on the card (not the content-wide table).
+const WRAP_LONG = "x".repeat(400);
+const WRAP_CTX = Array.from({ length: 14 }, (_, i) => `const pad${i} = ${i};`).join("\n");
+const WRAP_OLD = `${WRAP_CTX}\nexport const wide = "${WRAP_LONG}";\n${WRAP_CTX}\n`;
+const WRAP_NEW = `${WRAP_CTX}\nexport const wide = "${WRAP_LONG}!!";\n${WRAP_CTX}\n`;
+
 const README_OLD = `# Demo
 A toy module.
 `;
@@ -78,6 +88,7 @@ export default async function globalSetup() {
   await writeFile(join(SCRATCH_DIR, "math.ts"), FILE_A_OLD);
   await writeFile(join(SCRATCH_DIR, "README.md"), README_OLD);
   await writeFile(join(SCRATCH_DIR, "big.ts"), BIG_OLD);
+  await writeFile(join(SCRATCH_DIR, "wrapme.ts"), WRAP_OLD);
   await run("git", ["add", "."], SCRATCH_DIR);
   await run("git", ["commit", "-qm", "initial"], SCRATCH_DIR);
 
@@ -85,6 +96,7 @@ export default async function globalSetup() {
   await writeFile(join(SCRATCH_DIR, "math.ts"), FILE_A_NEW);
   await writeFile(join(SCRATCH_DIR, "README.md"), README_NEW);
   await writeFile(join(SCRATCH_DIR, "big.ts"), BIG_NEW);
+  await writeFile(join(SCRATCH_DIR, "wrapme.ts"), WRAP_NEW);
   // A symlink (git mode 120000) added on the feature branch — exercises
   // the symlink indicator in the UI.
   await symlink("README.md", join(SCRATCH_DIR, "readme-link"));

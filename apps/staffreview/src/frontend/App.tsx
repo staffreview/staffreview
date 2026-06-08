@@ -24,6 +24,7 @@ import {
   DEFAULT_SYNTAX_THEME_DARK,
   DEFAULT_SYNTAX_THEME_LIGHT,
   DEFAULT_THEME,
+  DEFAULT_WRAP_LINES,
 } from "./default-settings.ts";
 import { api, type ColorScheme, openSocket, type WSEvent } from "./lib/api.ts";
 import { ensureShikiTheme } from "./lib/highlight.ts";
@@ -114,6 +115,9 @@ export function App() {
   const [structuredHighlighting, setStructuredHighlightingState] = useState(
     DEFAULT_STRUCTURED_HIGHLIGHTING,
   );
+  // Wrap long diff lines to fit the pane (default). Off lets long lines extend
+  // past the pane and scroll horizontally — see `staff-diff-nowrap` in DiffView.
+  const [wrapLines, setWrapLinesState] = useState(DEFAULT_WRAP_LINES);
   // Collapsed by default (showDiffOnly): only the changed hunks show,
   // with react-diff-viewer's expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
@@ -142,6 +146,9 @@ export function App() {
         }
         if (typeof settings.structuredHighlighting === "boolean") {
           setStructuredHighlightingState(settings.structuredHighlighting);
+        }
+        if (typeof settings.wrapLines === "boolean") {
+          setWrapLinesState(settings.wrapLines);
         }
         if (typeof settings.syntaxThemeLight === "string") {
           setSyntaxThemeLightState(settings.syntaxThemeLight);
@@ -178,6 +185,10 @@ export function App() {
     setStructuredHighlightingState(next);
     api.setSettings({ structuredHighlighting: next }).catch(() => {});
   }, []);
+  const setWrapLines = useCallback((next: boolean) => {
+    setWrapLinesState(next);
+    api.setSettings({ wrapLines: next }).catch(() => {});
+  }, []);
   const setSyntaxTheme = useCallback(async (mode: "light" | "dark", name: string) => {
     try {
       await ensureShikiTheme(name);
@@ -200,6 +211,7 @@ export function App() {
     setThemeState(DEFAULT_THEME);
     setFilesExpandedByDefaultState(DEFAULT_FILES_EXPANDED_BY_DEFAULT);
     setStructuredHighlightingState(DEFAULT_STRUCTURED_HIGHLIGHTING);
+    setWrapLinesState(DEFAULT_WRAP_LINES);
     setSyntaxThemeLightState(DEFAULT_SYNTAX_THEME_LIGHT);
     setSyntaxThemeDarkState(DEFAULT_SYNTAX_THEME_DARK);
     ensureShikiTheme(DEFAULT_SYNTAX_THEME_LIGHT).catch(() => {});
@@ -576,6 +588,8 @@ export function App() {
                 syntaxThemeDark,
                 structuredHighlighting,
                 onStructuredHighlightingChange: setStructuredHighlighting,
+                wrapLines,
+                onWrapLinesChange: setWrapLines,
                 onSyntaxThemeChange: setSyntaxTheme,
                 onResetDisplaySettings: resetDisplaySettings,
               }}
@@ -646,6 +660,7 @@ export function App() {
               themeMode={effectiveTheme}
               syntaxTheme={effectiveTheme === "dark" ? syntaxThemeDark : syntaxThemeLight}
               structuredHighlighting={structuredHighlighting}
+              wrapLines={wrapLines}
               expandedByDefault={filesExpandedByDefault}
               onChange={refreshDiffOnly}
             />

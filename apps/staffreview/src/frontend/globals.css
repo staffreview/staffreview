@@ -133,6 +133,58 @@
   cursor: pointer;
 }
 
+/* "Wrap lines" off (`staff-diff-nowrap`): long lines extend past the pane and
+ * the file scrolls horizontally instead of wrapping. react-diff-viewer-continued
+ * defaults its content text (`.content-text`) to `white-space: pre-wrap`; we
+ * stop the wrap. Filling vs. scrolling is then view-specific (see below). */
+.staff-diff-nowrap [class*="content-text"] {
+  white-space: pre !important;
+  line-break: auto !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+/* Unified no-wrap grows the table to its longest line. That keeps the
+ * added/removed cell background behind the full rendered line instead of
+ * letting text spill out past a fixed-width tint. Short files still fill the
+ * pane via `min-width: 100%`; only genuinely-wide files get horizontal scroll
+ * through the `staff-diff-xscroll` class toggled in DiffView. */
+.staff-diff-nowrap.staff-diff-unified {
+  overflow-x: clip;
+}
+.staff-diff-nowrap.staff-diff-unified.staff-diff-xscroll {
+  overflow-x: auto;
+}
+.staff-diff-nowrap.staff-diff-unified table {
+  table-layout: auto !important;
+  width: max-content !important;
+  min-width: var(--staff-nowrap-table-min-width, 100%) !important;
+}
+.staff-diff-nowrap.staff-diff-unified td[class*="content"] {
+  min-width: var(--staff-unified-content-min-width, 0px) !important;
+  overflow: visible !important;
+}
+/* Split view has two content columns, so a cell can't spill without overlapping
+ * the other side. Grow the table to its widest line (`max-content`, with
+ * `min-width: 100%` so a short diff still fills the pane) and scroll the
+ * container; each cell stays as wide as its content (no clipping, no overlap). */
+.staff-diff-nowrap.staff-diff-split {
+  overflow-x: auto;
+}
+.staff-diff-nowrap.staff-diff-split table {
+  table-layout: auto !important;
+  width: max-content !important;
+  min-width: var(--staff-nowrap-table-min-width, 100%) !important;
+}
+/* No-wrap fold-pill centering is handled in JS (`alignCodeFoldButtons`): the
+ * content can extend past the pane, so the pill is centered on the *visible*
+ * card rather than on the (off-screen) table center. No-wrap uses absolute
+ * positioning so the pill does not expand the horizontal scroll range. */
+
+.staff-diff ins[data-staff-whitespace-word-diff="true"],
+.staff-diff del[data-staff-whitespace-word-diff="true"] {
+  background: transparent !important;
+}
+
 .staff-diff td[class*="marker"] pre {
   visibility: hidden;
 }
@@ -430,6 +482,15 @@
   line-height: 1;
   padding: 4px 9px;
   white-space: nowrap;
+}
+.staff-diff-nowrap tr[class*="code-fold"] > td {
+  position: relative;
+}
+.staff-diff-nowrap tr[class*="code-fold"] button[class*="code-fold-expand-button"] {
+  position: absolute;
+  top: 50%;
+  left: var(--staff-code-fold-left, 0px);
+  transform: translateY(-50%);
 }
 .staff-diff tr[class*="code-fold"]:hover button[class*="code-fold-expand-button"] {
   color: var(--color-foreground);

@@ -8,6 +8,7 @@ import {
   DEFAULT_OPEN_BROWSER,
   DEFAULT_REVIEW_AGENTS,
   DEFAULT_STRUCTURED_HIGHLIGHTING,
+  DEFAULT_WRAP_LINES,
   MAX_DOCS_AGENTS,
   MIN_DOCS_AGENTS,
   settingsWithDefaults,
@@ -134,12 +135,35 @@ test('writeSettings coerces the string "false" structuredHighlighting to false',
   ).toBe(false);
 });
 
-test("settingsWithDefaults includes openBrowser, highlighting, and agent defaults", () => {
+test("writeSettings coerces a non-boolean wrapLines to a real boolean", async () => {
+  const next = await writeSettings({
+    wrapLines: "on" as unknown as boolean,
+  });
+  expect(next.wrapLines).toBe(true);
+  const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+  expect(onDisk.wrapLines).toBe(true);
+});
+
+test('writeSettings coerces the string "false" wrapLines to false', async () => {
+  // Regression: like openBrowser/structuredHighlighting, a naive
+  // `Boolean("false")` is `true`, so a crafted `POST /api/settings` with
+  // `{"wrapLines":"false"}` would flip to `true` — the opposite of intent.
+  const next = await writeSettings({
+    wrapLines: "false" as unknown as boolean,
+  });
+  expect(next.wrapLines).toBe(false);
+  const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+  expect(onDisk.wrapLines).toBe(false);
+  expect((await writeSettings({ wrapLines: "off" as unknown as boolean })).wrapLines).toBe(false);
+});
+
+test("settingsWithDefaults includes openBrowser, highlighting, wrap, and agent defaults", () => {
   expect(settingsWithDefaults({})).toEqual({
     openBrowser: DEFAULT_OPEN_BROWSER,
     loopMaxRounds: DEFAULT_LOOP_ROUNDS,
     reviewAgents: DEFAULT_REVIEW_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
     structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+    wrapLines: DEFAULT_WRAP_LINES,
   });
 });

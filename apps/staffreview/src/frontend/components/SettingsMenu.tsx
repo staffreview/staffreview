@@ -16,6 +16,7 @@ import {
   DEFAULT_SYNTAX_THEME_DARK,
   DEFAULT_SYNTAX_THEME_LIGHT,
   DEFAULT_THEME,
+  DEFAULT_WRAP_LINES,
 } from "../default-settings.ts";
 import { api, type ColorScheme, type GlobalSettings } from "../lib/api.ts";
 import { DARK_SYNTAX_THEMES, LIGHT_SYNTAX_THEMES } from "../lib/highlight.ts";
@@ -61,6 +62,7 @@ const DEFAULT_SETTINGS = {
   syntaxThemeLight: DEFAULT_SYNTAX_THEME_LIGHT,
   syntaxThemeDark: DEFAULT_SYNTAX_THEME_DARK,
   structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+  wrapLines: DEFAULT_WRAP_LINES,
   filesExpandedByDefault: DEFAULT_FILES_EXPANDED_BY_DEFAULT,
   openBrowser: DEFAULT_OPEN_BROWSER,
   loopMaxRounds: DEFAULT_LOOP_ROUNDS,
@@ -209,6 +211,8 @@ export interface SettingsMenuProps {
   syntaxThemeDark: string;
   structuredHighlighting: boolean;
   onStructuredHighlightingChange: (next: boolean) => void;
+  wrapLines: boolean;
+  onWrapLinesChange: (next: boolean) => void;
   onSyntaxThemeChange: (mode: "light" | "dark", name: string) => void;
   onResetDisplaySettings: () => void;
 }
@@ -229,6 +233,8 @@ export function SettingsMenu({
   syntaxThemeDark,
   structuredHighlighting,
   onStructuredHighlightingChange,
+  wrapLines,
+  onWrapLinesChange,
   onSyntaxThemeChange,
   onResetDisplaySettings,
 }: SettingsMenuProps) {
@@ -337,6 +343,15 @@ export function SettingsMenu({
               label="Structured highlighting"
               onCheckedChange={onStructuredHighlightingChange}
               testId="structured-highlighting-toggle"
+            />
+          </SettingRow>
+
+          <SettingRow label="Wrap lines">
+            <SwitchToggle
+              checked={wrapLines}
+              label="Wrap lines"
+              onCheckedChange={onWrapLinesChange}
+              testId="wrap-lines-toggle"
             />
           </SettingRow>
 

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { escapeHtml, escapeHtmlAttr } from "./DiffView.tsx";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { escapeHtml, escapeHtmlAttr, normalizeWordDiffWhitespace } from "./DiffView.tsx";
+
+if (typeof document === "undefined") GlobalRegistrator.register();
 
 // --- Faithful copies of react-diff-viewer-continued's internals -------------
 //
@@ -131,4 +134,32 @@ test("the <wbr> fix is exactly what keeps the re-formable entities in sync", () 
   const naivelyEscaped = "&amp;#39;"; // what the pre-fix escapeHtml emitted
   expect(decodeEntities(naivelyEscaped).length).toBe(1); // the bug: 1 ≠ 5
   expect(librarySegmentDecodedLength(escapeHtml(raw))).toBe(raw.length);
+});
+
+test("word diff whitespace is moved outside the highlighted block", () => {
+  const container = document.createElement("div");
+  container.innerHTML = `
+    <ins class="react-diff-word-added">    </ins>
+    <del class="react-diff-word-removed">\t</del>
+    <ins class="react-diff-word-added">  <span>text</span> </ins>
+    <del class="react-diff-word-removed"> x </del>
+  `;
+
+  expect(normalizeWordDiffWhitespace(container)).toBe(4);
+
+  const nodes = container.querySelectorAll<HTMLElement>("ins, del");
+  expect(nodes[0].dataset.staffWhitespaceWordDiff).toBe("true");
+  expect(nodes[0].className).not.toContain("word-added");
+  expect(nodes[1].dataset.staffWhitespaceWordDiff).toBe("true");
+  expect(nodes[1].className).not.toContain("word-removed");
+  expect(nodes[2].dataset.staffWhitespaceWordDiff).toBeUndefined();
+  expect(nodes[2].className).toContain("word-added");
+  expect(nodes[2].textContent).toBe("text");
+  expect(nodes[2].previousSibling?.textContent).toBe("  ");
+  expect(nodes[2].nextSibling?.textContent).toBe(" ");
+  expect(nodes[3].dataset.staffWhitespaceWordDiff).toBeUndefined();
+  expect(nodes[3].className).toContain("word-removed");
+  expect(nodes[3].textContent).toBe("x");
+  expect(nodes[3].previousSibling?.textContent).toBe(" ");
+  expect(nodes[3].nextSibling?.textContent).toBe(" ");
 });

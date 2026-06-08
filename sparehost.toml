@@ -17,9 +17,17 @@ command = "claude --permission-mode auto --effort xhigh --name ${SPAREHOST_WORKT
 name = "Shell"
 
 [[services]]
+name = "Staff Review / Web"
+
+[[services.services]]
 name = "Staff Review"
 working_dir = "apps/staffreview"
 command = "bun dev --base main"
-local_domains = [
-  "staff.sr",
-]
+local_domains = [ "staff.sr" ]
+
+[[services.services]]
+name = "Web"
+command = "bun dev"
+working_dir = "apps/web"
+dynamic_ports = 0
+local_domains = [ "web.staff" ]

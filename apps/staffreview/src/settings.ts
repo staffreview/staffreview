@@ -33,6 +33,13 @@ import { DEFAULT_STRUCTURED_HIGHLIGHTING } from "./structured-highlighting-confi
 
 export { DEFAULT_STRUCTURED_HIGHLIGHTING };
 
+// Line-wrap default lives in a dependency-free module so the frontend bundle
+// shares one source of truth; re-exported so existing `settings.*` callers keep
+// working.
+import { DEFAULT_WRAP_LINES } from "./wrap-lines-config.ts";
+
+export { DEFAULT_WRAP_LINES };
+
 export type ColorScheme = "system" | "light" | "dark";
 
 export type GlobalSettings = {
@@ -48,6 +55,9 @@ export type GlobalSettings = {
   /** Whether intra-line (word-level) diff highlighting is enabled in rendered
    * diffs. Independent of Shiki syntax highlighting, which is always on. */
   structuredHighlighting?: boolean;
+  /** Whether long diff lines wrap to fit the pane (default true). When off,
+   * long lines extend past the pane and scroll horizontally instead. */
+  wrapLines?: boolean;
   /** Whether file diffs start expanded (default true). Per-file toggles
    * in the UI override this. */
   filesExpandedByDefault?: boolean;
@@ -96,6 +106,7 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
     reviewAgents: DEFAULT_REVIEW_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
     structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+    wrapLines: DEFAULT_WRAP_LINES,
     ...settings,
   };
 }
@@ -150,6 +161,17 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       );
     } catch {
       next.structuredHighlighting = DEFAULT_STRUCTURED_HIGHLIGHTING;
+    }
+  }
+  // Same defensive boolean coercion for the line-wrap toggle (the server's
+  // `POST /api/settings` casts the request body straight to `GlobalSettings`),
+  // so a stray `{"wrapLines":"false"}` is normalized rather than persisted
+  // verbatim and silently flipped to `true` by `Boolean(...)`.
+  if ("wrapLines" in next && typeof next.wrapLines !== "boolean") {
+    try {
+      next.wrapLines = parseBooleanSetting(String(next.wrapLines), "wrapLines");
+    } catch {
+      next.wrapLines = DEFAULT_WRAP_LINES;
     }
   }
   await mkdir(settingsDir(), { recursive: true });
