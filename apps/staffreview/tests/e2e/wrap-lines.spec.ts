@@ -133,6 +133,56 @@ test("no-wrap keeps the fold pill centered on the card, not the wide table", asy
   expect(await centerOffset()).toBeLessThan(60);
 });
 
+test("no-wrap keeps the comment button pinned beside the sticky gutter after horizontal scroll", async ({
+  page,
+}) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  const postSettings = page.waitForResponse(
+    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+  );
+  await page.getByTestId("wrap-lines-toggle").click();
+  await postSettings;
+  await page.keyboard.press("Escape");
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+
+  await staffDiff.evaluate((el) => {
+    el.scrollLeft = 700;
+  });
+  await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+
+  const gutter = card.locator(".staff-gutter.diff-added").first();
+  await gutter.hover();
+  const plus = card.locator("[data-staff-plus]");
+  await expect(plus).toBeVisible();
+
+  const placement = await plus.evaluate((button) => {
+    const diff = button.closest(".staff-diff") as HTMLElement;
+    const gutter = diff.querySelector(".staff-gutter.diff-added") as HTMLElement;
+    const marker = gutter.nextElementSibling as HTMLElement;
+    const b = button.getBoundingClientRect();
+    const d = diff.getBoundingClientRect();
+    const m = marker.getBoundingClientRect();
+    return {
+      buttonCenter: Math.round(b.left + b.width / 2),
+      markerCenter: Math.round(m.left + m.width / 2 - 4),
+      leftInDiff: Math.round(b.left - d.left),
+      rightInDiff: Math.round(b.right - d.left),
+      diffWidth: Math.round(d.width),
+    };
+  });
+  expect(
+    Math.abs(placement.buttonCenter - placement.markerCenter),
+    JSON.stringify(placement),
+  ).toBeLessThan(2);
+  expect(placement.leftInDiff, JSON.stringify(placement)).toBeGreaterThan(0);
+  expect(placement.rightInDiff, JSON.stringify(placement)).toBeLessThan(placement.diffWidth);
+});
+
 test("no-wrap centers the fold pill on short-line files too (no horizontal scroll)", async ({
   page,
 }) => {

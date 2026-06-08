@@ -1044,8 +1044,12 @@ export function DiffFile({
       side: resolved.side,
       top: numRect.top - containerRect.top + numRect.height / 2,
       left: markerRect
-        ? markerRect.left - containerRect.left + markerRect.width / 2 - 4
-        : cellRect.right - containerRect.left,
+        ? markerRect.left -
+          containerRect.left +
+          markerRect.width / 2 -
+          4 +
+          diffRef.current.scrollLeft
+        : cellRect.right - containerRect.left + diffRef.current.scrollLeft,
     };
     const nextKey = `${nextPlus.side}:${nextPlus.line}:${Math.round(nextPlus.top)}:${Math.round(nextPlus.left)}`;
     if (plusKeyRef.current === nextKey) return;
@@ -1117,6 +1121,29 @@ export function DiffFile({
     [diffRows, allContextExpanded, forceVisibleLines],
   );
   const [xScrollable, setXScrollable] = useState(false);
+  const scrollResetKeyRef = useRef("");
+
+  useLayoutEffect(() => {
+    const scrollResetKey = [
+      file.path,
+      file.status,
+      file.oldContent.length,
+      file.newContent.length,
+      splitView ? "split" : "unified",
+      wrapLines ? "wrap" : "nowrap",
+      collapsed ? "collapsed" : "open",
+    ].join("\0");
+    if (scrollResetKeyRef.current === scrollResetKey) return;
+    scrollResetKeyRef.current = scrollResetKey;
+    const container = diffRef.current;
+    if (!container) return;
+    container.scrollLeft = 0;
+    container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
+    plusKeyRef.current = null;
+    lastPlusAnchor.current = null;
+    setPlus(null);
+  });
+
   useLayoutEffect(() => {
     const container = diffRef.current;
     if (!container || collapsed || wrapLines || file.isSymlink || file.isBinary) {
@@ -1342,6 +1369,28 @@ export function DiffFile({
     );
   }
 
+  function renderColGroup() {
+    if (splitView) {
+      return (
+        <colgroup>
+          <col className="staff-col-gutter" />
+          <col className="staff-col-marker" />
+          <col className="staff-col-content staff-col-content-old" />
+          <col className="staff-col-gutter" />
+          <col className="staff-col-marker" />
+          <col className="staff-col-content staff-col-content-new" />
+        </colgroup>
+      );
+    }
+    return (
+      <colgroup>
+        <col className="staff-col-gutter" />
+        <col className="staff-col-marker" />
+        <col className="staff-col-content" />
+      </colgroup>
+    );
+  }
+
   function renderSplitRow(row: DiffRow) {
     const oldStatus = row.kind === "removed" || row.kind === "changed" ? "removed" : undefined;
     const newStatus = row.kind === "added" || row.kind === "changed" ? "added" : undefined;
@@ -1547,6 +1596,7 @@ export function DiffFile({
           onMouseLeave={handleDiffMouseLeave}
         >
           <table>
+            {renderColGroup()}
             <tbody>
               {diffItems.flatMap((item) => {
                 if (item.type === "fold") return [renderFold(item, splitView ? 6 : 3)];

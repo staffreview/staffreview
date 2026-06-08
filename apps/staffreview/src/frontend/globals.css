@@ -151,6 +151,18 @@
   table-layout: fixed;
 }
 
+.staff-diff col.staff-col-gutter {
+  width: 52px;
+}
+
+.staff-diff col.staff-col-marker {
+  width: 24px;
+}
+
+.staff-diff col.staff-col-content {
+  width: auto;
+}
+
 .staff-diff td {
   border: 0;
   padding: 0;
