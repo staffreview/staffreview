@@ -163,3 +163,54 @@ test("word diff whitespace is moved outside the highlighted block", () => {
   expect(nodes[3].previousSibling?.textContent).toBe(" ");
   expect(nodes[3].nextSibling?.textContent).toBe(" ");
 });
+
+test("word diff keeps whitespace inside adjacent changed phrases", () => {
+  const container = document.createElement("div");
+  container.innerHTML = `
+    <table>
+      <tbody>
+        <tr>
+          <td class="react-diff-content react-diff-added">
+            default \${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}, <ins class="react-diff-word-added">or</ins> <ins class="react-diff-word-added">wrapLines</ins>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  expect(normalizeWordDiffWhitespace(container)).toBeGreaterThan(0);
+
+  const nodes = container.querySelectorAll<HTMLElement>("ins");
+  expect(nodes).toHaveLength(1);
+  expect(nodes[0].className).toContain("word-added");
+  expect(nodes[0].textContent).toBe("or wrapLines");
+});
+
+test("word diff suppresses low-signal blocks on heavily rewritten rows", () => {
+  const container = document.createElement("div");
+  container.innerHTML = `
+    <table>
+      <tbody>
+        <tr>
+          <td class="react-diff-content react-diff-removed">
+            <del class="react-diff-word-removed">staff settings set &lt;openBrowser|structuredHighlighting&gt; &lt;true|false&gt;</del>
+          </td>
+        </tr>
+        <tr>
+          <td class="react-diff-content react-diff-added">
+            default \${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}, <ins class="react-diff-word-added">or wrapLines</ins>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  expect(normalizeWordDiffWhitespace(container)).toBeGreaterThan(0);
+
+  const deleted = container.querySelector<HTMLElement>("del");
+  const inserted = container.querySelector<HTMLElement>("ins");
+  expect(deleted?.dataset.staffLowSignalWordDiff).toBe("true");
+  expect(deleted?.className).not.toContain("word-removed");
+  expect(inserted?.dataset.staffLowSignalWordDiff).toBeUndefined();
+  expect(inserted?.className).toContain("word-added");
+});

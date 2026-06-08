@@ -357,12 +357,14 @@ function normalizeUnifiedGutters(container: HTMLElement, wrapLines: boolean) {
 }
 
 const WORD_DIFF_SELECTOR =
-  'ins[class*="word-added"], del[class*="word-removed"], [data-staff-whitespace-word-diff="true"]';
+  'ins[class*="word-added"], del[class*="word-removed"], [data-staff-whitespace-word-diff="true"], [data-staff-low-signal-word-diff="true"]';
 const WORD_CHANGE_CLASS = /word-(?:added|removed)/;
 const TEXT_NODE = 3;
 const SHOW_TEXT = 4;
 const WHITESPACE_ONLY = /^[\s\u00a0]*$/u;
 const WHITESPACE_CHAR = /^[\s\u00a0]$/u;
+const MIN_LOW_SIGNAL_WORD_DIFF_CHARS = 24;
+const MAX_STRUCTURAL_WORD_DIFF_RATIO = 0.45;
 
 function removeWordChangeClasses(node: HTMLElement) {
   const changeClasses = Array.from(node.classList).filter((className) =>
@@ -377,6 +379,20 @@ function restoreWordChangeClasses(node: HTMLElement) {
   const originalClasses = node.dataset.staffWordDiffChangeClasses;
   if (originalClasses) node.classList.add(...originalClasses.split(" "));
   delete node.dataset.staffWordDiffChangeClasses;
+}
+
+function activeWordDiffKind(node: HTMLElement): "added" | "removed" | null {
+  if (Array.from(node.classList).some((className) => className.includes("word-added"))) {
+    return "added";
+  }
+  if (Array.from(node.classList).some((className) => className.includes("word-removed"))) {
+    return "removed";
+  }
+  return null;
+}
+
+function significantLength(value: string): number {
+  return value.replace(/\s+/g, "").length;
 }
 
 function textNodes(root: Node): Text[] {
@@ -418,9 +434,79 @@ function trimTrailingWhitespace(root: Node): string {
   return trimmed;
 }
 
+function mergeAdjacentWordDiffWhitespace(container: ParentNode): number {
+  let changed = 0;
+  for (const node of Array.from(container.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR))) {
+    let kind = activeWordDiffKind(node);
+    if (!kind) continue;
+
+    while (true) {
+      const whitespaceNodes: Text[] = [];
+      let next = node.nextSibling;
+      while (next?.nodeType === TEXT_NODE && WHITESPACE_ONLY.test(next.textContent ?? "")) {
+        whitespaceNodes.push(next as Text);
+        next = next.nextSibling;
+      }
+      if (!(next instanceof HTMLElement) || activeWordDiffKind(next) !== kind) break;
+
+      for (const whitespace of whitespaceNodes) {
+        node.appendChild(node.ownerDocument.createTextNode(whitespace.data));
+        whitespace.remove();
+      }
+      while (next.firstChild) node.appendChild(next.firstChild);
+      next.remove();
+      changed++;
+      kind = activeWordDiffKind(node);
+      if (!kind) break;
+    }
+  }
+  return changed;
+}
+
+function suppressLowSignalWordDiffRows(container: ParentNode): number {
+  let changed = 0;
+  for (const row of container.querySelectorAll<HTMLElement>("tr")) {
+    const changedNodes = Array.from(row.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR)).filter(
+      (node) => activeWordDiffKind(node),
+    );
+    if (changedNodes.length === 0) continue;
+
+    const contentCells = Array.from(row.querySelectorAll<HTMLElement>('td[class*="content"]'));
+    const lineText = (contentCells.length > 0 ? contentCells : [row])
+      .map((cell) => cell.textContent ?? "")
+      .join("");
+    const lineLength = significantLength(lineText);
+    if (lineLength === 0) continue;
+
+    const changedLength = changedNodes.reduce(
+      (sum, node) => sum + significantLength(node.textContent ?? ""),
+      0,
+    );
+    if (
+      changedLength < MIN_LOW_SIGNAL_WORD_DIFF_CHARS ||
+      changedLength / lineLength <= MAX_STRUCTURAL_WORD_DIFF_RATIO
+    ) {
+      continue;
+    }
+
+    for (const node of changedNodes) {
+      removeWordChangeClasses(node);
+      node.dataset.staffLowSignalWordDiff = "true";
+      changed++;
+    }
+  }
+  return changed;
+}
+
 export function normalizeWordDiffWhitespace(container: ParentNode): number {
   let changed = 0;
-  for (const node of container.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR)) {
+  for (const node of Array.from(container.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR))) {
+    restoreWordChangeClasses(node);
+    delete node.dataset.staffLowSignalWordDiff;
+    delete node.dataset.staffWhitespaceWordDiff;
+  }
+
+  for (const node of Array.from(container.querySelectorAll<HTMLElement>(WORD_DIFF_SELECTOR))) {
     if (WHITESPACE_ONLY.test(node.textContent ?? "")) {
       removeWordChangeClasses(node);
       node.dataset.staffWhitespaceWordDiff = "true";
@@ -428,14 +514,14 @@ export function normalizeWordDiffWhitespace(container: ParentNode): number {
       continue;
     }
 
-    restoreWordChangeClasses(node);
-    delete node.dataset.staffWhitespaceWordDiff;
     const leading = trimLeadingWhitespace(node);
     const trailing = trimTrailingWhitespace(node);
     if (leading) node.before(node.ownerDocument.createTextNode(leading));
     if (trailing) node.after(node.ownerDocument.createTextNode(trailing));
     if (leading || trailing) changed++;
   }
+  changed += mergeAdjacentWordDiffWhitespace(container);
+  changed += suppressLowSignalWordDiffRows(container);
   return changed;
 }
 
