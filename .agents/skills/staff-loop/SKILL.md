@@ -69,39 +69,47 @@ for this run instead of the setting — tailoring fan-out to the diff's size.)
 
 Track a round counter yourself. For `round` = 1..R:
 
-### a. Review the diff yourself (find → verify → post)
+### a. Review the diff yourself (pipelined find → verify → post)
 
 Run the same multi-agent review `/staff-review` performs, **inline** — do **not**
-spawn a `/staff-review` sub-agent. Use **A** as the fan-out width:
+spawn a `/staff-review` sub-agent. Use **A** as the fan-out width, and **pipeline
+it the same way**: each find agent's output flows straight into its own verify and
+post, so you never wait for the whole find wave before verifying or posting.
 
-1. **Find.** Partition the 10 review areas (and the `.staffreview/docs/`
-   files) across **A** find agents and spawn them **in parallel** — each with:
+1. **Find (background).** Partition the 10 review areas (and the
+   `.staffreview/docs/` files) across **A** find agents and spawn them in the
+   **background** (`run_in_background`) so each reports back independently — each
+   with:
    > Read `.agents/skills/staff-review-find/SKILL.md` and follow it exactly.
    > slug=`<slug>`; review areas=`<this agent's area numbers>`; docs
    > lessons=`<this agent's filenames, or "none">`. Return the findings JSON —
    > nothing else.
 
-   See `/staff-review` Step 3 for the area/docs partitioning scheme. Collect
-   the findings arrays and dedup them.
-2. **Verify.** Split the deduped findings into up to **A** batches and spawn one
-   verify agent per batch **in parallel** — each with:
+   See `/staff-review` Step 3 for the area/docs partitioning scheme. Don't
+   collect-then-dedup into one pool — dedup at post time (step 3 below).
+2. **Verify (as each find agent returns).** The moment a find agent reports back,
+   spawn one verify agent (background) seeded with *only that agent's* findings —
+   skip it if the agent returned `[]`:
    > Read `.agents/skills/staff-review-verify/SKILL.md` and follow it exactly.
-   > slug=`<slug>`; candidate findings=`<this batch's JSON>`. Return the verdicts
-   > JSON — nothing else.
+   > slug=`<slug>`; candidate findings=`<this find agent's JSON>`. Return the
+   > verdicts JSON — nothing else.
 
    Keep only the **confirmed** findings; when a verdict carries a
    `correctedAnchor`, replace that finding's `file`/`line`/`endLine`/`side` with
    it wholesale.
-3. **Post.** Post each confirmed finding with the `staff` CLI, body via stdin,
-   `--author "<your model name>"` and the finding's `--priority` (as
-   `/staff-review` Step 5 describes).
+3. **Post (as each verify agent returns).** Post each confirmed finding with the
+   `staff` CLI, body via stdin, `--author "<your model name>"` and the finding's
+   `--priority` (as `/staff-review` Step 4 describes). Before posting, dedup
+   against what you've already posted this round — drop true duplicates (same
+   file+line, same issue).
 
 The find skill already skips threads earlier rounds settled, so a re-review won't
 re-raise resolved issues.
 
 ### b. Check for convergence — **this is the loop's exit**
 
-After posting this round's review:
+After the round's review pipeline has **fully drained** — every find chain
+verified and its survivors posted:
 
 ```bash
 staff comment list --open --json
@@ -149,10 +157,12 @@ Summarize to the user in chat (don't post a top-level comment):
   (`/staff-resolve`) sub-agents — never a `/staff-review` sub-agent (no nested
   orchestrators). Keep your own context lean — pass slugs, area buckets, and
   short findings, not file contents.
-- **Phases are sequential.** Within a round: find → verify → post → (if open)
-  resolve, then the next round. Find agents within a wave run in parallel, but a
-  round's resolve must finish before the next round's review — they share one
-  working tree.
+- **Review is pipelined; resolve is a barrier.** Within a round the review runs
+  find → verify → post **pipelined per find agent** (a find agent's verify and
+  post don't wait on the others). But the convergence check and any resolve happen
+  only **after the whole review has drained** — every find chain posted — and a
+  round's resolve must fully finish before the next round's review, since they
+  share one working tree.
 - **No worktree isolation.** The sub-agents must operate on the real working tree
   the diff points at, so don't isolate them in a separate worktree.
 - **Don't commit.** Both phases leave edits in the working tree; the human commits.

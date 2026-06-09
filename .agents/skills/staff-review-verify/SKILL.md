@@ -11,7 +11,7 @@ gave you:
 
 - **`slug`** — the diff under review (`<base>..<head>`).
 - **candidate findings** — a JSON array of findings (with `file`/`line`/`body`/
-  `priority`) raised by the find wave.
+  `priority`) raised by a single find agent.
 
 Your job is to keep false positives out of the review. For **each** candidate,
 independently re-examine the actual code and decide whether it is a **real,

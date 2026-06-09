@@ -8,11 +8,13 @@ description: Perform a thorough, multi-agent staff-engineer-level code review of
 You are the **orchestrator** of a staff/principal-level code review. You do
 **not** review the code yourself. You fan the review out across parallel **find**
 sub-agents (each owning a slice of the work and following the shared
-`/staff-review-find` skill), have a second wave of **verify** sub-agents (each
-following `/staff-review-verify`) confirm every finding to weed out false
-positives, and then post only the survivors. Your audience is the author. Your
-goal is to make the change shippable, durable, and consistent with the codebase
-— not to perform expertise.
+`/staff-review-find` skill), and you **pipeline** each one's output straight into
+its own **verify** sub-agent (following `/staff-review-verify`) and then post the
+survivors — so feedback reaches the author as each find agent finishes, not after
+the whole wave drains. Nothing is posted unverified, but verification and posting
+run **per find agent** rather than behind a single barrier. Your audience is the
+author. Your goal is to make the change shippable, durable, and consistent with
+the codebase — not to perform expertise.
 
 The find/verify briefs live in their own skills so `/staff-loop` reuses the exact
 same sub-agent units without ever spawning a `/staff-review` sub-agent (which
@@ -60,9 +62,11 @@ Clamp `N` to **1–20**. `N` is an *upper bound*: for a trivially small diff
 (one or two files) feel free to use fewer agents — don't spawn 20 agents to
 review a ten-line change.
 
-> The review runs ~2×N agents total (an N-wide find wave, then an up-to-N-wide
-> verify wave). That is intentional — verification is what keeps false positives
-> out of the review.
+> The review runs ~2×N agents total — N find agents, each paired with a verify
+> agent that re-checks its findings. They run **pipelined** (a find agent's
+> verifier starts the moment that find agent returns), so peak concurrency can
+> briefly reach ~2N as the first verifiers overlap the slower finders. The verify
+> pass is non-negotiable — it's what keeps false positives out of the review.
 
 ## Step 2 — Survey (lean)
 
@@ -74,10 +78,12 @@ staff files --slug <slug> --json   # the changed-file list (paths + status)
 ls .staffreview/docs/           # the team's captured review lessons (may be empty)
 ```
 
-## Step 3 — FIND: fan the review out across N agents (parallel)
+## Step 3 — FIND: launch N find agents in the background
 
-Partition the work two ways, then spawn **N find agents at once** (issue all N
-Agent/Task calls in a single batch so they run in parallel).
+Partition the work two ways, then spawn **N find agents in the background** —
+issue all N Agent/Task calls with `run_in_background` so each reports back
+independently and you can act on it the instant it finishes. **Do not wait for
+the whole wave**: Step 4 consumes each agent's findings as they arrive.
 
 **Partition the 10 review areas** into N buckets (keep related areas together;
 the heavier areas — correctness, edge cases, concurrency, security, data — carry
@@ -114,37 +120,41 @@ in its assignment:
 > Return the findings JSON the skill specifies — nothing else. Do not post,
 > spawn agents, or modify code.
 
-**Collect and dedup.** Gather the findings arrays from all N agents into one
-list. Merge true duplicates (same file+line describing the *same* issue — keep
-the clearer one, prefer the higher severity). Keep distinct issues that happen to
-share a line.
+**Do not collect-then-dedup into one pool.** Each agent's findings flow straight
+into their own verify→post chain in Step 4. Cross-agent duplicates are rare (find
+agents own disjoint areas) and are handled at **post time**, not behind a
+pre-verify barrier.
 
-## Step 4 — VERIFY: confirm every finding with a second wave (parallel)
+## Step 4 — VERIFY → POST: pipeline each find agent as it returns
 
-No finding reaches the author unverified. Split the deduped findings into up to
-**N batches** and spawn **one verify agent per batch, in parallel**. A finding's
-verifier is necessarily a *different* agent than its finder (this is a fresh
-wave) — the point is independent eyes.
+This stage is **event-driven, not a second wave.** As **each** find agent reports
+back, run its findings through their own verify→post chain immediately — don't
+wait on the other find agents.
 
-**Spawn each verify agent:**
+**1. Verify (one verify agent per returning find agent).** Spawn a verify agent
+in the background, seeded with *only that find agent's* findings. The verifier is
+necessarily a *different* agent than the finder — the point is independent eyes.
+If a find agent returned `[]`, there's nothing to verify; skip it.
 
 > You are running in `<repo dir>`. Read `.agents/skills/staff-review-verify/SKILL.md`
 > and follow it exactly. Your parameters:
 > - **slug:** `<slug>`
-> - **candidate findings:** `<the JSON array for this batch>`
+> - **candidate findings:** `<this find agent's JSON array>`
 >
 > Return the verdicts JSON the skill specifies — nothing else. Do not post,
 > spawn agents, or modify code.
 
-Keep only **confirmed** findings. When a verdict carries a `correctedAnchor`,
-replace that finding's `file`/`line`/`endLine`/`side` with it wholesale (so a
-relocated single-line finding loses its old `endLine`, and a relocated range
-keeps the corrected one). Discard the rest — note the count you dropped when you
-report back.
+**2. Post survivors (as each verify agent returns).** Keep only **confirmed**
+findings. When a verdict carries a `correctedAnchor`, replace that finding's
+`file`/`line`/`endLine`/`side` with it wholesale (a relocated single-line finding
+loses its old `endLine`; a relocated range keeps the corrected one). Discard the
+rest — track how many you dropped for the Step 5 report.
 
-## Step 5 — Post the survivors
-
-Now — and only now — post each confirmed finding via the `staff` CLI (see
+Before posting each survivor, **dedup against what you've already posted this
+round** (you're holding that list in context): if it's a true duplicate of an
+already-posted comment — same `file`+`line` describing the *same* issue — drop it
+(keep the higher-severity wording if they differ). This replaces the old
+pre-verify dedup barrier. Otherwise post it now via the `staff` CLI (see
 `/staff-comment` for the full form). Pipe the body via stdin so multi-line
 Markdown is safe, and always pass `--author` with **your model name** (e.g.
 `Opus 4.8`, `GPT-5.5`) and the finding's `--priority`:
@@ -166,13 +176,17 @@ no single line to attach to, post it top-level (no `--file`/`--line`). Do **not*
 post a verdict/"LGTM"/recap that just restates the inline findings — if every
 finding has a home inline, post nothing extra.
 
-## Step 6 — Report back
+Continue until **every** find chain and its verify agent have drained and all
+survivors are posted. Only then go to Step 5.
+
+## Step 5 — Report back
 
 Summarize to the user in chat (don't post a top-level comment for this):
 
-- `N` agents used; the diff slug.
-- Findings: raised by the find wave → confirmed by the verify wave → posted
-  (and how many false positives the verify wave dropped).
+- `N` find agents used; the diff slug.
+- Findings: raised by the find agents → confirmed by their verifiers → posted
+  (and how many false positives verification dropped, plus any post-time
+  duplicates you merged).
 - A one-line severity breakdown of what you posted (e.g. "2 P1, 3 P2, 1 P3").
 
 Then stop. Do not commit or modify code. The user will run `/staff-resolve` next.
@@ -190,9 +204,13 @@ Then stop. Do not commit or modify code. The user will run `/staff-resolve` next
   yourself — spawn find agents (`/staff-review-find`) and verify agents
   (`/staff-review-verify`). Keep your context lean — pass slugs and short
   findings, not file contents.
-- **Find before verify, verify before post.** The find wave must finish before
-  the verify wave starts; nothing is posted until verification confirms it.
-- **Peak parallelism is `N`.** Each wave runs at most `N` agents at once.
+- **Verify before post, but pipeline per find agent.** Each finding still flows
+  find → verify → post in order, and **nothing is posted unverified** — but the
+  chains run independently: a find agent's verifier and post don't wait on the
+  other find agents. Spawn find and verify agents with `run_in_background` so you
+  can react to each completion the moment it lands.
+- **Peak parallelism is ~`N` per stage.** N find agents run at once; their
+  verifiers overlap the slower finders, so concurrency can briefly reach ~2N.
 - **No worktree isolation.** Sub-agents read the real working tree the diff
   points at; don't isolate them.
 - **Don't commit or modify code.** The review ends with comments posted.
