@@ -97,6 +97,78 @@ test("no-wrap split keeps changed-line tint behind the full scrollable line", as
   expect(gapToRightEdge).toBeLessThan(2);
 });
 
+test("no-wrap split keeps both gutters fixed while clipping code to each pane", async ({
+  page,
+}) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  const postSettings = page.waitForResponse(
+    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+  );
+  await page.getByTestId("wrap-lines-toggle").click();
+  await postSettings;
+  await page.keyboard.press("Escape");
+
+  await expect(staffDiff).toHaveClass(/staff-diff-split/);
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  await staffDiff.evaluate((el) => {
+    el.scrollLeft = 700;
+  });
+  await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+
+  const geometry = await staffDiff.evaluate((el) => {
+    const diffRect = el.getBoundingClientRect();
+    const oldGutter = el.querySelector(".staff-gutter-old") as HTMLElement;
+    const oldMarker = el.querySelector(".staff-marker-old") as HTMLElement;
+    const oldContent = el.querySelector(".staff-content-old") as HTMLElement;
+    const newGutter = el.querySelector(".staff-gutter-new") as HTMLElement;
+    const newMarker = el.querySelector(".staff-marker-new") as HTMLElement;
+    const newContent = el.querySelector(".staff-content-new") as HTMLElement;
+    const oldText = oldContent.querySelector(".staff-content-text") as HTMLElement;
+    const newText = newContent.querySelector(".staff-content-text") as HTMLElement;
+    const rect = (node: HTMLElement) => {
+      const r = node.getBoundingClientRect();
+      return {
+        left: Math.round(r.left - diffRect.left),
+        right: Math.round(r.right - diffRect.left),
+        width: Math.round(r.width),
+      };
+    };
+    return {
+      diffWidth: Math.round(diffRect.width),
+      scrollLeft: Math.round(el.scrollLeft),
+      oldGutter: rect(oldGutter),
+      oldMarker: rect(oldMarker),
+      oldContent: rect(oldContent),
+      oldText: rect(oldText),
+      newGutter: rect(newGutter),
+      newMarker: rect(newMarker),
+      newContent: rect(newContent),
+      newText: rect(newText),
+      oldClipPath: getComputedStyle(oldContent).clipPath,
+      newClipPath: getComputedStyle(newContent).clipPath,
+    };
+  });
+
+  const divider = Math.round(geometry.diffWidth / 2);
+  expect(geometry.oldGutter.left, JSON.stringify(geometry)).toBe(0);
+  expect(geometry.oldMarker.left, JSON.stringify(geometry)).toBe(52);
+  expect(geometry.oldContent.left, JSON.stringify(geometry)).toBe(76);
+  expect(Math.abs(geometry.newGutter.left - divider), JSON.stringify(geometry)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(geometry.newMarker.left, JSON.stringify(geometry)).toBe(geometry.newGutter.right);
+  expect(geometry.newContent.left, JSON.stringify(geometry)).toBe(geometry.newMarker.right);
+  expect(geometry.oldText.left, JSON.stringify(geometry)).toBeLessThan(geometry.oldContent.left);
+  expect(geometry.newText.left, JSON.stringify(geometry)).toBeLessThan(geometry.newContent.left);
+  expect(geometry.oldClipPath, JSON.stringify(geometry)).not.toBe("none");
+  expect(geometry.newClipPath, JSON.stringify(geometry)).not.toBe("none");
+});
+
 test("no-wrap keeps the fold pill centered on the card, not the wide table", async ({ page }) => {
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");

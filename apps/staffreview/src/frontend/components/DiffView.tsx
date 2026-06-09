@@ -1148,6 +1148,13 @@ export function DiffFile({
     const container = diffRef.current;
     if (!container || collapsed || wrapLines || file.isSymlink || file.isBinary) {
       container?.style.removeProperty("--staff-code-fold-left");
+      container?.style.removeProperty("--staff-diff-client-width");
+      container?.style.removeProperty("--staff-diff-half-width");
+      container?.style.removeProperty("--staff-diff-pane-content-width");
+      container?.style.removeProperty("--staff-diff-scroll-left");
+      container?.style.removeProperty("--staff-diff-scroll-max");
+      container?.style.removeProperty("--staff-diff-pane-scroll-width");
+      container?.style.removeProperty("--staff-diff-split-content-width");
       setXScrollable(false);
       return;
     }
@@ -1155,11 +1162,59 @@ export function DiffFile({
     let frame = 0;
     const measure = () => {
       frame = 0;
+      const halfWidth = container.clientWidth / 2;
+      const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - 76) : 0;
+      let splitScrollMax = 0;
+      if (splitView) {
+        const contentNodes = Array.from(
+          container.querySelectorAll<HTMLElement>(".staff-content-text"),
+        );
+        const sampleStyle = contentNodes[0] ? window.getComputedStyle(contentNodes[0]) : null;
+        const measurer = document.createElement("span");
+        measurer.style.position = "absolute";
+        measurer.style.visibility = "hidden";
+        measurer.style.whiteSpace = "pre";
+        measurer.style.font = sampleStyle?.font ?? "";
+        measurer.style.fontFeatureSettings = sampleStyle?.fontFeatureSettings ?? "";
+        measurer.style.tabSize = sampleStyle?.tabSize ?? "";
+        container.append(measurer);
+        const maxTextWidth = Math.max(
+          0,
+          ...contentNodes.map((node) => {
+            measurer.textContent = node.textContent ?? "";
+            return measurer.getBoundingClientRect().width;
+          }),
+        );
+        measurer.remove();
+        splitScrollMax = Math.max(0, maxTextWidth - splitPaneContentWidth);
+      }
+      if (splitView) {
+        container.style.setProperty("--staff-diff-scroll-max", `${splitScrollMax}px`);
+        container.style.setProperty(
+          "--staff-diff-pane-scroll-width",
+          `${splitPaneContentWidth + splitScrollMax}px`,
+        );
+        container.style.setProperty(
+          "--staff-diff-split-content-width",
+          `${(container.clientWidth + splitScrollMax - 152) / 2}px`,
+        );
+        if (container.scrollLeft > splitScrollMax) container.scrollLeft = splitScrollMax;
+      } else {
+        container.style.removeProperty("--staff-diff-scroll-max");
+        container.style.removeProperty("--staff-diff-pane-scroll-width");
+        container.style.removeProperty("--staff-diff-split-content-width");
+      }
+      container.style.setProperty("--staff-diff-client-width", `${container.clientWidth}px`);
+      container.style.setProperty("--staff-diff-half-width", `${halfWidth}px`);
+      container.style.setProperty("--staff-diff-pane-content-width", `${splitPaneContentWidth}px`);
+      container.style.setProperty("--staff-diff-scroll-left", `${container.scrollLeft}px`);
       container.style.setProperty(
         "--staff-code-fold-left",
         `${container.scrollLeft + container.clientWidth / 2}px`,
       );
-      const next = container.scrollWidth - container.clientWidth > 1;
+      const next = splitView
+        ? splitScrollMax > 1
+        : container.scrollWidth - container.clientWidth > 1;
       setXScrollable((prev) => (prev === next ? prev : next));
     };
     const schedule = () => {
@@ -1184,7 +1239,7 @@ export function DiffFile({
       if (frame) window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [collapsed, file.isBinary, file.isSymlink, wrapLines]);
+  }, [collapsed, file.isBinary, file.isSymlink, splitView, wrapLines]);
 
   function rowAnchored(row: DiffRow): boolean {
     if (!anchored) return false;
@@ -1326,11 +1381,13 @@ export function DiffFile({
     text: string | undefined,
     ranges: InlineRange[],
     status: "added" | "removed" | undefined,
+    side?: "old" | "new",
   ) {
     return (
       <td
         className={cn(
           "staff-content react-diff-content",
+          side === "old" ? "staff-content-old" : side === "new" && "staff-content-new",
           status === "added" && "diff-added",
           status === "removed" && "diff-removed",
           text === undefined && "empty-line",
@@ -1405,10 +1462,10 @@ export function DiffFile({
       >
         {renderGutterCell("old", row.oldLine, oldStatus)}
         {renderMarkerCell("old")}
-        {renderContentCell(row.oldText, row.oldRanges, oldStatus)}
+        {renderContentCell(row.oldText, row.oldRanges, oldStatus, "old")}
         {renderGutterCell("new", row.newLine, newStatus)}
         {renderMarkerCell("new")}
-        {renderContentCell(row.newText, row.newRanges, newStatus)}
+        {renderContentCell(row.newText, row.newRanges, newStatus, "new")}
       </tr>,
       ...hostRows,
     ];
