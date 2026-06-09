@@ -227,6 +227,47 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
   expect(geometry.oldText.right, JSON.stringify(geometry)).toBeGreaterThan(geometry.oldClip.right);
   expect(geometry.newText.left, JSON.stringify(geometry)).toBeLessThan(geometry.newContent.left);
   expect(geometry.newText.right, JSON.stringify(geometry)).toBeGreaterThan(geometry.newClip.right);
+
+  await staffDiff.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth;
+  });
+  await expect
+    .poll(() =>
+      staffDiff.evaluate((el) =>
+        Math.abs(
+          el.scrollLeft -
+            Number.parseFloat(el.style.getPropertyValue("--staff-diff-scroll-left") || "0"),
+        ),
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+
+  const endScroll = await staffDiff.evaluate((el) => {
+    const measurements = [...el.querySelectorAll(".staff-content-clip")].map((clipNode) => {
+      const clip = clipNode as HTMLElement;
+      const text = clip.querySelector(".staff-content-text") as HTMLElement;
+      const clipRect = clip.getBoundingClientRect();
+      const textRect = text.getBoundingClientRect();
+      return {
+        paneWidth: Math.round(clipRect.width),
+        textWidth: Math.round(textRect.width),
+        rightOverflow: Math.round(textRect.right - clipRect.right),
+      };
+    });
+    return {
+      scrollLeft: Math.round(el.scrollLeft),
+      scrollWidth: Math.round(el.scrollWidth),
+      clientWidth: Math.round(el.clientWidth),
+      maxRightOverflow: Math.max(...measurements.map((m) => m.rightOverflow)),
+      widestTextWidth: Math.max(...measurements.map((m) => m.textWidth)),
+      paneWidth: Math.max(...measurements.map((m) => m.paneWidth)),
+    };
+  });
+  expect(endScroll.scrollLeft, JSON.stringify(endScroll)).toBeGreaterThan(100);
+  expect(endScroll.maxRightOverflow, JSON.stringify(endScroll)).toBeLessThanOrEqual(1);
+  expect(endScroll.scrollWidth - endScroll.clientWidth, JSON.stringify(endScroll)).toBeGreaterThan(
+    endScroll.widestTextWidth - endScroll.paneWidth,
+  );
 });
 
 test("no-wrap keeps the fold pill centered on the card, not the wide table", async ({ page }) => {

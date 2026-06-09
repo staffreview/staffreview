@@ -1168,24 +1168,11 @@ export function DiffFile({
         const contentNodes = Array.from(
           container.querySelectorAll<HTMLElement>(".staff-content-text"),
         );
-        const sampleStyle = contentNodes[0] ? window.getComputedStyle(contentNodes[0]) : null;
-        const measurer = document.createElement("span");
-        measurer.style.position = "absolute";
-        measurer.style.visibility = "hidden";
-        measurer.style.whiteSpace = "pre";
-        measurer.style.font = sampleStyle?.font ?? "";
-        measurer.style.fontFeatureSettings = sampleStyle?.fontFeatureSettings ?? "";
-        measurer.style.tabSize = sampleStyle?.tabSize ?? "";
-        container.append(measurer);
         const maxTextWidth = Math.max(
           0,
-          ...contentNodes.map((node) => {
-            measurer.textContent = node.textContent ?? "";
-            return measurer.getBoundingClientRect().width;
-          }),
+          ...contentNodes.map((node) => node.getBoundingClientRect().width),
         );
-        measurer.remove();
-        splitScrollMax = Math.max(0, maxTextWidth - splitPaneContentWidth);
+        splitScrollMax = Math.max(0, Math.ceil(maxTextWidth - splitPaneContentWidth + 12));
       }
       if (splitView) {
         container.style.setProperty("--staff-diff-scroll-max", `${splitScrollMax}px`);
