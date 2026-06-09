@@ -1393,15 +1393,17 @@ export function DiffFile({
           text === undefined && "empty-line",
         )}
       >
-        <pre className="staff-content-text react-diff-content-text">
-          {text === undefined
-            ? "\u00a0"
-            : renderLineText(
-                text,
-                ranges,
-                status === "added" ? "added" : status === "removed" ? "removed" : undefined,
-              )}
-        </pre>
+        <div className="staff-content-clip">
+          <pre className="staff-content-text react-diff-content-text">
+            {text === undefined
+              ? "\u00a0"
+              : renderLineText(
+                  text,
+                  ranges,
+                  status === "added" ? "added" : status === "removed" ? "removed" : undefined,
+                )}
+          </pre>
+        </div>
       </td>
     );
   }

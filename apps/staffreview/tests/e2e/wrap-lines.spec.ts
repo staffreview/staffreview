@@ -122,12 +122,19 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
 
   const geometry = await staffDiff.evaluate((el) => {
     const diffRect = el.getBoundingClientRect();
-    const oldGutter = el.querySelector(".staff-gutter-old") as HTMLElement;
-    const oldMarker = el.querySelector(".staff-marker-old") as HTMLElement;
-    const oldContent = el.querySelector(".staff-content-old") as HTMLElement;
-    const newGutter = el.querySelector(".staff-gutter-new") as HTMLElement;
-    const newMarker = el.querySelector(".staff-marker-new") as HTMLElement;
-    const newContent = el.querySelector(".staff-content-new") as HTMLElement;
+    const row = [...el.querySelectorAll("tr.react-diff-line")].find(
+      (line) =>
+        line.querySelector(".staff-content-old.diff-removed") &&
+        line.querySelector(".staff-content-new.diff-added"),
+    ) as HTMLElement;
+    const oldGutter = row.querySelector(".staff-gutter-old") as HTMLElement;
+    const oldMarker = row.querySelector(".staff-marker-old") as HTMLElement;
+    const oldContent = row.querySelector(".staff-content-old") as HTMLElement;
+    const oldClip = oldContent.querySelector(".staff-content-clip") as HTMLElement;
+    const newGutter = row.querySelector(".staff-gutter-new") as HTMLElement;
+    const newMarker = row.querySelector(".staff-marker-new") as HTMLElement;
+    const newContent = row.querySelector(".staff-content-new") as HTMLElement;
+    const newClip = newContent.querySelector(".staff-content-clip") as HTMLElement;
     const oldText = oldContent.querySelector(".staff-content-text") as HTMLElement;
     const newText = newContent.querySelector(".staff-content-text") as HTMLElement;
     const rect = (node: HTMLElement) => {
@@ -144,13 +151,15 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
       oldGutter: rect(oldGutter),
       oldMarker: rect(oldMarker),
       oldContent: rect(oldContent),
+      oldClip: rect(oldClip),
       oldText: rect(oldText),
       newGutter: rect(newGutter),
       newMarker: rect(newMarker),
       newContent: rect(newContent),
+      newClip: rect(newClip),
       newText: rect(newText),
-      oldClipPath: getComputedStyle(oldContent).clipPath,
-      newClipPath: getComputedStyle(newContent).clipPath,
+      oldClipOverflowX: getComputedStyle(oldClip).overflowX,
+      newClipOverflowX: getComputedStyle(newClip).overflowX,
     };
   });
 
@@ -158,15 +167,21 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
   expect(geometry.oldGutter.left, JSON.stringify(geometry)).toBe(0);
   expect(geometry.oldMarker.left, JSON.stringify(geometry)).toBe(52);
   expect(geometry.oldContent.left, JSON.stringify(geometry)).toBe(76);
+  expect(geometry.oldClip.left, JSON.stringify(geometry)).toBe(geometry.oldContent.left);
+  expect(geometry.oldClip.right, JSON.stringify(geometry)).toBeLessThanOrEqual(divider);
+  expect(geometry.oldClipOverflowX, JSON.stringify(geometry)).toBe("hidden");
   expect(Math.abs(geometry.newGutter.left - divider), JSON.stringify(geometry)).toBeLessThanOrEqual(
     1,
   );
   expect(geometry.newMarker.left, JSON.stringify(geometry)).toBe(geometry.newGutter.right);
   expect(geometry.newContent.left, JSON.stringify(geometry)).toBe(geometry.newMarker.right);
+  expect(geometry.newClip.left, JSON.stringify(geometry)).toBe(geometry.newContent.left);
+  expect(geometry.newClip.right, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.diffWidth);
+  expect(geometry.newClipOverflowX, JSON.stringify(geometry)).toBe("hidden");
   expect(geometry.oldText.left, JSON.stringify(geometry)).toBeLessThan(geometry.oldContent.left);
+  expect(geometry.oldText.right, JSON.stringify(geometry)).toBeGreaterThan(geometry.oldClip.right);
   expect(geometry.newText.left, JSON.stringify(geometry)).toBeLessThan(geometry.newContent.left);
-  expect(geometry.oldClipPath, JSON.stringify(geometry)).not.toBe("none");
-  expect(geometry.newClipPath, JSON.stringify(geometry)).not.toBe("none");
+  expect(geometry.newText.right, JSON.stringify(geometry)).toBeGreaterThan(geometry.newClip.right);
 });
 
 test("no-wrap keeps the fold pill centered on the card, not the wide table", async ({ page }) => {

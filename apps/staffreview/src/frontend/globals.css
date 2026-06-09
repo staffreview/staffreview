@@ -342,8 +342,6 @@
 .staff-diff-nowrap.staff-diff-split .staff-content-new {
   position: sticky;
   z-index: 3;
-  clip-path: inset(0 calc(100% - var(--staff-diff-pane-content-width, 1px)) 0 0);
-  overflow: hidden;
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-content-old {
@@ -356,7 +354,14 @@
   transform: translateX(var(--staff-diff-new-pane-shift));
 }
 
+.staff-diff-nowrap.staff-diff-split .staff-content-clip {
+  width: var(--staff-diff-pane-content-width, 1px);
+  overflow: hidden;
+}
+
 .staff-diff-nowrap.staff-diff-split .staff-content-text {
+  display: inline-block;
+  min-width: max-content;
   transform: translateX(calc(var(--staff-diff-scroll-left, 0px) * -1));
 }
 
