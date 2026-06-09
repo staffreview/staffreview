@@ -115,6 +115,47 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
 
   await expect(staffDiff).toHaveClass(/staff-diff-split/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  const scrollSamples = await staffDiff.evaluate(async (el) => {
+    const sample = () => {
+      const diffRect = el.getBoundingClientRect();
+      const newGutter = el.querySelector(".staff-gutter-new") as HTMLElement;
+      const newMarker = el.querySelector(".staff-marker-new") as HTMLElement;
+      const newContent = el.querySelector(".staff-content-new") as HTMLElement;
+      const rect = (node: HTMLElement) => {
+        const r = node.getBoundingClientRect();
+        return {
+          left: Math.round(r.left - diffRect.left),
+          right: Math.round(r.right - diffRect.left),
+        };
+      };
+      return {
+        scrollLeft: Math.round(el.scrollLeft),
+        newGutter: rect(newGutter),
+        newMarker: rect(newMarker),
+        newContent: rect(newContent),
+      };
+    };
+    const samples = [];
+    for (const left of [0, 250, 700]) {
+      el.scrollLeft = left;
+      await new Promise(requestAnimationFrame);
+      samples.push(sample());
+    }
+    return samples;
+  });
+  const gutterLefts = scrollSamples.map((sample) => sample.newGutter.left);
+  const markerLefts = scrollSamples.map((sample) => sample.newMarker.left);
+  const contentLefts = scrollSamples.map((sample) => sample.newContent.left);
+  expect(Math.max(...gutterLefts) - Math.min(...gutterLefts), JSON.stringify(scrollSamples)).toBe(
+    0,
+  );
+  expect(Math.max(...markerLefts) - Math.min(...markerLefts), JSON.stringify(scrollSamples)).toBe(
+    0,
+  );
+  expect(Math.max(...contentLefts) - Math.min(...contentLefts), JSON.stringify(scrollSamples)).toBe(
+    0,
+  );
+
   await staffDiff.evaluate((el) => {
     el.scrollLeft = 700;
   });
@@ -165,18 +206,22 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
 
   const divider = Math.round(geometry.diffWidth / 2);
   expect(geometry.oldGutter.left, JSON.stringify(geometry)).toBe(0);
+  expect(geometry.oldGutter.width, JSON.stringify(geometry)).toBe(52);
   expect(geometry.oldMarker.left, JSON.stringify(geometry)).toBe(52);
+  expect(geometry.oldMarker.width, JSON.stringify(geometry)).toBe(24);
   expect(geometry.oldContent.left, JSON.stringify(geometry)).toBe(76);
   expect(geometry.oldClip.left, JSON.stringify(geometry)).toBe(geometry.oldContent.left);
-  expect(geometry.oldClip.right, JSON.stringify(geometry)).toBeLessThanOrEqual(divider);
+  expect(geometry.oldClip.right, JSON.stringify(geometry)).toBe(divider);
   expect(geometry.oldClipOverflowX, JSON.stringify(geometry)).toBe("hidden");
   expect(Math.abs(geometry.newGutter.left - divider), JSON.stringify(geometry)).toBeLessThanOrEqual(
     1,
   );
+  expect(geometry.newGutter.width, JSON.stringify(geometry)).toBe(52);
   expect(geometry.newMarker.left, JSON.stringify(geometry)).toBe(geometry.newGutter.right);
+  expect(geometry.newMarker.width, JSON.stringify(geometry)).toBe(24);
   expect(geometry.newContent.left, JSON.stringify(geometry)).toBe(geometry.newMarker.right);
   expect(geometry.newClip.left, JSON.stringify(geometry)).toBe(geometry.newContent.left);
-  expect(geometry.newClip.right, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.diffWidth);
+  expect(geometry.newClip.right, JSON.stringify(geometry)).toBe(geometry.diffWidth);
   expect(geometry.newClipOverflowX, JSON.stringify(geometry)).toBe("hidden");
   expect(geometry.oldText.left, JSON.stringify(geometry)).toBeLessThan(geometry.oldContent.left);
   expect(geometry.oldText.right, JSON.stringify(geometry)).toBeGreaterThan(geometry.oldClip.right);
@@ -218,6 +263,22 @@ test("no-wrap keeps the fold pill centered on the card, not the wide table", asy
   });
   await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
   expect(await centerOffset()).toBeLessThan(60);
+  const foldGeometry = await foldPill.evaluate((btn) => {
+    const diff = btn.closest(".staff-diff") as HTMLElement;
+    const cell = btn.closest("td") as HTMLElement;
+    const diffRect = diff.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const buttonRect = btn.getBoundingClientRect();
+    return {
+      diffWidth: Math.round(diffRect.width),
+      cellLeft: Math.round(cellRect.left - diffRect.left),
+      cellRight: Math.round(cellRect.right - diffRect.left),
+      buttonCenter: Math.round(buttonRect.left + buttonRect.width / 2 - diffRect.left),
+    };
+  });
+  expect(foldGeometry.cellLeft, JSON.stringify(foldGeometry)).toBe(0);
+  expect(foldGeometry.cellRight, JSON.stringify(foldGeometry)).toBe(foldGeometry.diffWidth);
+  expect(Math.abs(foldGeometry.buttonCenter - foldGeometry.diffWidth / 2)).toBeLessThanOrEqual(1);
 });
 
 test("no-wrap keeps the comment button pinned beside the sticky gutter after horizontal scroll", async ({

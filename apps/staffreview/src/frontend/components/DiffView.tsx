@@ -1153,8 +1153,7 @@ export function DiffFile({
       container?.style.removeProperty("--staff-diff-pane-content-width");
       container?.style.removeProperty("--staff-diff-scroll-left");
       container?.style.removeProperty("--staff-diff-scroll-max");
-      container?.style.removeProperty("--staff-diff-pane-scroll-width");
-      container?.style.removeProperty("--staff-diff-split-content-width");
+      container?.style.removeProperty("--staff-diff-scroll-width");
       setXScrollable(false);
       return;
     }
@@ -1191,18 +1190,13 @@ export function DiffFile({
       if (splitView) {
         container.style.setProperty("--staff-diff-scroll-max", `${splitScrollMax}px`);
         container.style.setProperty(
-          "--staff-diff-pane-scroll-width",
-          `${splitPaneContentWidth + splitScrollMax}px`,
-        );
-        container.style.setProperty(
-          "--staff-diff-split-content-width",
-          `${(container.clientWidth + splitScrollMax - 152) / 2}px`,
+          "--staff-diff-scroll-width",
+          `${container.clientWidth + splitScrollMax}px`,
         );
         if (container.scrollLeft > splitScrollMax) container.scrollLeft = splitScrollMax;
       } else {
         container.style.removeProperty("--staff-diff-scroll-max");
-        container.style.removeProperty("--staff-diff-pane-scroll-width");
-        container.style.removeProperty("--staff-diff-split-content-width");
+        container.style.removeProperty("--staff-diff-scroll-width");
       }
       container.style.setProperty("--staff-diff-client-width", `${container.clientWidth}px`);
       container.style.setProperty("--staff-diff-half-width", `${halfWidth}px`);
@@ -1210,7 +1204,7 @@ export function DiffFile({
       container.style.setProperty("--staff-diff-scroll-left", `${container.scrollLeft}px`);
       container.style.setProperty(
         "--staff-code-fold-left",
-        `${container.scrollLeft + container.clientWidth / 2}px`,
+        `${splitView ? container.clientWidth / 2 : container.scrollLeft + container.clientWidth / 2}px`,
       );
       const next = splitView
         ? splitScrollMax > 1
@@ -1654,6 +1648,7 @@ export function DiffFile({
           onMouseMove={handleDiffMouseMove}
           onMouseLeave={handleDiffMouseLeave}
         >
+          <div className="staff-diff-scroll-spacer" aria-hidden="true" />
           <table>
             {renderColGroup()}
             <tbody>
