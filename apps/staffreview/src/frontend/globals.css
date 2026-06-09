@@ -134,15 +134,15 @@
 }
 
 .staff-diff {
-  --staff-added-bg: color-mix(in oklch, var(--color-success) 11%, transparent);
-  --staff-removed-bg: color-mix(in oklch, var(--color-destructive) 10%, transparent);
+  --staff-added-bg: color-mix(in srgb, var(--color-success) 11%, var(--color-card));
+  --staff-removed-bg: color-mix(in srgb, var(--color-destructive) 10%, var(--color-card));
   overflow-x: clip;
   background: var(--color-card);
 }
 
 .dark .staff-diff {
-  --staff-added-bg: color-mix(in oklch, var(--color-success) 17%, transparent);
-  --staff-removed-bg: color-mix(in oklch, var(--color-destructive) 18%, transparent);
+  --staff-added-bg: color-mix(in srgb, var(--color-success) 17%, var(--color-card));
+  --staff-removed-bg: color-mix(in srgb, var(--color-destructive) 18%, var(--color-card));
 }
 
 .staff-diff table {
@@ -200,15 +200,23 @@
 }
 
 .staff-diff .staff-content.diff-added,
-.staff-diff .staff-gutter.diff-added,
 .staff-diff .staff-marker:has(+ .staff-content.diff-added) {
   background: var(--staff-added-bg);
 }
 
 .staff-diff .staff-content.diff-removed,
-.staff-diff .staff-gutter.diff-removed,
 .staff-diff .staff-marker:has(+ .staff-content.diff-removed) {
   background: var(--staff-removed-bg);
+}
+
+.staff-diff .staff-gutter.diff-added {
+  background: var(--staff-added-bg);
+  color: var(--color-success);
+}
+
+.staff-diff .staff-gutter.diff-removed {
+  background: var(--staff-removed-bg);
+  color: var(--color-destructive);
 }
 
 .staff-diff-unified tr.react-diff-line:has(> .staff-content.diff-added) {
@@ -290,19 +298,11 @@
 }
 
 .staff-diff-nowrap .staff-gutter.diff-added {
-  background: color-mix(in oklch, var(--color-success) 11%, var(--color-card));
+  background: var(--staff-added-bg);
 }
 
 .staff-diff-nowrap .staff-gutter.diff-removed {
-  background: color-mix(in oklch, var(--color-destructive) 10%, var(--color-card));
-}
-
-.dark .staff-diff-nowrap .staff-gutter.diff-added {
-  background: color-mix(in oklch, var(--color-success) 17%, var(--color-card));
-}
-
-.dark .staff-diff-nowrap .staff-gutter.diff-removed {
-  background: color-mix(in oklch, var(--color-destructive) 18%, var(--color-card));
+  background: var(--staff-removed-bg);
 }
 
 .staff-diff-nowrap.staff-diff-unified .staff-gutter-unified,
@@ -385,30 +385,14 @@
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 11%, transparent) !important;
+  background: var(--staff-added-bg) !important;
 }
 .staff-diff
   table
   tbody
   tr:not([data-anchored="true"])
   td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 10%, transparent) !important;
-}
-.dark
-  .staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 17%, transparent) !important;
-}
-.dark
-  .staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 18%, transparent) !important;
+  background: var(--staff-removed-bg) !important;
 }
 
 /* Markdown comment bodies (rendered by <Markdown>) and the WYSIWYG

@@ -1046,8 +1046,8 @@ export function DiffFile({
       left: markerRect
         ? markerRect.left -
           containerRect.left +
-          markerRect.width / 2 -
-          4 +
+          markerRect.width / 2 +
+          2 +
           diffRef.current.scrollLeft
         : cellRect.right - containerRect.left + diffRef.current.scrollLeft,
     };

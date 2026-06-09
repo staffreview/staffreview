@@ -167,9 +167,11 @@ test("no-wrap keeps the comment button pinned beside the sticky gutter after hor
     const b = button.getBoundingClientRect();
     const d = diff.getBoundingClientRect();
     const m = marker.getBoundingClientRect();
+    const g = gutter.getBoundingClientRect();
     return {
       buttonCenter: Math.round(b.left + b.width / 2),
-      markerCenter: Math.round(m.left + m.width / 2 - 4),
+      markerCenter: Math.round(m.left + m.width / 2 + 2),
+      leftGapFromGutter: Math.round(b.left - g.right),
       leftInDiff: Math.round(b.left - d.left),
       rightInDiff: Math.round(b.right - d.left),
       diffWidth: Math.round(d.width),
@@ -179,8 +181,87 @@ test("no-wrap keeps the comment button pinned beside the sticky gutter after hor
     Math.abs(placement.buttonCenter - placement.markerCenter),
     JSON.stringify(placement),
   ).toBeLessThan(2);
+  expect(placement.leftGapFromGutter, JSON.stringify(placement)).toBeGreaterThanOrEqual(2);
   expect(placement.leftInDiff, JSON.stringify(placement)).toBeGreaterThan(0);
   expect(placement.rightInDiff, JSON.stringify(placement)).toBeLessThan(placement.diffWidth);
+});
+
+test("no-wrap colors changed gutters to match their line backgrounds", async ({ page }) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  const postSettings = page.waitForResponse(
+    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+  );
+  await page.getByTestId("wrap-lines-toggle").click();
+  await postSettings;
+  await page.keyboard.press("Escape");
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+
+  await staffDiff.evaluate((el) => {
+    el.scrollLeft = 700;
+  });
+  await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+
+  const colors = await staffDiff.evaluate((el) => {
+    const rgbFromColor = (color: string) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("missing canvas context");
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return { r, g, b };
+    };
+    const addedGutter = el.querySelector(".staff-gutter.diff-added") as HTMLElement | null;
+    const removedGutter = el.querySelector(".staff-gutter.diff-removed") as HTMLElement | null;
+    const addedContent = addedGutter?.parentElement?.querySelector(
+      ".staff-content.diff-added",
+    ) as HTMLElement | null;
+    const removedContent = removedGutter?.parentElement?.querySelector(
+      ".staff-content.diff-removed",
+    ) as HTMLElement | null;
+    if (!addedGutter || !removedGutter || !addedContent || !removedContent) {
+      throw new Error("missing changed line cells");
+    }
+
+    const probe = document.createElement("div");
+    el.append(probe);
+    probe.style.color = "var(--color-success)";
+    const expectedAddedColor = getComputedStyle(probe).color;
+    probe.style.color = "var(--color-destructive)";
+    const expectedRemovedColor = getComputedStyle(probe).color;
+    probe.remove();
+
+    const addedGutterStyle = getComputedStyle(addedGutter);
+    const removedGutterStyle = getComputedStyle(removedGutter);
+    const addedGutterBg = addedGutterStyle.backgroundColor;
+    const removedGutterBg = removedGutterStyle.backgroundColor;
+    return {
+      addedGutterBg,
+      addedLineBg: getComputedStyle(addedContent).backgroundColor,
+      addedRgb: rgbFromColor(addedGutterBg),
+      addedColor: addedGutterStyle.color,
+      expectedAddedColor,
+      removedGutterBg,
+      removedLineBg: getComputedStyle(removedContent).backgroundColor,
+      removedRgb: rgbFromColor(removedGutterBg),
+      removedColor: removedGutterStyle.color,
+      expectedRemovedColor,
+    };
+  });
+
+  expect(colors.addedGutterBg, JSON.stringify(colors)).toBe(colors.addedLineBg);
+  expect(colors.addedRgb.g, JSON.stringify(colors)).toBeGreaterThan(colors.addedRgb.r);
+  expect(colors.addedColor, JSON.stringify(colors)).toBe(colors.expectedAddedColor);
+  expect(colors.removedGutterBg, JSON.stringify(colors)).toBe(colors.removedLineBg);
+  expect(colors.removedRgb.r, JSON.stringify(colors)).toBeGreaterThan(colors.removedRgb.g);
+  expect(colors.removedColor, JSON.stringify(colors)).toBe(colors.expectedRemovedColor);
 });
 
 test("no-wrap centers the fold pill on short-line files too (no horizontal scroll)", async ({
