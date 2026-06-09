@@ -73,8 +73,10 @@ Track a round counter yourself. For `round` = 1..R:
 
 Run the same multi-agent review `/staff-review` performs, **inline** — do **not**
 spawn a `/staff-review` sub-agent. Use **A** as the fan-out width, and **pipeline
-it the same way**: each find agent's output flows straight into its own verify and
-post, so you never wait for the whole find wave before verifying or posting.
+it the same way**: each find agent's output flows straight into its own verify,
+and each verified survivor batch is reaped into an in-memory list. Wait only for
+all verify chains to drain before the final dedup/post pass, so posting is not
+order-dependent.
 
 1. **Find (background).** Partition the 10 review areas (and the
    `.staffreview/docs/` files) across **A** find agents and spawn them in the
@@ -85,11 +87,12 @@ post, so you never wait for the whole find wave before verifying or posting.
    > lessons=`<this agent's filenames, or "none">`. Return the findings JSON —
    > nothing else.
 
-   See `/staff-review` Step 3 for the area/docs partitioning scheme. Don't
-   collect-then-dedup into one pool — dedup at post time (step 3 below).
+   See `/staff-review` Step 3 for the area/docs partitioning scheme.
 2. **Verify (as each find agent returns).** The moment a find agent reports back,
-   spawn one verify agent (background) seeded with *only that agent's* findings —
-   skip it if the agent returned `[]`:
+   **stop its background task** (`TaskStop` with the id you launched it with) to
+   free its slot — you have its findings now — then spawn one verify agent
+   (background) seeded with *only that agent's* findings (if it returned `[]`,
+   stop it and skip the verify):
    > Read `.agents/skills/staff-review-verify/SKILL.md` and follow it exactly.
    > slug=`<slug>`; candidate findings=`<this find agent's JSON>`. Return the
    > verdicts JSON — nothing else.
@@ -97,11 +100,19 @@ post, so you never wait for the whole find wave before verifying or posting.
    Keep only the **confirmed** findings; when a verdict carries a
    `correctedAnchor`, replace that finding's `file`/`line`/`endLine`/`side` with
    it wholesale.
-3. **Post (as each verify agent returns).** Post each confirmed finding with the
-   `staff` CLI, body via stdin, `--author "<your model name>"` and the finding's
-   `--priority` (as `/staff-review` Step 4 describes). Before posting, dedup
-   against what you've already posted this round — drop true duplicates (same
-   file+line, same issue).
+3. **Collect survivors (as each verify agent returns).** Append each confirmed
+   finding to an in-memory survivor list, but do **not** post it yet. Once a
+   verify agent's verdicts are consumed, **stop that verify agent's task too**
+   (`TaskStop`) — finished agents left open keep holding slots and will trip the
+   sub-agent limit. Reaping each agent as you consume it keeps the live count near
+   **A**, not 2A.
+4. **Dedup and post after every verify chain drains.** When all verify agents
+   have returned and been reaped, dedup the collected survivor list before
+   posting. If two survivors are true duplicates — same `file`+`line` describing
+   the *same* issue — keep the clearest/highest-severity version, including its
+   priority, and drop the duplicate. Post only this final survivor list with the
+   `staff` CLI, body via stdin, `--author "<your model name>"` and each finding's
+   `--priority` (as `/staff-review` Step 4 describes).
 
 The find skill already skips threads earlier rounds settled, so a re-review won't
 re-raise resolved issues.
@@ -158,11 +169,16 @@ Summarize to the user in chat (don't post a top-level comment):
   orchestrators). Keep your own context lean — pass slugs, area buckets, and
   short findings, not file contents.
 - **Review is pipelined; resolve is a barrier.** Within a round the review runs
-  find → verify → post **pipelined per find agent** (a find agent's verify and
-  post don't wait on the others). But the convergence check and any resolve happen
-  only **after the whole review has drained** — every find chain posted — and a
-  round's resolve must fully finish before the next round's review, since they
-  share one working tree.
+  find → verify → collect survivors **pipelined per find agent**. Posting waits
+  for the final dedup pass after all verify chains drain. The convergence check
+  and any resolve happen only **after the whole review has drained** — every find
+  chain verified/reaped and final survivors posted — and a round's resolve must
+  fully finish before the next round's review, since they share one working tree.
+- **Reap background sub-agents as you consume them.** Stop each find agent
+  (`TaskStop`) the instant you read its findings, and each verify agent once
+  you've read its verdicts — leaving finished agents open exhausts the limited
+  sub-agent pool and trips the sub-agent limit. This keeps the live count near
+  **A**, not 2A; if **A** is large, launch finds in batches.
 - **No worktree isolation.** The sub-agents must operate on the real working tree
   the diff points at, so don't isolate them in a separate worktree.
 - **Don't commit.** Both phases leave edits in the working tree; the human commits.

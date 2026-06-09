@@ -66,3 +66,41 @@ test("a comment on a folded line renders inline, not just in the sidebar", async
     })
     .toContain("3");
 });
+
+test("a folded range comment renders both endpoints for deep-link anchors", async ({ page }) => {
+  await page.goto("/");
+  const card = await openBigDiff(page);
+
+  const rows = card.locator("table tbody tr");
+  await expect.poll(async () => await rows.count()).toBeLessThan(40);
+
+  await staff([
+    "comment",
+    "add",
+    "--file",
+    "big.ts",
+    "--line",
+    "3",
+    "--end-line",
+    "21",
+    "--side",
+    "new",
+    "--author",
+    "Opus 4.8",
+    "--body",
+    "Folded range finding.",
+  ]);
+
+  await page.goto("/#big.ts:R3-R21");
+  const card2 = await openBigDiff(page);
+
+  await expect(
+    card2.locator("[data-thread-id]", { hasText: "Folded range finding." }),
+  ).toBeVisible();
+  await expect(
+    card2.locator('tr[data-anchored="true"] td[data-side="new"][data-line="3"]'),
+  ).toBeVisible();
+  await expect(
+    card2.locator('tr[data-anchored="true"] td[data-side="new"][data-line="21"]'),
+  ).toBeVisible();
+});

@@ -66,8 +66,9 @@ export type GlobalSettings = {
   /** Hard cap on review→resolve rounds for the `/staff-loop` skill.
    * Defaults to {@link DEFAULT_LOOP_ROUNDS} when unset. */
   loopMaxRounds?: number;
-  /** How many sub-agents `/staff-review` fans out per phase (find, then
-   * verify). Defaults to {@link DEFAULT_REVIEW_AGENTS} when unset. */
+  /** Target number of live sub-agents `/staff-review` uses while it pipelines
+   * find agents into per-find verification. Defaults to
+   * {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
   /** How many scout sub-agents `/staff-docs` fans out across the local
    * diffs + PRs it mines. A sweep covers far more ground than a single diff

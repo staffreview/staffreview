@@ -341,6 +341,13 @@
   width: 100%;
 }
 
+.staff-diff-nowrap.staff-diff-split tr[data-composer-host="true"] > td,
+.staff-diff-nowrap.staff-diff-unified tr[data-composer-host="true"] > td {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+
 .staff-diff-nowrap:not(.staff-diff-split):not(.staff-diff-unified) .staff-content {
   min-width: max-content;
 }
@@ -427,6 +434,7 @@
 
 .staff-diff tr[data-composer-host="true"] > td {
   padding: 0;
+  width: 100%;
   background: var(--color-muted);
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);

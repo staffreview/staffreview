@@ -47,8 +47,9 @@ staff diff --base HEAD --head working-tree --json
 
 Note the `slug` — pass it to every sub-agent; every comment references it.
 
-**The agent count `N`.** This is the fan-out width — how many sub-agents run in
-parallel *per phase*. Resolve it in this order:
+**The agent count `N`.** This is the find-agent fan-out width, and the target
+live sub-agent count while find slots convert into verify slots. Resolve it in
+this order:
 
 1. A **bare integer argument** to the skill (e.g. `/staff-review main..WT 6`, or
    just `/staff-review 6`) — the user tailoring fan-out to the diff's size.
@@ -63,10 +64,12 @@ Clamp `N` to **1–20**. `N` is an *upper bound*: for a trivially small diff
 review a ten-line change.
 
 > The review runs ~2×N agents total — N find agents, each paired with a verify
-> agent that re-checks its findings. They run **pipelined** (a find agent's
-> verifier starts the moment that find agent returns), so peak concurrency can
-> briefly reach ~2N as the first verifiers overlap the slower finders. The verify
-> pass is non-negotiable — it's what keeps false positives out of the review.
+> agent that re-checks its findings — but they're **pipelined and reaped as they
+> go**: the moment a find agent returns you stop its task and start its verifier,
+> so the *live* sub-agent count stays around N (a find slot becomes a verify slot),
+> never 2N. Reaping finished agents is load-bearing — leaving them open exhausts
+> the limited sub-agent pool and trips the sub-agent limit. The verify pass itself
+> is non-negotiable: it's what keeps false positives out of the review.
 
 ## Step 2 — Survey (lean)
 
@@ -120,21 +123,27 @@ in its assignment:
 > Return the findings JSON the skill specifies — nothing else. Do not post,
 > spawn agents, or modify code.
 
-**Do not collect-then-dedup into one pool.** Each agent's findings flow straight
-into their own verify→post chain in Step 4. Cross-agent duplicates are rare (find
-agents own disjoint areas) and are handled at **post time**, not behind a
-pre-verify barrier.
+**Do not collect raw findings into one pre-verify pool.** Each agent's findings
+flow straight into their own verify chain in Step 4. Cross-agent duplicates are
+rare (find agents own disjoint areas) and are handled after verification, not
+behind a pre-verify barrier.
 
-## Step 4 — VERIFY → POST: pipeline each find agent as it returns
+## Step 4 — VERIFY PIPELINE → DEDUP → POST
 
 This stage is **event-driven, not a second wave.** As **each** find agent reports
-back, run its findings through their own verify→post chain immediately — don't
-wait on the other find agents.
+back, run its findings through its own verify chain immediately — don't wait on
+the other find agents to start verification. Background agents draw from a
+**limited sub-agent pool**, so **reap each one the instant you've consumed it**
+(the `TaskStop` steps below) — leaving finished agents open is what exhausts the
+limit.
 
-**1. Verify (one verify agent per returning find agent).** Spawn a verify agent
-in the background, seeded with *only that find agent's* findings. The verifier is
-necessarily a *different* agent than the finder — the point is independent eyes.
-If a find agent returned `[]`, there's nothing to verify; skip it.
+**1. Verify (one verify agent per returning find agent).** The moment a find
+agent reports back, **stop its background task** (`TaskStop` with the id you got
+when you launched it) — you already have its findings, so it must not keep holding
+a slot. Then spawn a verify agent in the background, seeded with *only that find
+agent's* findings. The verifier is necessarily a *different* agent than the finder
+— the point is independent eyes. If a find agent returned `[]`, stop it and move
+on — nothing to verify.
 
 > You are running in `<repo dir>`. Read `.agents/skills/staff-review-verify/SKILL.md`
 > and follow it exactly. Your parameters:
@@ -144,20 +153,22 @@ If a find agent returned `[]`, there's nothing to verify; skip it.
 > Return the verdicts JSON the skill specifies — nothing else. Do not post,
 > spawn agents, or modify code.
 
-**2. Post survivors (as each verify agent returns).** Keep only **confirmed**
-findings. When a verdict carries a `correctedAnchor`, replace that finding's
-`file`/`line`/`endLine`/`side` with it wholesale (a relocated single-line finding
-loses its old `endLine`; a relocated range keeps the corrected one). Discard the
-rest — track how many you dropped for the Step 5 report.
+**2. Collect survivors (as each verify agent returns).** Keep only
+**confirmed** findings. When a verdict carries a `correctedAnchor`, replace that
+finding's `file`/`line`/`endLine`/`side` with it wholesale (a relocated
+single-line finding loses its old `endLine`; a relocated range keeps the
+corrected one). Discard the rest — track how many you dropped for the Step 5
+report. Reap each verify agent immediately after consuming its verdicts, then
+append that batch's confirmed survivors to an in-memory list.
 
-Before posting each survivor, **dedup against what you've already posted this
-round** (you're holding that list in context): if it's a true duplicate of an
-already-posted comment — same `file`+`line` describing the *same* issue — drop it
-(keep the higher-severity wording if they differ). This replaces the old
-pre-verify dedup barrier. Otherwise post it now via the `staff` CLI (see
+**3. Dedup and post survivors after all verify chains drain.** Once every verify
+agent has returned and been reaped, dedup the collected survivors before posting.
+If two survivors are true duplicates — same `file`+`line` describing the *same*
+issue — keep the clearest/highest-severity version, including its priority, and
+drop the duplicate. Post only this final survivor list via the `staff` CLI (see
 `/staff-comment` for the full form). Pipe the body via stdin so multi-line
 Markdown is safe, and always pass `--author` with **your model name** (e.g.
-`Opus 4.8`, `GPT-5.5`) and the finding's `--priority`:
+`Opus 4.8`, `GPT-5.5`) and the survivor's `--priority`:
 
 ```bash
 # inline (anchored). Omit --file/--line for a top-level finding. Add --end-line for a range.
@@ -175,6 +186,15 @@ cross-cutting (architecture, a missing migration, an overall coverage gap) with
 no single line to attach to, post it top-level (no `--file`/`--line`). Do **not**
 post a verdict/"LGTM"/recap that just restates the inline findings — if every
 finding has a home inline, post nothing extra.
+
+Once you've consumed a verify agent's verdicts and added any confirmed survivors
+to the in-memory list, **stop that verify agent's task too** (`TaskStop`) — don't
+leave finished agents open.
+
+Reaping on consume this way keeps the **live** sub-agent count at ~N (each find
+slot turns into a verify slot), never 2N. If `N` is large enough that launching
+all find agents at once would exceed the pool, launch them in batches and reap
+completed ones before starting more.
 
 Continue until **every** find chain and its verify agent have drained and all
 survivors are posted. Only then go to Step 5.
@@ -209,8 +229,13 @@ Then stop. Do not commit or modify code. The user will run `/staff-resolve` next
   chains run independently: a find agent's verifier and post don't wait on the
   other find agents. Spawn find and verify agents with `run_in_background` so you
   can react to each completion the moment it lands.
-- **Peak parallelism is ~`N` per stage.** N find agents run at once; their
-  verifiers overlap the slower finders, so concurrency can briefly reach ~2N.
+- **Reap each background agent as soon as you've consumed it.** Stop a find
+  agent's task (`TaskStop`) the instant you read its findings — then start its
+  verifier — and stop a verify agent's task once you've posted its survivors.
+  Finished agents left open keep holding slots in a **limited pool** and will trip
+  the sub-agent limit. Reaping on consume keeps the *live* count at ~`N` (a find
+  slot converts to a verify slot), not 2N; if `N` is large, launch finds in
+  batches so you never exceed the pool.
 - **No worktree isolation.** Sub-agents read the real working tree the diff
   points at; don't isolate them.
 - **Don't commit or modify code.** The review ends with comments posted.

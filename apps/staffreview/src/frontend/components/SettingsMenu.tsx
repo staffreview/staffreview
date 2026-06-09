@@ -244,8 +244,9 @@ export function SettingsMenu({
   // Hard cap on review→resolve rounds for the /staff-loop skill. Default and
   // bounds come from loop-config.ts, shared with the server (settings.ts).
   const [loopMaxRounds, setLoopMaxRoundsState] = useState<number>(DEFAULT_LOOP_ROUNDS);
-  // How many sub-agents /staff-review fans out per phase. Default + bounds from
-  // review-config.ts, shared with the server (settings.ts).
+  // Target live sub-agent count while /staff-review pipelines find agents into
+  // per-find verification. Default + bounds from review-config.ts, shared with
+  // the server (settings.ts).
   const [reviewAgents, setReviewAgentsState] = useState<number>(DEFAULT_REVIEW_AGENTS);
   // How many scout sub-agents /staff-docs fans out. Default + bounds from
   // docs-config.ts, shared with the server (settings.ts).

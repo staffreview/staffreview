@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Comment, FileDiff, Resolution } from "../../types.ts";
 import {
+  buildDiffRows,
   COLLAPSE_OVERRIDES_V1_KEY,
   collapseOverridesKey,
   computeActiveCommentedPaths,
   computeAutoCollapsed,
-  computeCommentLineIds,
   fileChangeStats,
   fileLineCount,
   groupFileCommentsByRootThread,
+  inlineRangesForPair,
   MAX_AUTO_EXPANDED_COMMENTED_FILES,
   MAX_AUTO_EXPANDED_FILES,
   MAX_AUTO_EXPANDED_LINES,
@@ -163,6 +164,26 @@ test("fileChangeStats reports +1/-1 for a final-newline-only change", () => {
   expect(stats).toEqual({ additions: 1, deletions: 1 });
 });
 
+test("buildDiffRows keeps final-newline-only changes as changed rows", () => {
+  const rows = buildDiffRows(
+    file("changed.ts", 1, {
+      oldContent: "a\nb\n",
+      newContent: "a\nb",
+    }),
+    true,
+  );
+  const eofRow = rows.find((row) => row.oldLine === 2 && row.newLine === 2);
+  expect(eofRow?.kind).toBe("changed");
+  expect(eofRow?.oldText).toBe("b");
+  expect(eofRow?.newText).toBe("b");
+});
+
+test("inlineRangesForPair skips oversized token pairs before structural diffing", () => {
+  const oldText = Array.from({ length: 600 }, (_, i) => `old${i}`).join(" ");
+  const newText = Array.from({ length: 600 }, (_, i) => `new${i}`).join(" ");
+  expect(inlineRangesForPair(oldText, newText)).toEqual({ oldRanges: [], newRanges: [] });
+});
+
 test("fileChangeStats handles added and deleted files", () => {
   expect(
     fileChangeStats(
@@ -209,7 +230,7 @@ test("fileChangeStats reports {0,0} for binary files", () => {
   ).toEqual({ additions: 0, deletions: 0 });
 });
 
-// ── computeCommentLineIds / computeActiveCommentedPaths ─────────────────────
+// ── comment grouping / computeActiveCommentedPaths ──────────────────────────
 
 const RESOLVED: Resolution = {
   status: "fixed",
@@ -247,53 +268,6 @@ function reply(threadId: string, extra: Partial<Comment> = {}): Comment {
     ...extra,
   };
 }
-
-test("computeCommentLineIds maps new-side to R and old-side to L", () => {
-  const ids = computeCommentLineIds([
-    [root({ side: "new", line: 12 })],
-    [root({ side: "old", line: 30 })],
-  ]);
-  expect(ids).toContain("R-12");
-  expect(ids).toContain("L-30");
-});
-
-test("computeCommentLineIds defaults a missing side to R (new)", () => {
-  const ids = computeCommentLineIds([[root({ side: undefined, line: 7 })]]);
-  expect(ids).toEqual(["R-7"]);
-});
-
-test("computeCommentLineIds emits two ids for a range comment (start and end)", () => {
-  const ids = computeCommentLineIds([[root({ side: "new", line: 5, endLine: 9 })]]);
-  expect(ids).toEqual(["R-5", "R-9"]);
-});
-
-test("computeCommentLineIds emits one id when endLine equals line", () => {
-  const ids = computeCommentLineIds([[root({ side: "new", line: 5, endLine: 5 })]]);
-  expect(ids).toEqual(["R-5"]);
-});
-
-test("computeCommentLineIds INCLUDES resolved roots so their anchor stays inline", () => {
-  const ids = computeCommentLineIds([[root({ line: 21, resolution: RESOLVED })]]);
-  expect(ids).toEqual(["R-21"]);
-});
-
-test("computeCommentLineIds dedupes ids shared across threads", () => {
-  const ids = computeCommentLineIds([
-    [root({ side: "new", line: 8 })],
-    [root({ side: "new", line: 8 })],
-  ]);
-  expect(ids).toEqual(["R-8"]);
-});
-
-test("computeCommentLineIds ignores threads whose root has no line (file-level)", () => {
-  const ids = computeCommentLineIds([[root({ line: undefined })]]);
-  expect(ids).toEqual([]);
-});
-
-test("computeCommentLineIds finds the root even when replies sort first", () => {
-  const thread: Comment[] = [reply("t1", { line: undefined }), root({ threadId: "t1", line: 14 })];
-  expect(computeCommentLineIds([thread])).toEqual(["R-14"]);
-});
 
 test("groupFileCommentsByRootThread keeps replies that omit file metadata", () => {
   const rootComment = root({ file: "a.ts", line: 14, threadId: "thread-a" });

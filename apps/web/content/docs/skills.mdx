@@ -10,12 +10,12 @@ standards.
 
 | Skill | What it does |
 | --- | --- |
-| `/staff-review` | Reviews the active diff with a fan-out of sub-agents, verifies their findings, and leaves inline comments. |
+| `/staff-review` | Reviews the active diff with find sub-agents, verifies each finder's output as it returns, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
 | `/staff-docs` | Mines past Staff Review diffs and GitHub PRs for recurring lessons and writes the best ones into `.staffreview/docs/`. |
-| `/staff-loop` | Reviews (find → verify → post) and then resolves the diff in sub-agents, round after round, until it converges. |
+| `/staff-loop` | Runs the same pipelined find → verify → post review flow, then resolves the diff in sub-agents round after round until it converges. |
 
 Three more are **building blocks**, not run directly: `/staff-review-find` (one
 find agent — reviews an assigned slice of the areas/docs and returns findings),
@@ -28,27 +28,28 @@ have to spawn a top-level skill as a sub-agent.
 ## /staff-review
 
 Conducts a staff-engineer-level review of the active diff as a **multi-agent
-orchestration**. It fans the work out across parallel sub-agents — each owning a
-slice of the ten review areas (correctness, edge cases, concurrency, security,
-data, interfaces, tests, consistency, readability, performance) and a slice of
-the [review docs](/docs/docs) — so a large diff and a growing docs both
-stay fast. A second wave of agents then **verifies every finding** against the
-code to drop false positives before anything is posted. Survivors land as inline
-comments, each with a **priority** (`P1` must-fix, `P2` should-fix, `P3` minor)
-so you can triage.
+orchestration**. It fans the work out across parallel find sub-agents — each
+owning a slice of the ten review areas (correctness, edge cases, concurrency,
+security, data, interfaces, tests, consistency, readability, performance) and a
+slice of the [review docs](/docs/docs) — so a large diff and a growing docs both
+stay fast. As each finder returns, the orchestrator stops that finished task,
+starts an independent verifier for just that finder’s results, drops false
+positives, and posts the confirmed survivors as inline comments with a
+**priority** (`P1` must-fix, `P2` should-fix, `P3` minor) so you can triage.
 
-How many agents it fans out per phase is the **`reviewAgents`** setting (default
-**2**, range 1–20, adjustable in the gear menu). You can also override it inline
-for a one-off — pass a bare number after the slug to tailor it to the change's
-size:
+The **`reviewAgents`** setting controls the find-agent fan-out width and the
+target live sub-agent count (default **2**, range 1–20, adjustable in the gear
+menu). You can also override it inline for a one-off — pass a bare number after
+the slug to tailor it to the change's size:
 
 ```text
 /staff-review main..WT        # uses the reviewAgents setting (default 2)
 /staff-review main..WT 6      # fan out wider for a big diff
 ```
 
-The review runs ~2× that many agents in total (a find wave, then a verify wave),
-which is why the cap is conservative.
+Each finder can still spawn one verifier, so the review may run up to ~2× that
+many agents in total, but they are pipelined and reaped as they finish; a find
+slot turns into a verify slot instead of waiting for a second wave.
 
 ## /staff-resolve
 

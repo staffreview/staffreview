@@ -51,6 +51,15 @@ function diffLineCount(value: string): number {
   return value === "" ? 0 : value.replace(/\n$/, "").split("\n").length;
 }
 
+function contentSignature(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${value.length}:${hash >>> 0}`;
+}
+
 export function fileChangeStats(file: FileDiff): { additions: number; deletions: number } {
   // Symlink and binary files render as a compact single row, not added/deleted
   // code lines, so a +/- badge would claim line changes that don't correspond
@@ -70,6 +79,8 @@ export function fileChangeStats(file: FileDiff): { additions: number; deletions:
 }
 
 const MIN_STRUCTURAL_LINE_SIMILARITY = 0.35;
+const MAX_INLINE_DIFF_LINE_LENGTH = 20_000;
+const MAX_INLINE_DIFF_TOKENS = 500;
 
 function tokens(value: string): string[] {
   return value.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
@@ -89,9 +100,7 @@ function lcsLength(left: string[], right: string[]): number {
   return previous[right.length];
 }
 
-function lineSimilarity(left: string, right: string): number {
-  const leftTokens = tokens(left);
-  const rightTokens = tokens(right);
+function lineSimilarity(leftTokens: string[], rightTokens: string[]): number {
   if (leftTokens.length === 0 || rightTokens.length === 0) return 0;
   return (2 * lcsLength(leftTokens, rightTokens)) / (leftTokens.length + rightTokens.length);
 }
@@ -266,43 +275,12 @@ export function groupFileCommentsByRootThread(comments: Comment[], filePath: str
  * Files that have at least one *active* (unresolved) line/range comment. These
  * are the higher-signal files `computeAutoCollapsed` will force-open under the
  * commented-file cap. Resolved roots are excluded on purpose — a resolved
- * thread shouldn't keep its whole file card expanded — but they're still kept
- * visible inline by `computeCommentLineIds` (see below).
+ * thread shouldn't keep its whole file card expanded — but grouped threads
+ * still get inline hosts inside the rendered diff when their anchor row exists.
  */
 export function computeActiveCommentedPaths(comments: Comment[]): Set<string> {
   return new Set(
     comments.filter((c) => !c.parentId && !c.resolution && c.file).map((c) => c.file as string),
-  );
-}
-
-/**
- * The line ids (`R<line>` / `L<line>`) the diff table must keep unfolded so
- * every comment's anchor row stays rendered even while surrounding context is
- * folded. Without this a comment on an unchanged line has no host row and its
- * thread is reachable only from the sidebar (see folded-comment.spec.ts).
- *
- * - Side maps to the diff gutter prefix: `new` → `R`, `old` → `L`.
- * - Range comments emit *two* ids — the start line and the end line — because
- *   the thread is hosted at `endLine` and both endpoints need rendered context.
- * - Resolved roots are intentionally INCLUDED here so a resolved comment on an
- *   unchanged context line still gets an inline host. (They're excluded from
- *   `computeActiveCommentedPaths` so they don't keep the whole file card open.)
- *
- * `threads` is the grouped output of `groupCommentsByThread` (each entry is one
- * thread's comments, root first or findable via `!parentId`).
- */
-export function computeCommentLineIds(threads: Comment[][]): string[] {
-  return Array.from(
-    new Set(
-      threads.flatMap((t) => {
-        const root = t.find((c) => !c.parentId);
-        if (!root?.line) return [];
-        const side = root.side === "old" ? "L" : "R";
-        const ids = [`${side}-${root.line}`];
-        if (root.endLine && root.endLine !== root.line) ids.push(`${side}-${root.endLine}`);
-        return ids;
-      }),
-    ),
   );
 }
 
@@ -452,10 +430,22 @@ type DiffRow = {
   newRanges: InlineRange[];
 };
 type DiffItem = { type: "row"; row: DiffRow } | { type: "fold"; key: string; count: number };
+type DiffLinePart = { text: string; hasTrailingNewline: boolean };
 
 function splitDiffLines(value: string): string[] {
   if (value === "") return [];
   return value.replace(/\n$/, "").split("\n");
+}
+
+function splitDiffLineParts(value: string): DiffLinePart[] {
+  if (value === "") return [];
+  const lines = value.split("\n");
+  const hasFinalNewline = value.endsWith("\n");
+  if (hasFinalNewline) lines.pop();
+  return lines.map((text, index) => ({
+    text,
+    hasTrailingNewline: index < lines.length - 1 || hasFinalNewline,
+  }));
 }
 
 function mergeInlineRanges(ranges: InlineRange[], text: string): InlineRange[] {
@@ -475,7 +465,7 @@ function mergeInlineRanges(ranges: InlineRange[], text: string): InlineRange[] {
   return merged;
 }
 
-function inlineRangesForPair(
+export function inlineRangesForPair(
   oldText: string,
   newText: string,
 ): {
@@ -483,8 +473,22 @@ function inlineRangesForPair(
   newRanges: InlineRange[];
 } {
   if (oldText === newText) return { newRanges: [], oldRanges: [] };
+  if (
+    oldText.length > MAX_INLINE_DIFF_LINE_LENGTH ||
+    newText.length > MAX_INLINE_DIFF_LINE_LENGTH
+  ) {
+    return { newRanges: [], oldRanges: [] };
+  }
+  const oldTokens = tokens(oldText);
+  const newTokens = tokens(newText);
+  if (oldTokens.length > MAX_INLINE_DIFF_TOKENS || newTokens.length > MAX_INLINE_DIFF_TOKENS) {
+    return { newRanges: [], oldRanges: [] };
+  }
   const sameExceptWhitespace = oldText.replace(/\s+/g, "") === newText.replace(/\s+/g, "");
-  if (!sameExceptWhitespace && lineSimilarity(oldText, newText) < MIN_STRUCTURAL_LINE_SIMILARITY) {
+  if (
+    !sameExceptWhitespace &&
+    lineSimilarity(oldTokens, newTokens) < MIN_STRUCTURAL_LINE_SIMILARITY
+  ) {
     return { newRanges: [], oldRanges: [] };
   }
   const changes = presentableDiff(oldText, newText, { scanLimit: 500, timeout: 20 });
@@ -504,7 +508,7 @@ function inlineRangesForPair(
   };
 }
 
-function buildDiffRows(file: FileDiff, structuredHighlighting: boolean): DiffRow[] {
+export function buildDiffRows(file: FileDiff, structuredHighlighting: boolean): DiffRow[] {
   const rows: DiffRow[] = [];
   const changes = diffLines(file.oldContent, file.newContent);
   let oldLine = 1;
@@ -512,23 +516,30 @@ function buildDiffRows(file: FileDiff, structuredHighlighting: boolean): DiffRow
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i]!;
     if (change.removed && changes[i + 1]?.added) {
-      const removedLines = splitDiffLines(change.value);
-      const addedLines = splitDiffLines(changes[i + 1]!.value);
+      const removedLines = splitDiffLineParts(change.value);
+      const addedLines = splitDiffLineParts(changes[i + 1]!.value);
       const pairCount = Math.max(removedLines.length, addedLines.length);
       for (let j = 0; j < pairCount; j++) {
-        const oldText = removedLines[j];
-        const newText = addedLines[j];
-        const rowOldLine = oldText === undefined ? undefined : oldLine++;
-        const rowNewLine = newText === undefined ? undefined : newLine++;
+        const oldPart = removedLines[j];
+        const newPart = addedLines[j];
+        const oldText = oldPart?.text;
+        const newText = newPart?.text;
+        const rowOldLine = oldPart === undefined ? undefined : oldLine++;
+        const rowNewLine = newPart === undefined ? undefined : newLine++;
         const inline =
           structuredHighlighting && oldText !== undefined && newText !== undefined
             ? inlineRangesForPair(oldText, newText)
             : { newRanges: [], oldRanges: [] };
+        const sameLine =
+          oldText !== undefined &&
+          newText !== undefined &&
+          oldText === newText &&
+          oldPart?.hasTrailingNewline === newPart?.hasTrailingNewline;
         rows.push({
           key: `${rowOldLine ?? "-"}:${rowNewLine ?? "-"}:${rows.length}`,
           kind:
             oldText !== undefined && newText !== undefined
-              ? oldText === newText
+              ? sameLine
                 ? "context"
                 : "changed"
               : oldText !== undefined
@@ -674,10 +685,15 @@ export function DiffFile({
     setCollapsed((prev) => (prev ? false : prev));
   }, [autoCollapsed, file.path, slug]);
 
+  const shouldRenderTextDiff = !collapsed && !file.isSymlink && !file.isBinary;
   const diffRef = useRef<HTMLDivElement>(null);
   const [highlighter, setHighlighter] = useState<StaffHighlighter | null>(null);
   const lang = useMemo(() => langForPath(file.path), [file.path]);
   useEffect(() => {
+    if (!shouldRenderTextDiff) {
+      setHighlighter(null);
+      return;
+    }
     let cancelled = false;
     setHighlighter(null);
     (async () => {
@@ -691,7 +707,7 @@ export function DiffFile({
     return () => {
       cancelled = true;
     };
-  }, [lang, syntaxTheme]);
+  }, [lang, shouldRenderTextDiff, syntaxTheme]);
 
   const closeComposer = (target: ComposingTarget) => {
     setComposingLines((prev) => prev.filter((t) => composingKey(t) !== composingKey(target)));
@@ -720,10 +736,10 @@ export function DiffFile({
     return !r?.line;
   });
 
-  // Keep line-comment anchors visible even while unchanged context is folded
-  // (resolved roots included — see computeCommentLineIds). For range comments,
-  // reveal the start and end lines so the hosted thread and its range endpoints
-  // stay visible without expanding the whole file.
+  // Keep line-comment anchors visible even while unchanged context is folded.
+  // Resolved roots are included so their inline hosts stay rendered. For range
+  // comments, reveal the start and end lines so the hosted thread and its range
+  // endpoints stay visible without expanding the whole file.
   const allContextExpanded = expandedByDefault || contextExpanded;
 
   function toggleFoldedContext() {
@@ -1106,20 +1122,49 @@ export function DiffFile({
     return () => window.removeEventListener("hashchange", apply);
   }, [collapsed, file.path, file.oldContent, file.newContent]);
 
-  const diffRows = useMemo(
-    () => buildDiffRows(file, structuredHighlighting),
-    [file, structuredHighlighting],
-  );
+  const diffRows = useMemo(() => {
+    if (!shouldRenderTextDiff) return [];
+    return buildDiffRows(file, structuredHighlighting);
+  }, [file, shouldRenderTextDiff, structuredHighlighting]);
   const inlineTargetMap = useMemo(() => new Map(inlineLines), [inlineLines]);
   const forceVisibleLines = useMemo(
     () =>
-      new Set(inlineLines.map(([, target]) => `${target.side}:${target.endLine ?? target.line}`)),
+      new Set(
+        inlineLines.flatMap(([, target]) => {
+          const lines = [`${target.side}:${target.line}`];
+          if (target.endLine && target.endLine !== target.line) {
+            lines.push(`${target.side}:${target.endLine}`);
+          }
+          return lines;
+        }),
+      ),
     [inlineLines],
   );
   const diffItems = useMemo(
     () => buildVisibleDiffItems(diffRows, allContextExpanded, forceVisibleLines),
     [diffRows, allContextExpanded, forceVisibleLines],
   );
+  const noWrapMeasureKey = useMemo(() => {
+    if (!shouldRenderTextDiff) return "unmounted";
+    if (wrapLines) return "wrapped";
+    return [
+      file.path,
+      file.status,
+      contentSignature(file.oldContent),
+      contentSignature(file.newContent),
+      allContextExpanded ? "expanded" : "folded",
+      Array.from(forceVisibleLines).sort().join(","),
+    ].join("\0");
+  }, [
+    allContextExpanded,
+    file.newContent,
+    file.oldContent,
+    file.path,
+    file.status,
+    forceVisibleLines,
+    shouldRenderTextDiff,
+    wrapLines,
+  ]);
   const [xScrollable, setXScrollable] = useState(false);
   const scrollResetKeyRef = useRef("");
 
@@ -1145,8 +1190,11 @@ export function DiffFile({
   });
 
   useLayoutEffect(() => {
+    // Content and folded-row changes need a fresh no-wrap measurement even
+    // when neither the container nor table reports a resize.
+    void noWrapMeasureKey;
     const container = diffRef.current;
-    if (!container || collapsed || wrapLines || file.isSymlink || file.isBinary) {
+    if (!container || !shouldRenderTextDiff || wrapLines) {
       container?.style.removeProperty("--staff-code-fold-left");
       container?.style.removeProperty("--staff-diff-client-width");
       container?.style.removeProperty("--staff-diff-half-width");
@@ -1159,9 +1207,21 @@ export function DiffFile({
       return;
     }
 
-    let frame = 0;
+    let measureFrame = 0;
+    let scrollFrame = 0;
+    const writeScrollLeft = () => {
+      container.style.setProperty("--staff-diff-scroll-left", `${container.scrollLeft}px`);
+    };
+    const syncScrollLeft = () => {
+      scrollFrame = 0;
+      writeScrollLeft();
+      plusKeyRef.current = null;
+      lastPlusAnchor.current = null;
+      lastHoveredTr.current = null;
+      setPlus(null);
+    };
     const measure = () => {
-      frame = 0;
+      measureFrame = 0;
       const halfWidth = container.clientWidth / 2;
       const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - 76) : 0;
       const unifiedContentWidth = splitView ? 0 : Math.max(1, container.clientWidth - 76);
@@ -1184,37 +1244,65 @@ export function DiffFile({
       container.style.setProperty("--staff-diff-half-width", `${halfWidth}px`);
       container.style.setProperty("--staff-diff-pane-content-width", `${splitPaneContentWidth}px`);
       container.style.setProperty("--staff-diff-unified-content-width", `${unifiedContentWidth}px`);
-      container.style.setProperty("--staff-diff-scroll-left", `${container.scrollLeft}px`);
+      writeScrollLeft();
       container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
       const next = scrollMax > 1;
       setXScrollable((prev) => (prev === next ? prev : next));
     };
-    const schedule = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(measure);
+    const scheduleMeasure = () => {
+      if (measureFrame) return;
+      measureFrame = window.requestAnimationFrame(measure);
+    };
+    const scheduleScrollSync = () => {
+      if (scrollFrame) return;
+      scrollFrame = window.requestAnimationFrame(syncScrollLeft);
     };
 
-    schedule();
-    container.addEventListener("scroll", schedule, { passive: true });
+    scheduleMeasure();
+    container.addEventListener("scroll", scheduleScrollSync, { passive: true });
     if (typeof ResizeObserver === "undefined") {
       return () => {
-        container.removeEventListener("scroll", schedule);
-        if (frame) window.cancelAnimationFrame(frame);
+        container.removeEventListener("scroll", scheduleScrollSync);
+        if (measureFrame) window.cancelAnimationFrame(measureFrame);
+        if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
       };
     }
-    const observer = new ResizeObserver(schedule);
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(container);
     const table = container.querySelector("table");
     if (table) observer.observe(table);
     return () => {
-      container.removeEventListener("scroll", schedule);
-      if (frame) window.cancelAnimationFrame(frame);
+      container.removeEventListener("scroll", scheduleScrollSync);
+      if (measureFrame) window.cancelAnimationFrame(measureFrame);
+      if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
       observer.disconnect();
     };
-  }, [collapsed, file.isBinary, file.isSymlink, splitView, wrapLines]);
+  }, [noWrapMeasureKey, shouldRenderTextDiff, splitView, wrapLines]);
+
+  const anchoredRangeRowKeys = useMemo(() => {
+    if (!anchored || anchored.startLine === anchored.endLine) return null;
+    const endpointIndexes: number[] = [];
+    diffItems.forEach((item, index) => {
+      if (item.type !== "row") return;
+      const line = anchored.side === "old" ? item.row.oldLine : item.row.newLine;
+      if (line === anchored.startLine || line === anchored.endLine) {
+        endpointIndexes.push(index);
+      }
+    });
+    if (endpointIndexes.length < 2) return null;
+    const first = Math.min(...endpointIndexes);
+    const last = Math.max(...endpointIndexes);
+    const keys = new Set<string>();
+    for (let i = first; i <= last; i++) {
+      const item = diffItems[i];
+      if (item?.type === "row") keys.add(item.row.key);
+    }
+    return keys;
+  }, [anchored, diffItems]);
 
   function rowAnchored(row: DiffRow): boolean {
     if (!anchored) return false;
+    if (anchoredRangeRowKeys?.has(row.key)) return true;
     const lo = Math.min(anchored.startLine, anchored.endLine);
     const hi = Math.max(anchored.startLine, anchored.endLine);
     const line = anchored.side === "old" ? row.oldLine : row.newLine;
@@ -1475,7 +1563,15 @@ export function DiffFile({
           className="react-diff-line"
           data-anchored={rowAnchored(newOnlyRow) ? "true" : undefined}
         >
-          {renderGutterCell("new", row.newLine, status, true, undefined, undefined, row.newLine)}
+          {renderGutterCell(
+            "new",
+            row.newLine,
+            status,
+            true,
+            undefined,
+            newOnlyRow.oldLine,
+            row.newLine,
+          )}
           {renderMarkerCell("new")}
           {renderContentCell(row.newText, row.newRanges, status)}
         </tr>,

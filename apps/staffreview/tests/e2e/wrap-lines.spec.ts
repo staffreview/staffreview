@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { resetDiffsJson, staff } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -311,6 +311,68 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
   );
 });
 
+test("no-wrap split fixed inline comments span the diff width", async ({ page }) => {
+  await openFeatureDiff(page);
+
+  const out = await staff([
+    "comment",
+    "add",
+    "--file",
+    "wrapme.ts",
+    "--line",
+    "15",
+    "--side",
+    "new",
+    "--body",
+    "fixed inline width",
+    "--author",
+    "cli",
+  ]);
+  const comment = JSON.parse(out);
+  await staff([
+    "comment",
+    "resolve",
+    "--thread",
+    comment.threadId,
+    "--status",
+    "fixed",
+    "--body",
+    "Fixed.",
+    "--author",
+    "cli",
+  ]);
+  await staff(["settings", "set", "wrapLines", "false"]);
+
+  await page.reload();
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  await expect(staffDiff).toHaveClass(/staff-diff-split/);
+  await expect(page.locator(`[data-thread-id="${comment.threadId}"]`)).toBeVisible();
+
+  const geometry = await staffDiff.evaluate((diff, threadId) => {
+    const host = diff.querySelector(`[data-thread-id="${threadId}"]`) as HTMLElement | null;
+    const threadCard = host?.querySelector('[data-thread-card="true"]') as HTMLElement | null;
+    if (!host || !threadCard) return null;
+    const diffRect = diff.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const cardRect = threadCard.getBoundingClientRect();
+    return {
+      diffWidth: Math.round(diffRect.width),
+      hostWidth: Math.round(hostRect.width),
+      cardWidth: Math.round(cardRect.width),
+    };
+  }, comment.threadId);
+
+  expect(geometry).not.toBeNull();
+  expect(geometry!.hostWidth, JSON.stringify(geometry)).toBeGreaterThanOrEqual(
+    geometry!.diffWidth - 2,
+  );
+  expect(geometry!.cardWidth, JSON.stringify(geometry)).toBeGreaterThanOrEqual(
+    geometry!.diffWidth - 28,
+  );
+});
+
 test("no-wrap split keeps code text visible while horizontally scrolling", async ({ page }) => {
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");
@@ -406,14 +468,17 @@ test("no-wrap keeps the comment button pinned beside the sticky gutter after hor
   await page.keyboard.press("Escape");
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
 
+  const gutter = card.locator(".staff-gutter.diff-added").first();
+  await gutter.hover();
+  const plus = card.locator("[data-staff-plus]");
+  await expect(plus).toBeVisible();
+
   await staffDiff.evaluate((el) => {
     el.scrollLeft = 700;
   });
   await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
 
-  const gutter = card.locator(".staff-gutter.diff-added").first();
   await gutter.hover();
-  const plus = card.locator("[data-staff-plus]");
   await expect(plus).toBeVisible();
 
   const placement = await plus.evaluate((button) => {
@@ -832,7 +897,9 @@ test("no-wrap unified fills the pane tint with no spurious scroll for short line
   await expect(staffDiff).toHaveCSS("overflow-x", "clip");
 });
 
-test("Wrap lines preference persists across reload", async ({ page }) => {
+test("Wrap lines preference persists across reload and can be set by CLI", async ({ page }) => {
+  expect((await staff(["settings", "get", "wrapLines"])).trim()).toBe("true");
+
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
@@ -853,4 +920,12 @@ test("Wrap lines preference persists across reload", async ({ page }) => {
   );
   await page.getByTestId("settings-menu-button").click();
   await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "false");
+
+  expect((await staff(["settings", "set", "wrapLines", "true"])).trim()).toBe("wrapLines: true");
+  await page.reload();
+  await openFeatureDiff(page);
+  const reloadedCard = page.getByTestId("file-card-wrapme.ts");
+  await expect(reloadedCard.locator(".staff-diff")).not.toHaveClass(/staff-diff-nowrap/);
+  await page.getByTestId("settings-menu-button").click();
+  await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "true");
 });

@@ -75,8 +75,15 @@ test("unified layout uses one gutter with a dash for deleted lines", async ({ pa
   await page.getByTestId("view-mode-unified").click();
 
   const bigCard = page.getByTestId("file-card-big.ts");
+  const contextRow = bigCard.locator("table tbody tr", { hasText: "const v18 = 18;" }).first();
   const deletedRow = bigCard.locator("table tbody tr", { hasText: "const v20 = 20;" }).first();
   const addedRow = bigCard.locator("table tbody tr", { hasText: "const v20 = 200;" }).first();
+
+  await expect(contextRow.locator("td:visible")).toHaveCount(3);
+  await expect(contextRow.locator("td:visible").first()).toHaveText("19");
+  await expect(contextRow.locator("td:visible").first()).toHaveAttribute("data-side", "new");
+  await expect(contextRow.locator("td:visible").first()).toHaveAttribute("data-old-line", "19");
+  await expect(contextRow.locator("td:visible").first()).toHaveAttribute("data-new-line", "19");
 
   await expect(deletedRow.locator("td:visible")).toHaveCount(3);
   await expect(deletedRow.locator("td:visible").first()).toHaveText("-");
@@ -123,4 +130,38 @@ test("unified layout uses one gutter with a dash for deleted lines", async ({ pa
   expect(plusBox).not.toBeNull();
   expect(cardBox).not.toBeNull();
   expect(plusBox?.x ?? 0).toBeGreaterThanOrEqual((cardBox?.x ?? 0) - 2);
+});
+
+test("unified range anchors include changed rows between the endpoints", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("target-picker-head-button").click();
+  await page.getByRole("option", { name: /feature\/improve-math/ }).click();
+  await expect(page.getByText("big.ts", { exact: true }).first()).toBeVisible();
+
+  await openGear(page);
+  await page.getByTestId("view-mode-unified").click();
+  await page.keyboard.press("Escape");
+
+  const bigCard = page.getByTestId("file-card-big.ts");
+  const contextBefore = bigCard.locator("table tbody tr", { hasText: "const v19 = 19;" }).first();
+  const deletedRow = bigCard.locator("table tbody tr", { hasText: "const v20 = 20;" }).first();
+  const addedRow = bigCard.locator("table tbody tr", { hasText: "const v20 = 200;" }).first();
+  const contextAfter = bigCard.locator("table tbody tr", { hasText: "const v21 = 21;" }).first();
+
+  await expect(bigCard.locator(".staff-diff")).toHaveClass(/staff-diff-unified/);
+  await expect(contextBefore).toBeVisible();
+  await expect(deletedRow).toBeVisible();
+  await expect(addedRow).toBeVisible();
+  await expect(contextAfter).toBeVisible();
+
+  await page.evaluate(() => {
+    window.location.hash = "big.ts:L20-L22";
+  });
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe("#big.ts:L20-L22");
+
+  await expect(contextBefore).toHaveAttribute("data-anchored", "true");
+  await expect(deletedRow).toHaveAttribute("data-anchored", "true");
+  await expect(addedRow).toHaveAttribute("data-anchored", "true");
+  await expect(contextAfter).toHaveAttribute("data-anchored", "true");
+  await expect(bigCard.locator('table tbody tr[data-anchored="true"]')).toHaveCount(4);
 });
