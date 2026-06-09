@@ -1151,6 +1151,7 @@ export function DiffFile({
       container?.style.removeProperty("--staff-diff-client-width");
       container?.style.removeProperty("--staff-diff-half-width");
       container?.style.removeProperty("--staff-diff-pane-content-width");
+      container?.style.removeProperty("--staff-diff-unified-content-width");
       container?.style.removeProperty("--staff-diff-scroll-left");
       container?.style.removeProperty("--staff-diff-scroll-max");
       container?.style.removeProperty("--staff-diff-scroll-width");
@@ -1163,39 +1164,29 @@ export function DiffFile({
       frame = 0;
       const halfWidth = container.clientWidth / 2;
       const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - 76) : 0;
-      let splitScrollMax = 0;
-      if (splitView) {
-        const contentNodes = Array.from(
-          container.querySelectorAll<HTMLElement>(".staff-content-text"),
-        );
-        const maxTextWidth = Math.max(
-          0,
-          ...contentNodes.map((node) => node.getBoundingClientRect().width),
-        );
-        splitScrollMax = Math.max(0, Math.ceil(maxTextWidth - splitPaneContentWidth + 12));
-      }
-      if (splitView) {
-        container.style.setProperty("--staff-diff-scroll-max", `${splitScrollMax}px`);
-        container.style.setProperty(
-          "--staff-diff-scroll-width",
-          `${container.clientWidth + splitScrollMax}px`,
-        );
-        if (container.scrollLeft > splitScrollMax) container.scrollLeft = splitScrollMax;
-      } else {
-        container.style.removeProperty("--staff-diff-scroll-max");
-        container.style.removeProperty("--staff-diff-scroll-width");
-      }
+      const unifiedContentWidth = splitView ? 0 : Math.max(1, container.clientWidth - 76);
+      const contentNodes = Array.from(
+        container.querySelectorAll<HTMLElement>(".staff-content-text"),
+      );
+      const maxTextWidth = Math.max(
+        0,
+        ...contentNodes.map((node) => node.getBoundingClientRect().width),
+      );
+      const visibleContentWidth = splitView ? splitPaneContentWidth : unifiedContentWidth;
+      const scrollMax = Math.max(0, Math.ceil(maxTextWidth - visibleContentWidth + 12));
+      container.style.setProperty("--staff-diff-scroll-max", `${scrollMax}px`);
+      container.style.setProperty(
+        "--staff-diff-scroll-width",
+        `${container.clientWidth + scrollMax}px`,
+      );
+      if (container.scrollLeft > scrollMax) container.scrollLeft = scrollMax;
       container.style.setProperty("--staff-diff-client-width", `${container.clientWidth}px`);
       container.style.setProperty("--staff-diff-half-width", `${halfWidth}px`);
       container.style.setProperty("--staff-diff-pane-content-width", `${splitPaneContentWidth}px`);
+      container.style.setProperty("--staff-diff-unified-content-width", `${unifiedContentWidth}px`);
       container.style.setProperty("--staff-diff-scroll-left", `${container.scrollLeft}px`);
-      container.style.setProperty(
-        "--staff-code-fold-left",
-        `${splitView ? container.clientWidth / 2 : container.scrollLeft + container.clientWidth / 2}px`,
-      );
-      const next = splitView
-        ? splitScrollMax > 1
-        : container.scrollWidth - container.clientWidth > 1;
+      container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
+      const next = scrollMax > 1;
       setXScrollable((prev) => (prev === next ? prev : next));
     };
     const schedule = () => {

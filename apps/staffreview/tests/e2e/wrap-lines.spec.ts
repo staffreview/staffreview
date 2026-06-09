@@ -24,6 +24,47 @@ function contentWhiteSpace(card: import("@playwright/test").Locator) {
     .evaluate((el) => getComputedStyle(el).whiteSpace);
 }
 
+function visibleGlyphCoverageScript() {
+  return (el: HTMLElement) => {
+    const clipTextPairs = [...el.querySelectorAll(".staff-content-clip")]
+      .map((clipNode) => {
+        const clip = clipNode as HTMLElement;
+        const text = clip.querySelector(".staff-content-text") as HTMLElement | null;
+        return text ? { clip, text } : null;
+      })
+      .filter((pair): pair is { clip: HTMLElement; text: HTMLElement } => Boolean(pair));
+    const visibleWidths = clipTextPairs.map(({ clip, text }) => {
+      const clipRect = clip.getBoundingClientRect();
+      const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+      let visibleWidth = 0;
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) {
+          const width = Math.max(
+            0,
+            Math.min(rect.right, clipRect.right) - Math.max(rect.left, clipRect.left),
+          );
+          const height = Math.max(
+            0,
+            Math.min(rect.bottom, clipRect.bottom) - Math.max(rect.top, clipRect.top),
+          );
+          if (height > 0) visibleWidth += width;
+        }
+        range.detach();
+      }
+      return Math.round(visibleWidth);
+    });
+    return {
+      scrollLeft: Math.round(el.scrollLeft),
+      visibleWidths,
+      visibleGlyphCells: visibleWidths.filter((width) => width > 8).length,
+    };
+  };
+}
+
 test("Wrap lines is on by default and the long line wraps", async ({ page }) => {
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");
@@ -268,6 +309,32 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
   expect(endScroll.scrollWidth - endScroll.clientWidth, JSON.stringify(endScroll)).toBeGreaterThan(
     endScroll.widestTextWidth - endScroll.paneWidth,
   );
+});
+
+test("no-wrap split keeps code text visible while horizontally scrolling", async ({ page }) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  const postSettings = page.waitForResponse(
+    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+  );
+  await page.getByTestId("wrap-lines-toggle").click();
+  await postSettings;
+  await page.keyboard.press("Escape");
+
+  await expect(staffDiff).toHaveClass(/staff-diff-split/);
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  for (const left of [0, 250, 700]) {
+    await staffDiff.evaluate((el, scrollLeft) => {
+      el.scrollLeft = scrollLeft;
+    }, left);
+    await page.waitForTimeout(50);
+    const coverage = await staffDiff.evaluate(visibleGlyphCoverageScript());
+    expect(coverage.visibleGlyphCells, JSON.stringify(coverage)).toBeGreaterThan(0);
+  }
 });
 
 test("no-wrap keeps the fold pill centered on the card, not the wide table", async ({ page }) => {
@@ -516,6 +583,135 @@ test("no-wrap also overflows and scrolls in unified layout", async ({ page }) =>
   await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
 });
 
+test("no-wrap unified keeps code text visible while horizontally scrolling", async ({ page }) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
+    const postSettings = page.waitForResponse(
+      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+    );
+    await page.getByTestId(testId).click();
+    await postSettings;
+  }
+  await page.keyboard.press("Escape");
+
+  await expect(staffDiff).toHaveClass(/staff-diff-unified/);
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  for (const left of [0, 250, 700]) {
+    await staffDiff.evaluate((el, scrollLeft) => {
+      el.scrollLeft = scrollLeft;
+    }, left);
+    await page.waitForTimeout(50);
+    const coverage = await staffDiff.evaluate(visibleGlyphCoverageScript());
+    expect(coverage.visibleGlyphCells, JSON.stringify(coverage)).toBeGreaterThan(0);
+  }
+});
+
+test("no-wrap unified keeps the gutter fixed while clipping code to the pane", async ({ page }) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
+    const postSettings = page.waitForResponse(
+      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+    );
+    await page.getByTestId(testId).click();
+    await postSettings;
+  }
+  await page.keyboard.press("Escape");
+
+  await expect(staffDiff).toHaveClass(/staff-diff-unified/);
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  const scrollSamples = await staffDiff.evaluate(async (el) => {
+    const sample = () => {
+      const diffRect = el.getBoundingClientRect();
+      const gutter = el.querySelector(".staff-gutter-unified") as HTMLElement;
+      const marker = el.querySelector(".staff-marker") as HTMLElement;
+      const content = el.querySelector(".staff-content") as HTMLElement;
+      const rect = (node: HTMLElement) => {
+        const r = node.getBoundingClientRect();
+        return {
+          left: Math.round(r.left - diffRect.left),
+          right: Math.round(r.right - diffRect.left),
+          width: Math.round(r.width),
+        };
+      };
+      return {
+        scrollLeft: Math.round(el.scrollLeft),
+        gutter: rect(gutter),
+        marker: rect(marker),
+        content: rect(content),
+      };
+    };
+    const samples = [];
+    for (const left of [0, 250, 700]) {
+      el.scrollLeft = left;
+      await new Promise(requestAnimationFrame);
+      samples.push(sample());
+    }
+    return samples;
+  });
+  for (const sample of scrollSamples) {
+    expect(sample.gutter.left, JSON.stringify(scrollSamples)).toBe(0);
+    expect(sample.gutter.width, JSON.stringify(scrollSamples)).toBe(52);
+    expect(sample.marker.left, JSON.stringify(scrollSamples)).toBe(52);
+    expect(sample.marker.width, JSON.stringify(scrollSamples)).toBe(24);
+    expect(sample.content.left, JSON.stringify(scrollSamples)).toBe(76);
+  }
+});
+
+test("no-wrap unified keeps the fold rule and pill fixed while horizontally scrolling", async ({
+  page,
+}) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-wrapme.ts");
+  const staffDiff = card.locator(".staff-diff");
+  const foldPill = card.locator('button[class*="code-fold-expand-button"]').first();
+  await expect(foldPill).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("settings-menu-button").click();
+  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
+    const postSettings = page.waitForResponse(
+      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+    );
+    await page.getByTestId(testId).click();
+    await postSettings;
+  }
+  await page.keyboard.press("Escape");
+
+  await expect(staffDiff).toHaveClass(/staff-diff-unified/);
+  await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
+  await staffDiff.evaluate((el) => {
+    el.scrollLeft = 800;
+  });
+  await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+
+  const geometry = await foldPill.evaluate((btn) => {
+    const diff = btn.closest(".staff-diff") as HTMLElement;
+    const cell = btn.closest("td") as HTMLElement;
+    const diffRect = diff.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const buttonRect = btn.getBoundingClientRect();
+    return {
+      diffWidth: Math.round(diffRect.width),
+      scrollLeft: Math.round(diff.scrollLeft),
+      cellLeft: Math.round(cellRect.left - diffRect.left),
+      cellRight: Math.round(cellRect.right - diffRect.left),
+      buttonCenter: Math.round(buttonRect.left + buttonRect.width / 2 - diffRect.left),
+    };
+  });
+  expect(geometry.cellLeft, JSON.stringify(geometry)).toBe(0);
+  expect(geometry.cellRight, JSON.stringify(geometry)).toBe(geometry.diffWidth);
+  expect(Math.abs(geometry.buttonCenter - geometry.diffWidth / 2)).toBeLessThanOrEqual(1);
+});
+
 test("no-wrap unified keeps changed-line tint behind the full long line", async ({ page }) => {
   await openFeatureDiff(page);
   const card = page.getByTestId("file-card-wrapme.ts");
@@ -541,33 +737,41 @@ test("no-wrap unified keeps changed-line tint behind the full long line", async 
       c.textContent?.includes("!!"),
     ) as HTMLElement | undefined;
     if (!cell) throw new Error("missing long added line");
+    const clip = cell.querySelector(".staff-content-clip") as HTMLElement | null;
+    if (!clip) throw new Error("missing long added line clip");
     const text = cell.querySelector('[class*="content-text"]') as HTMLElement | null;
     if (!text) throw new Error("missing long added line text");
     const cellRect = cell.getBoundingClientRect();
+    const clipRect = clip.getBoundingClientRect();
     const textRect = text.getBoundingClientRect();
-    return Math.round(textRect.right - cellRect.right);
+    return {
+      clipRightGap: Math.round(cellRect.right - clipRect.right),
+      clipOverflowX: getComputedStyle(clip).overflowX,
+      textOverflowsClip: Math.round(textRect.right - clipRect.right),
+    };
   });
-  expect(coverage).toBeLessThanOrEqual(1);
+  expect(Math.abs(coverage.clipRightGap), JSON.stringify(coverage)).toBeLessThanOrEqual(1);
+  expect(coverage.clipOverflowX, JSON.stringify(coverage)).toBe("hidden");
+  expect(coverage.textOverflowsClip, JSON.stringify(coverage)).toBeGreaterThan(100);
 
   await card.scrollIntoViewIfNeeded();
   await staffDiff.evaluate((el) => {
     el.scrollLeft = el.scrollWidth;
   });
   await expect.poll(() => staffDiff.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
-  const rightEdgeHit = await staffDiff.evaluate((el) => {
+  const rightEdgeCoverage = await staffDiff.evaluate((el) => {
     const cell = [...el.querySelectorAll('td[class*="content"][class*="diff-added"]')].find((c) =>
       c.textContent?.includes("!!"),
     ) as HTMLElement | undefined;
     if (!cell) throw new Error("missing long added line");
     const table = el.querySelector("table") as HTMLElement | null;
+    const row = cell.closest("tr") as HTMLElement | null;
     const cellRect = cell.getBoundingClientRect();
     const containerRect = el.getBoundingClientRect();
     const tableRect = table?.getBoundingClientRect();
-    const x = Math.min(containerRect.right - 8, cellRect.right + 24);
-    const y = cellRect.top + cellRect.height / 2;
-    const hit = document.elementFromPoint(x, y);
+    const cellBackground = getComputedStyle(cell).backgroundColor;
+    const rowBackground = row ? getComputedStyle(row).backgroundColor : "";
     return {
-      className: (hit as HTMLElement | null)?.className?.toString() ?? "",
       cellRight: Math.round(cellRect.right),
       containerRight: Math.round(containerRect.right),
       tableRight: tableRect ? Math.round(tableRect.right) : null,
@@ -576,15 +780,17 @@ test("no-wrap unified keeps changed-line tint behind the full long line", async 
       clientWidth: el.clientWidth,
       tableMinWidth: table ? getComputedStyle(table).minWidth : null,
       gapToRightEdge: Math.round(containerRect.right - cellRect.right),
-      hitChangedCell: Boolean(
-        hit?.closest(
-          'td[class*="content"][class*="diff-added"], td[class*="content"][class*="diff-removed"]',
-        ),
-      ),
+      cellBackground,
+      rowBackground,
+      hasChangedTint:
+        cellBackground !== "rgba(0, 0, 0, 0)" ||
+        (rowBackground !== "" && rowBackground !== "rgba(0, 0, 0, 0)"),
     };
   });
-  expect(rightEdgeHit.gapToRightEdge, JSON.stringify(rightEdgeHit)).toBeLessThanOrEqual(1);
-  expect(rightEdgeHit.hitChangedCell, JSON.stringify(rightEdgeHit)).toBe(true);
+  expect(rightEdgeCoverage.gapToRightEdge, JSON.stringify(rightEdgeCoverage)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(rightEdgeCoverage.hasChangedTint, JSON.stringify(rightEdgeCoverage)).toBe(true);
 });
 
 test("no-wrap unified fills the pane tint with no spurious scroll for short lines", async ({
