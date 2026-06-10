@@ -170,7 +170,7 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
     return (
       <div
         className={cn(
-          "min-w-0 overflow-hidden rounded-md border border-border bg-muted/40",
+          "min-w-0 overflow-hidden rounded-md border border-border bg-muted/40 transition-[border-color,box-shadow] has-[[data-thread-collapsed-toggle]:focus-visible]:border-ring has-[[data-thread-collapsed-toggle]:focus-visible]:ring-[3px] has-[[data-thread-collapsed-toggle]:focus-visible]:ring-ring/50",
           className,
         )}
         data-thread-card="true"
@@ -184,8 +184,9 @@ export function CommentThread({ slug, comments, className, context, onChange }: 
             type="button"
             aria-expanded={collapsedExpanded}
             onClick={() => setCollapsedExpanded((v) => !v)}
+            data-thread-collapsed-toggle
             data-testid={`thread-collapsed-toggle-${resolution.status}`}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground outline-none"
           >
             {collapsedExpanded ? (
               <ChevronDown className="h-3 w-3 shrink-0" />
@@ -418,21 +419,23 @@ function CommentBubble({
         )}
       >
         {collapsible && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand thread" : "Collapse thread"}
             title={collapsed ? "Expand" : "Collapse"}
             onClick={onToggleCollapse}
             data-testid="thread-collapse-toggle"
-            className="-ml-1 flex items-center text-muted-foreground hover:text-foreground"
+            className="-ml-1 text-muted-foreground hover:text-foreground"
           >
             {collapsed ? (
               <ChevronRight className="h-3 w-3 shrink-0" />
             ) : (
               <ChevronDown className="h-3 w-3 shrink-0" />
             )}
-          </button>
+          </Button>
         )}
         {comment.priority && priorityBadge(comment.priority)}
         <span className="min-w-0 truncate font-medium text-foreground">{comment.author}</span>

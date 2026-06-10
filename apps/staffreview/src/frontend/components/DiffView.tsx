@@ -1474,7 +1474,7 @@ export function DiffFile({
         <td colSpan={colSpan}>
           <button
             type="button"
-            className="react-diff-code-fold-expand-button code-fold-expand-button"
+            className="react-diff-code-fold-expand-button code-fold-expand-button outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={() => setContextExpanded(true)}
             data-testid={`fold-block-${file.path}`}
           >
@@ -1763,7 +1763,7 @@ export function DiffFile({
                 }
               }}
               style={{ top: plus.top, left: plus.left }}
-              className="absolute z-20 -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center rounded-md bg-primary text-primary-foreground shadow-md hover:opacity-90 transition-opacity"
+              className="absolute z-20 -translate-x-1/2 -translate-y-1/2 w-[22px] h-[22px] flex items-center justify-center rounded-md bg-primary text-primary-foreground shadow-md outline-none hover:opacity-90 transition-opacity focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
