@@ -393,9 +393,9 @@ test("no-wrap split keeps code text visible while horizontally scrolling", async
     await staffDiff.evaluate((el, scrollLeft) => {
       el.scrollLeft = scrollLeft;
     }, left);
-    await page.waitForTimeout(50);
-    const coverage = await staffDiff.evaluate(visibleGlyphCoverageScript());
-    expect(coverage.visibleGlyphCells, JSON.stringify(coverage)).toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await staffDiff.evaluate(visibleGlyphCoverageScript())).visibleGlyphCells)
+      .toBeGreaterThan(0);
   }
 });
 
@@ -670,9 +670,9 @@ test("no-wrap unified keeps code text visible while horizontally scrolling", asy
     await staffDiff.evaluate((el, scrollLeft) => {
       el.scrollLeft = scrollLeft;
     }, left);
-    await page.waitForTimeout(50);
-    const coverage = await staffDiff.evaluate(visibleGlyphCoverageScript());
-    expect(coverage.visibleGlyphCells, JSON.stringify(coverage)).toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await staffDiff.evaluate(visibleGlyphCoverageScript())).visibleGlyphCells)
+      .toBeGreaterThan(0);
   }
 });
 

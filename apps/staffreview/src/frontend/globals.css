@@ -136,6 +136,9 @@
 .staff-diff {
   --staff-added-bg: color-mix(in srgb, var(--color-success) 11%, var(--color-card));
   --staff-removed-bg: color-mix(in srgb, var(--color-destructive) 10%, var(--color-card));
+  --staff-gutter-w: 52px;
+  --staff-marker-w: 24px;
+  --staff-fixed-line-w: calc(var(--staff-gutter-w) + var(--staff-marker-w));
   overflow-x: clip;
   background: var(--color-card);
 }
@@ -152,11 +155,11 @@
 }
 
 .staff-diff col.staff-col-gutter {
-  width: 52px;
+  width: var(--staff-gutter-w);
 }
 
 .staff-diff col.staff-col-marker {
-  width: 24px;
+  width: var(--staff-marker-w);
 }
 
 .staff-diff col.staff-col-content {
@@ -170,16 +173,16 @@
 }
 
 .staff-diff .staff-gutter {
-  width: 52px;
-  min-width: 52px;
+  width: var(--staff-gutter-w);
+  min-width: var(--staff-gutter-w);
   color: var(--color-muted-foreground);
   text-align: right;
   user-select: none;
 }
 
 .staff-diff .staff-marker {
-  width: 24px;
-  min-width: 24px;
+  width: var(--staff-marker-w);
+  min-width: var(--staff-marker-w);
 }
 
 .staff-diff .staff-gutter pre,
@@ -317,14 +320,16 @@
 .staff-diff-nowrap.staff-diff-split tr.react-diff-line {
   display: grid;
   grid-template-columns:
-    52px 24px minmax(0, calc(50% - 76px))
-    52px 24px minmax(0, calc(50% - 76px));
+    var(--staff-gutter-w) var(--staff-marker-w) minmax(0, calc(50% - var(--staff-fixed-line-w)))
+    var(--staff-gutter-w) var(--staff-marker-w) minmax(0, calc(50% - var(--staff-fixed-line-w)));
   width: 100%;
 }
 
 .staff-diff-nowrap.staff-diff-unified tr.react-diff-line {
   display: grid;
-  grid-template-columns: 52px 24px minmax(0, calc(100% - 76px));
+  grid-template-columns:
+    var(--staff-gutter-w) var(--staff-marker-w)
+    minmax(0, calc(100% - var(--staff-fixed-line-w)));
   width: 100%;
 }
 
@@ -346,10 +351,6 @@
   display: block;
   box-sizing: border-box;
   width: 100%;
-}
-
-.staff-diff-nowrap:not(.staff-diff-split):not(.staff-diff-unified) .staff-content {
-  min-width: max-content;
 }
 
 .staff-diff-scroll-spacer {
@@ -390,7 +391,7 @@
 
 .staff-diff-nowrap.staff-diff-unified .staff-marker,
 .staff-diff-nowrap.staff-diff-split .staff-marker-old {
-  left: 52px;
+  left: var(--staff-gutter-w);
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-gutter-new {
@@ -398,7 +399,7 @@
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-marker-new {
-  left: calc(var(--staff-diff-half-width, 50%) + 52px);
+  left: calc(var(--staff-diff-half-width, 50%) + var(--staff-gutter-w));
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-content-old,
@@ -408,11 +409,11 @@
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-content-old {
-  left: 76px;
+  left: var(--staff-fixed-line-w);
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-content-new {
-  left: calc(var(--staff-diff-half-width, 50%) + 76px);
+  left: calc(var(--staff-diff-half-width, 50%) + var(--staff-fixed-line-w));
 }
 
 .staff-diff-nowrap.staff-diff-split .staff-content-clip {
@@ -439,13 +440,13 @@
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
 }
-.staff-diff td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]) {
+.staff-diff td[class*="gutter"][class*="diff-added"] {
   box-shadow: inset 1px 0 0 var(--color-success);
 }
 .staff-diff-unified td[data-staff-unified-gutter][class*="diff-added"] {
   box-shadow: inset 1px 0 0 var(--color-success);
 }
-.staff-diff td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+.staff-diff td[class*="gutter"][class*="diff-removed"] {
   box-shadow: inset 1px 0 0 var(--color-destructive);
 }
 .staff-diff-unified td[data-staff-unified-gutter][class*="diff-removed"] {
@@ -476,33 +477,9 @@
 .staff-diff-split table tbody tr[data-anchored="true"] > td:nth-child(4) {
   box-shadow: inset 1px 0 0 var(--color-anchor);
 }
-.staff-diff
-  table
-  tbody
-  tr[data-anchored="true"]
-  > td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]),
-.staff-diff
-  table
-  tbody
-  tr[data-anchored="true"]
-  > td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="gutter"][class*="diff-added"],
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="gutter"][class*="diff-removed"] {
   box-shadow: inset 1px 0 0 var(--color-anchor);
-}
-
-/* Keep empty changed gutters tinted on hover. Scoped to non-anchored rows so
- * it doesn't fight the anchored override on hover. */
-.staff-diff table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: var(--staff-added-bg) !important;
-}
-.staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: var(--staff-removed-bg) !important;
 }
 
 /* Markdown comment bodies (rendered by <Markdown>) and the WYSIWYG

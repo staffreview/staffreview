@@ -80,7 +80,7 @@ The automated review is driven by nine Markdown skills. **Canonical source lives
 React 19, bundled by **Bun's own bundler** (no vite/webpack) with `bun-plugin-tailwind` (Tailwind v4) — config in `bunfig.toml`. Entry: `index.html` → `frontend.tsx` → `App.tsx`.
 
 - `App.tsx` holds top-level state (targets, diff, files, settings/theme) and opens the WebSocket; mutations elsewhere broadcast events that trigger a diff refetch via `lib/api.ts`.
-- `DiffView.tsx` wraps `react-diff-viewer-continued` and injects comment-host `<tr>`s, rendering `CommentThread`s into them via React **portals** (re-synced through `useLayoutEffect` across the library's async re-renders). It also runs the **auto-collapse** heuristic for large diffs and keeps commented lines visible when context is folded.
+- `DiffView.tsx` is the first-party diff table renderer: `buildDiffRows` creates split/unified rows, inline comment hosts render as ordinary table rows, folded context is built by `buildVisibleDiffItems`, and no-wrap mode uses CSS variables to keep gutters fixed while code scrolls horizontally. It also runs the **auto-collapse** heuristic for large diffs and keeps commented lines visible when context is folded.
 - `lib/highlight.ts` — **Shiki** syntax highlighting (lazy theme/lang loading) behind a bounded **LRU token cache** keyed by `theme::lang::line`.
 - `MarkdownEditor.tsx` is a TipTap editor with image-paste upload to `/api/attachment`.
 

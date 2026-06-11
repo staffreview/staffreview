@@ -17,6 +17,11 @@ afterEach(() => {
 async function git(args: string[]) {
   const proc = Bun.spawn(["git", ...args], {
     cwd: tmp,
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -35,6 +40,8 @@ test("getDiff keeps renamed files marked binary by attributes as binary rows", a
   await git(["init"]);
   await git(["config", "user.email", "test@example.com"]);
   await git(["config", "user.name", "Test User"]);
+  await git(["config", "diff.renames", "true"]);
+  await git(["config", "core.autocrlf", "false"]);
   await Bun.write(join(tmp, ".gitattributes"), "*.dat -diff\n");
   await Bun.write(join(tmp, "old.dat"), "plain text that attributes mark binary\n");
   await git(["add", "."]);

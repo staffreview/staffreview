@@ -227,52 +227,51 @@ async function listChangedFiles(
   cwd: string,
 ): Promise<{ path: string; status: string; oldPath?: string }[]> {
   const results: { path: string; status: string; oldPath?: string }[] = [];
+  const diffArgs = diffArgsForTargets(base, head);
+  if (!diffArgs) return results;
+
+  const out = (await run(["git", "diff", "--name-status", ...diffArgs.args], { cwd })).trim();
+  parseStatus(out, results);
+
+  if (diffArgs.includeUntracked) {
+    const untracked = (
+      await run(["git", "ls-files", "--others", "--exclude-standard"], {
+        cwd,
+        allowFail: true,
+      })
+    ).trim();
+    for (const p of untracked.split("\n").filter(Boolean)) {
+      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
+    }
+  }
+
+  return results;
+}
+
+function diffArgsForTargets(
+  base: DiffTarget,
+  head: DiffTarget,
+): { args: string[]; includeUntracked: boolean } | null {
   const baseRef = gitRefForTarget(base);
   const headRef = gitRefForTarget(head);
 
   if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
-    const out = (await run(["git", "diff", "--name-status", baseRef!], { cwd })).trim();
-    parseStatus(out, results);
-    const untracked = (
-      await run(["git", "ls-files", "--others", "--exclude-standard"], {
-        cwd,
-        allowFail: true,
-      })
-    ).trim();
-    for (const p of untracked.split("\n").filter(Boolean)) {
-      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
-    }
-    return results;
+    return { args: [baseRef!], includeUntracked: true };
   }
 
   if (base.kind === "staged" || head.kind === "staged") {
-    const out = (await run(["git", "diff", "--cached", "--name-status"], { cwd })).trim();
-    parseStatus(out, results);
-    return results;
+    return { args: ["--cached"], includeUntracked: false };
   }
 
   if (baseRef && headRef) {
-    const out = (await run(["git", "diff", "--name-status", baseRef, headRef], { cwd })).trim();
-    parseStatus(out, results);
-    return results;
+    return { args: [baseRef, headRef], includeUntracked: false };
   }
 
   if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
-    const out = (await run(["git", "diff", "--name-status", "HEAD"], { cwd })).trim();
-    parseStatus(out, results);
-    const untracked = (
-      await run(["git", "ls-files", "--others", "--exclude-standard"], {
-        cwd,
-        allowFail: true,
-      })
-    ).trim();
-    for (const p of untracked.split("\n").filter(Boolean)) {
-      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
-    }
-    return results;
+    return { args: ["HEAD"], includeUntracked: true };
   }
 
-  return results;
+  return null;
 }
 
 async function listBinaryFiles(
@@ -281,22 +280,12 @@ async function listBinaryFiles(
   cwd: string,
 ): Promise<Set<string>> {
   const binary = new Set<string>();
-  const baseRef = gitRefForTarget(base);
-  const headRef = gitRefForTarget(head);
-  let out = "";
-
-  if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
-    out = await run(["git", "diff", "--numstat", "-z", baseRef!], { cwd, allowFail: true });
-  } else if (base.kind === "staged" || head.kind === "staged") {
-    out = await run(["git", "diff", "--cached", "--numstat", "-z"], { cwd, allowFail: true });
-  } else if (baseRef && headRef) {
-    out = await run(["git", "diff", "--numstat", "-z", baseRef, headRef], {
-      cwd,
-      allowFail: true,
-    });
-  } else if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
-    out = await run(["git", "diff", "--numstat", "-z", "HEAD"], { cwd, allowFail: true });
-  }
+  const diffArgs = diffArgsForTargets(base, head);
+  if (!diffArgs) return binary;
+  const out = await run(["git", "diff", "--numstat", "-z", ...diffArgs.args], {
+    cwd,
+    allowFail: true,
+  });
 
   const records = out.split("\0");
   for (let i = 0; i < records.length; ) {

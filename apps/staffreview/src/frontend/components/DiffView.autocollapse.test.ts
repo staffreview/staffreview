@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { Comment, FileDiff, Resolution } from "../../types.ts";
 import {
   buildDiffRows,
+  buildVisibleDiffItems,
   COLLAPSE_OVERRIDES_V1_KEY,
   collapseOverridesKey,
   computeActiveCommentedPaths,
@@ -204,6 +205,33 @@ test("buildDiffRows pairs leftover added lines after a longer replacement", () =
   expect(rows.map((row) => row.kind)).toEqual(["changed", "added", "added"]);
   expect(rows.map((row) => row.oldLine)).toEqual([1, undefined, undefined]);
   expect(rows.map((row) => row.newLine)).toEqual([1, 2, 3]);
+});
+
+test("buildVisibleDiffItems expands only the clicked folded block", () => {
+  const oldLines = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`);
+  const newLines = [...oldLines];
+  newLines[9] = "changed 10";
+  newLines[34] = "changed 35";
+  const rows = buildDiffRows(
+    file("changed.ts", 1, {
+      oldContent: `${oldLines.join("\n")}\n`,
+      newContent: `${newLines.join("\n")}\n`,
+    }),
+    true,
+  );
+  const folded = buildVisibleDiffItems(rows, false, new Set());
+  const foldItems = folded.filter((item) => item.type === "fold");
+  expect(foldItems.length).toBeGreaterThan(1);
+
+  const expanded = buildVisibleDiffItems(rows, false, new Set(), new Set([foldItems[0]!.key]));
+
+  expect(expanded.some((item) => item.type === "fold" && item.key === foldItems[0]!.key)).toBe(
+    false,
+  );
+  expect(expanded.some((item) => item.type === "fold" && item.key === foldItems[1]!.key)).toBe(
+    true,
+  );
+  expect(expanded.length).toBeLessThan(rows.length);
 });
 
 test("inlineRangesForPair skips oversized token pairs before structural diffing", () => {

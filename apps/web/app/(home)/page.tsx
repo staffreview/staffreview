@@ -121,7 +121,7 @@ export default function HomePage() {
       <section className="border-t border-fd-border bg-fd-muted/30">
         <div className="mx-auto w-full max-w-5xl px-4 py-16 sm:py-20">
           <Image
-            src="/staffreview-screenshot-2026-06-09.png"
+            src="/screenshot.png"
             alt="Staff Review — an AI agent’s inline review on a diff, with the comment thread anchored to the changed line and the review sidebar alongside"
             width={3680}
             height={2212}

@@ -407,8 +407,6 @@ function findRowForLine(
     let cell: HTMLTableCellElement | undefined;
     if (cells.length >= 6) {
       cell = target.side === "old" ? cells[0] : cells[3];
-    } else if (cells.length >= 4) {
-      cell = target.side === "old" ? cells[0] : cells[1];
     } else {
       continue;
     }
@@ -576,10 +574,11 @@ export function buildDiffRows(file: FileDiff, structuredHighlighting: boolean): 
   return rows;
 }
 
-function buildVisibleDiffItems(
+export function buildVisibleDiffItems(
   rows: DiffRow[],
   expanded: boolean,
   forceVisible: Set<string>,
+  expandedFoldKeys = new Set<string>(),
 ): DiffItem[] {
   if (expanded) return rows.map((row) => ({ row, type: "row" }));
   const visible = new Set<number>();
@@ -609,7 +608,14 @@ function buildVisibleDiffItems(
     }
     const start = i;
     while (i < rows.length && !visible.has(i)) i++;
-    items.push({ count: i - start, key: `fold:${start}:${i}`, type: "fold" });
+    const key = `fold:${start}:${i}`;
+    if (expandedFoldKeys.has(key)) {
+      for (let j = start; j < i; j++) {
+        items.push({ row: rows[j]!, type: "row" });
+      }
+    } else {
+      items.push({ count: i - start, key, type: "fold" });
+    }
   }
   return items;
 }
@@ -714,6 +720,7 @@ export function DiffFile({
   };
 
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [expandedFoldKeys, setExpandedFoldKeys] = useState<Set<string>>(() => new Set());
   const changeStats = useMemo(() => fileChangeStats(file), [file]);
   const hasChangeStats = changeStats.additions > 0 || changeStats.deletions > 0;
   const canToggleFoldedContext = !expandedByDefault && !file.isSymlink && !file.isBinary;
@@ -746,7 +753,10 @@ export function DiffFile({
   const allContextExpanded = expandedByDefault || contextExpanded;
 
   function toggleFoldedContext() {
-    setContextExpanded((prev) => !prev);
+    setContextExpanded((prev) => {
+      if (prev) setExpandedFoldKeys(new Set());
+      return !prev;
+    });
   }
 
   // Lines that need an inline host: union of lines with an open composer and
@@ -813,10 +823,6 @@ export function DiffFile({
       const oldNum = Number(gutter.dataset.oldLine ?? "");
       if (Number.isFinite(oldNum) && oldNum > 0) return { line: oldNum, side: "old" };
       return null;
-    } else if (cells.length >= 4) {
-      preferred = clickedIdx === 0 ? "old" : "new";
-      oldCell = cells[0];
-      newCell = cells[1];
     } else {
       return null;
     }
@@ -855,9 +861,6 @@ export function DiffFile({
       if (Number.isFinite(unifiedLine) && unifiedLine > 0) {
         return { side: unifiedSide, line: unifiedLine };
       }
-    } else if (cells.length >= 4) {
-      if (idx === 0) side = "old";
-      else if (idx === 1) side = "new";
     }
     if (!side) return null;
     const n = Number(td.textContent?.trim() ?? "");
@@ -927,7 +930,7 @@ export function DiffFile({
         const raw = side === "old" ? cells[0].dataset.oldLine : cells[0].dataset.newLine;
         const n = Number(raw ?? "");
         return Number.isFinite(n) && n > 0 ? n : null;
-      } else if (cells.length >= 4) cell = side === "old" ? cells[0] : cells[1];
+      }
       if (!cell) return null;
       const n = Number(cell.textContent?.trim() ?? "");
       return Number.isFinite(n) && n > 0 ? n : null;
@@ -971,7 +974,6 @@ export function DiffFile({
     top: number;
     left: number;
   } | null>(null);
-  const lastHoveredTr = useRef<HTMLElement | null>(null);
   const plusKeyRef = useRef<string | null>(null);
   // Pre-geometry anchor signature of the last accepted move: the resolved
   // gutter cell (node identity) + side + line. `onMouseMove` is on the diff
@@ -996,19 +998,16 @@ export function DiffFile({
     if (!td) return;
     const tr = td.closest("tr") as HTMLElement | null;
     if (!tr) {
-      lastHoveredTr.current = null;
       clearPlus();
       return;
     }
     if (tr.dataset.composerHost === "true") {
-      lastHoveredTr.current = null;
       // Moving onto an inline composer/thread host has no "+" of its own, so
       // clear the one left on the previously-hovered data row (mirrors the
       // `!tr` branch above) instead of leaving it stuck.
       clearPlus();
       return;
     }
-    lastHoveredTr.current = tr;
     const cells = Array.from(tr.querySelectorAll<HTMLTableCellElement>(":scope > td"));
     const idx = cells.indexOf(td as HTMLTableCellElement);
     if (idx < 0) return;
@@ -1026,9 +1025,6 @@ export function DiffFile({
     } else if (cells[0]?.dataset.staffUnifiedGutter === "true") {
       gutterCell = cells[0];
       markerCell = cells[1];
-    } else if (cells.length >= 4) {
-      gutterCell = resolved.side === "old" ? cells[0] : cells[1];
-      markerCell = cells[2];
     }
     if (!gutterCell || !diffRef.current) return;
     // Hot-path early-out: the cursor is still over the same resolved anchor as
@@ -1036,7 +1032,7 @@ export function DiffFile({
     // have changed within this continuous mousemove. Bail before the forced
     // layout reads below. (Layout shifts from scroll/resize re-run the gutter
     // normalization, and the next move re-anchors — same staleness window the
-    // original `tr === lastHoveredTr.current && plus` guard had.)
+    // original row-based plus guard had.)
     const prevAnchor = lastPlusAnchor.current;
     if (
       plus &&
@@ -1079,7 +1075,6 @@ export function DiffFile({
     updatePlusFromTarget(e.target as HTMLElement);
   }
   function handleDiffMouseLeave() {
-    lastHoveredTr.current = null;
     clearPlus();
   }
   function openComposerAt(t: ComposingTarget) {
@@ -1144,8 +1139,8 @@ export function DiffFile({
     [inlineLines],
   );
   const diffItems = useMemo(
-    () => buildVisibleDiffItems(diffRows, allContextExpanded, forceVisibleLines),
-    [diffRows, allContextExpanded, forceVisibleLines],
+    () => buildVisibleDiffItems(diffRows, allContextExpanded, forceVisibleLines, expandedFoldKeys),
+    [diffRows, allContextExpanded, forceVisibleLines, expandedFoldKeys],
   );
   const noWrapMeasureKey = useMemo(() => {
     if (!shouldRenderTextDiff) return "unmounted";
@@ -1156,6 +1151,7 @@ export function DiffFile({
       contentSignature(file.oldContent),
       contentSignature(file.newContent),
       allContextExpanded ? "expanded" : "folded",
+      Array.from(expandedFoldKeys).sort().join(","),
       Array.from(forceVisibleLines).sort().join(","),
     ].join("\0");
   }, [
@@ -1164,6 +1160,7 @@ export function DiffFile({
     file.oldContent,
     file.path,
     file.status,
+    expandedFoldKeys,
     forceVisibleLines,
     shouldRenderTextDiff,
     wrapLines,
@@ -1187,6 +1184,7 @@ export function DiffFile({
     if (!container) return;
     container.scrollLeft = 0;
     container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
+    setExpandedFoldKeys(new Set());
     plusKeyRef.current = null;
     lastPlusAnchor.current = null;
     setPlus(null);
@@ -1220,14 +1218,19 @@ export function DiffFile({
       writeScrollLeft();
       plusKeyRef.current = null;
       lastPlusAnchor.current = null;
-      lastHoveredTr.current = null;
       setPlus(null);
     };
     const measure = () => {
       measureFrame = 0;
+      const styles = getComputedStyle(container);
+      const gutterWidth = Number.parseFloat(styles.getPropertyValue("--staff-gutter-w")) || 52;
+      const markerWidth = Number.parseFloat(styles.getPropertyValue("--staff-marker-w")) || 24;
+      const fixedLineWidth = gutterWidth + markerWidth;
       const halfWidth = container.clientWidth / 2;
-      const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - 76) : 0;
-      const unifiedContentWidth = splitView ? 0 : Math.max(1, container.clientWidth - 76);
+      const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - fixedLineWidth) : 0;
+      const unifiedContentWidth = splitView
+        ? 0
+        : Math.max(1, container.clientWidth - fixedLineWidth);
       let maxTextWidth = 0;
       for (const node of container.querySelectorAll<HTMLElement>(".staff-content-text")) {
         maxTextWidth = Math.max(maxTextWidth, node.getBoundingClientRect().width);
@@ -1475,7 +1478,13 @@ export function DiffFile({
           <button
             type="button"
             className="react-diff-code-fold-expand-button code-fold-expand-button outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onClick={() => setContextExpanded(true)}
+            onClick={() =>
+              setExpandedFoldKeys((prev) => {
+                const next = new Set(prev);
+                next.add(item.key);
+                return next;
+              })
+            }
             data-testid={`fold-block-${file.path}`}
           >
             <span className="inline-flex items-center gap-1.5">
@@ -1759,7 +1768,6 @@ export function DiffFile({
               title="Comment on this line"
               onClick={(e) => {
                 e.stopPropagation();
-                lastHoveredTr.current = null;
                 clearPlus();
                 // If the hovered line falls inside the active anchored
                 // range on the same side, attach the comment to the
