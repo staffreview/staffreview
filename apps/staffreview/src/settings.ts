@@ -14,6 +14,16 @@ import { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS } from "./r
 
 export { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS };
 
+// `/staff-section` agent fan-out default + bounds (also sizes the per-run
+// section), same dependency-free pattern so the frontend bundle shares them.
+import {
+  DEFAULT_SECTION_AGENTS,
+  MAX_SECTION_AGENTS,
+  MIN_SECTION_AGENTS,
+} from "./section-config.ts";
+
+export { DEFAULT_SECTION_AGENTS, MAX_SECTION_AGENTS, MIN_SECTION_AGENTS };
+
 // `/staff-docs` scout fan-out default + bounds, same dependency-free pattern
 // so the frontend bundle can share them with the server.
 import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "./docs-config.ts";
@@ -78,6 +88,10 @@ export type GlobalSettings = {
    * find agents into per-find verification. Defaults to
    * {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
+  /** Find-agent fan-out width for `/staff-section`, which also sizes the slice
+   * of the codebase reviewed each run (more agents → a bigger section).
+   * Defaults to {@link DEFAULT_SECTION_AGENTS} when unset. */
+  sectionAgents?: number;
   /** How many scout sub-agents `/staff-docs` fans out across GitHub PR review
    * comments. A docs sweep can cover more ground than a single diff review, so
    * this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
@@ -113,6 +127,7 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
     openBrowser: DEFAULT_OPEN_BROWSER,
     loopMaxRounds: DEFAULT_LOOP_ROUNDS,
     reviewAgents: DEFAULT_REVIEW_AGENTS,
+    sectionAgents: DEFAULT_SECTION_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
     structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
     wrapLines: DEFAULT_WRAP_LINES,
@@ -165,6 +180,13 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
     next.reviewAgents = Math.min(
       MAX_REVIEW_AGENTS,
       Math.max(MIN_REVIEW_AGENTS, Math.round(next.reviewAgents)),
+    );
+  }
+  // Same defensive clamp for the section fan-out.
+  if (typeof next.sectionAgents === "number") {
+    next.sectionAgents = Math.min(
+      MAX_SECTION_AGENTS,
+      Math.max(MIN_SECTION_AGENTS, Math.round(next.sectionAgents)),
     );
   }
   // Same defensive clamp for the docs scout fan-out.

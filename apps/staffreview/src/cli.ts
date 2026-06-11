@@ -11,6 +11,9 @@ import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
 import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
 import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
+import skillSection from "../skills/staff-section.md" with { type: "text" };
+import skillSectionFind from "../skills/staff-section-find.md" with { type: "text" };
+import skillSectionVerify from "../skills/staff-section-verify.md" with { type: "text" };
 import { parseBooleanSetting } from "./boolean-setting.ts";
 import * as git from "./git.ts";
 import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
@@ -29,6 +32,9 @@ const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
+  "staff-section": skillSection,
+  "staff-section-find": skillSectionFind,
+  "staff-section-verify": skillSectionVerify,
   "staff-comment": skillComment,
   "staff-copy": skillCopy,
   "staff-document": skillDocument,
@@ -147,7 +153,8 @@ USAGE
   staff settings [--json]       Print global settings (with defaults applied).
   staff settings get <key>      Print one setting's value: loopMaxRounds (the
                                  /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}), reviewAgents
-                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
+                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), sectionAgents
+                                 (the /staff-section fan-out, default ${settings.DEFAULT_SECTION_AGENTS}), or docsAgents
                                  (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}),
                                  openBrowser (whether serve opens a browser,
                                  default ${settings.DEFAULT_OPEN_BROWSER}), structuredHighlighting
@@ -160,8 +167,8 @@ USAGE
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
 
-  staff install                 Set up the repo: write the ten /staff-* skills to
-                                 .agents/skills/ (symlinked into .claude/skills/),
+  staff install                 Set up the repo: write the thirteen /staff-* skills
+                                 to .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 
   staff --version | --help
@@ -331,13 +338,14 @@ async function main(argv: string[]) {
       console.log("  created .staffreview/");
 
       // 3. gitignore the per-machine review data — the diffs (review
-      //    sessions), attachments (pasted images), and the active-diff
-      //    pointer. The docs (documented examples) and the skills are
-      //    meant to be committed.
+      //    sessions), attachments (pasted images), the active-diff pointer,
+      //    and the /staff-section progress cache. The docs (documented
+      //    examples) and the skills are meant to be committed.
       const ignoreEntries = [
         ".staffreview/diffs/",
         ".staffreview/attachments/",
         ".staffreview/active.json",
+        ".staffreview/section-cache.json",
       ];
       const giPath = join(cwd, ".gitignore");
       const giFile = Bun.file(giPath);

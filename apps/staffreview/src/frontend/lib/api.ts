@@ -14,6 +14,7 @@ export type GlobalSettings = {
   openBrowser?: boolean;
   loopMaxRounds?: number;
   reviewAgents?: number;
+  sectionAgents?: number;
   docsAgents?: number;
 };
 

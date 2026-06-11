@@ -8,11 +8,14 @@ import {
   DEFAULT_LOOP_ROUNDS,
   DEFAULT_OPEN_BROWSER,
   DEFAULT_REVIEW_AGENTS,
+  DEFAULT_SECTION_AGENTS,
   DEFAULT_SPLIT_VIEW,
   DEFAULT_STRUCTURED_HIGHLIGHTING,
   DEFAULT_WRAP_LINES,
   MAX_DOCS_AGENTS,
+  MAX_SECTION_AGENTS,
   MIN_DOCS_AGENTS,
+  MIN_SECTION_AGENTS,
   settingsWithDefaults,
   writeSettings,
 } from "./settings.ts";
@@ -56,6 +59,21 @@ test("writeSettings persists the clamped docsAgents to disk", async () => {
   await writeSettings({ docsAgents: 100 });
   const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
   expect(onDisk.docsAgents).toBe(MAX_DOCS_AGENTS);
+});
+
+test("writeSettings clamps an over-max sectionAgents down to MAX_SECTION_AGENTS", async () => {
+  const next = await writeSettings({ sectionAgents: 25 });
+  expect(next.sectionAgents).toBe(MAX_SECTION_AGENTS); // 20
+});
+
+test("writeSettings clamps a below-min sectionAgents up to MIN_SECTION_AGENTS", async () => {
+  const next = await writeSettings({ sectionAgents: 0 });
+  expect(next.sectionAgents).toBe(MIN_SECTION_AGENTS); // 1
+});
+
+test("writeSettings rounds a fractional sectionAgents to the nearest integer", async () => {
+  const next = await writeSettings({ sectionAgents: 3.4 });
+  expect(next.sectionAgents).toBe(3);
 });
 
 test("writeSettings persists openBrowser", async () => {
@@ -187,6 +205,7 @@ test("settingsWithDefaults includes openBrowser, highlighting, wrap, and agent d
     openBrowser: DEFAULT_OPEN_BROWSER,
     loopMaxRounds: DEFAULT_LOOP_ROUNDS,
     reviewAgents: DEFAULT_REVIEW_AGENTS,
+    sectionAgents: DEFAULT_SECTION_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
     structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
     wrapLines: DEFAULT_WRAP_LINES,
