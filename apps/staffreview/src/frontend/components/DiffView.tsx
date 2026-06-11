@@ -60,7 +60,10 @@ function contentSignature(value: string): string {
   return `${value.length}:${hash >>> 0}`;
 }
 
-export function fileChangeStats(file: FileDiff): { additions: number; deletions: number } {
+export function fileChangeStats(
+  file: FileDiff,
+  changes?: ReturnType<typeof diffLines>,
+): { additions: number; deletions: number } {
   // Symlink and binary files render as a compact single row, not added/deleted
   // code lines, so a +/- badge would claim line changes that don't correspond
   // to anything rendered. For a symlink, git.ts stores the link-target path
@@ -71,7 +74,7 @@ export function fileChangeStats(file: FileDiff): { additions: number; deletions:
   if (file.isSymlink || file.isBinary) return { additions: 0, deletions: 0 };
   let additions = 0;
   let deletions = 0;
-  for (const change of diffLines(file.oldContent, file.newContent)) {
+  for (const change of changes ?? diffLines(file.oldContent, file.newContent)) {
     if (change.added) additions += diffLineCount(change.value);
     if (change.removed) deletions += diffLineCount(change.value);
   }
@@ -285,12 +288,6 @@ export function computeActiveCommentedPaths(comments: Comment[]): Set<string> {
 }
 
 /**
- * Find the <tr> in the rendered diff table whose line-number cell on the
- * given side matches `line`. Works for split view (6 cells per row, line
- * numbers at indices 0 and 3) and unified view, where the first normalized
- * gutter stores both old/new line numbers as data attributes.
- */
-/**
  * Build the URL fragment for a (file, side, line) or line-range target.
  * Single-line emits `R<line>`/`L<line>`; ranges emit `R<start>-R<end>`,
  * matching GitHub's PR-diff anchor format so links are portable.
@@ -392,6 +389,12 @@ export function scrollToLine(file: string, side: "old" | "new", line: number) {
   requestAnimationFrame(tick);
 }
 
+/**
+ * Find the <tr> in the rendered diff table whose line-number cell on the
+ * given side matches `line`. Works for split view (6 cells per row, line
+ * numbers at indices 0 and 3) and unified view, where the gutter stores both
+ * old/new line numbers as data attributes.
+ */
 function findRowForLine(
   container: HTMLElement,
   target: { line: number; side: "old" | "new" },
@@ -428,6 +431,16 @@ type DiffRow = {
   newRanges: InlineRange[];
 };
 type FoldRange = { start: number; end: number };
+type GutterCellOptions = {
+  side: "old" | "new";
+  line?: number;
+  status?: "added" | "removed";
+  unified?: boolean;
+  label?: string;
+  oldLine?: number;
+  newLine?: number;
+  title?: string;
+};
 type DiffItem =
   | { type: "row"; row: DiffRow }
   | ({ type: "fold"; key: string; count: number } & FoldRange);
@@ -486,8 +499,15 @@ export function inlineRangesForPair(
     return { newRanges: [], oldRanges: [] };
   }
   const sameExceptWhitespace = oldText.replace(/\s+/g, "") === newText.replace(/\s+/g, "");
+  // The tokenizer only matches [a-z0-9_], so punctuation-only or non-Latin
+  // pairs yield two empty token lists and a similarity of 0 — which says
+  // nothing about how alike the lines are. Only gate on similarity when there
+  // are tokens to compare; presentableDiff below carries its own
+  // scanLimit/timeout bounds for the fall-through.
+  const tokenless = oldTokens.length === 0 && newTokens.length === 0;
   if (
     !sameExceptWhitespace &&
+    !tokenless &&
     lineSimilarity(oldTokens, newTokens) < MIN_STRUCTURAL_LINE_SIMILARITY
   ) {
     return { newRanges: [], oldRanges: [] };
@@ -509,9 +529,12 @@ export function inlineRangesForPair(
   };
 }
 
-export function buildDiffRows(file: FileDiff, structuredHighlighting: boolean): DiffRow[] {
+export function buildDiffRows(
+  file: FileDiff,
+  structuredHighlighting: boolean,
+  changes: ReturnType<typeof diffLines> = diffLines(file.oldContent, file.newContent),
+): DiffRow[] {
   const rows: DiffRow[] = [];
-  const changes = diffLines(file.oldContent, file.newContent);
   let oldLine = 1;
   let newLine = 1;
   for (let i = 0; i < changes.length; i++) {
@@ -725,7 +748,13 @@ export function DiffFile({
 
   const [contextExpanded, setContextExpanded] = useState(false);
   const [expandedFoldRanges, setExpandedFoldRanges] = useState<FoldRange[]>([]);
-  const changeStats = useMemo(() => fileChangeStats(file), [file]);
+  // One diffLines walk shared by the header stats and the row builder — an
+  // open file would otherwise pay the same line diff twice per content change.
+  const lineChanges = useMemo(
+    () => (file.isSymlink || file.isBinary ? [] : diffLines(file.oldContent, file.newContent)),
+    [file],
+  );
+  const changeStats = useMemo(() => fileChangeStats(file, lineChanges), [file, lineChanges]);
   const hasChangeStats = changeStats.additions > 0 || changeStats.deletions > 0;
   const canToggleFoldedContext = !expandedByDefault && !file.isSymlink && !file.isBinary;
 
@@ -1138,8 +1167,8 @@ export function DiffFile({
 
   const diffRows = useMemo(() => {
     if (!shouldRenderTextDiff) return [];
-    return buildDiffRows(file, structuredHighlighting);
-  }, [file, shouldRenderTextDiff, structuredHighlighting]);
+    return buildDiffRows(file, structuredHighlighting, lineChanges);
+  }, [file, lineChanges, shouldRenderTextDiff, structuredHighlighting]);
   const inlineTargetMap = useMemo(() => new Map(inlineLines), [inlineLines]);
   const forceVisibleLines = useMemo(
     () =>
@@ -1184,28 +1213,49 @@ export function DiffFile({
   ]);
   const [xScrollable, setXScrollable] = useState(false);
   const scrollResetKeyRef = useRef("");
+  const foldResetKeyRef = useRef("");
+
+  const foldResetKey = useMemo(
+    () =>
+      [
+        file.path,
+        file.status,
+        contentSignature(file.oldContent),
+        contentSignature(file.newContent),
+      ].join("\0"),
+    [file.newContent, file.oldContent, file.path, file.status],
+  );
+  const scrollResetKey = useMemo(
+    () =>
+      [
+        foldResetKey,
+        splitView ? "split" : "unified",
+        wrapLines ? "wrap" : "nowrap",
+        collapsed ? "collapsed" : "open",
+      ].join("\0"),
+    [collapsed, foldResetKey, splitView, wrapLines],
+  );
 
   useLayoutEffect(() => {
-    const scrollResetKey = [
-      file.path,
-      file.status,
-      file.oldContent.length,
-      file.newContent.length,
-      splitView ? "split" : "unified",
-      wrapLines ? "wrap" : "nowrap",
-      collapsed ? "collapsed" : "open",
-    ].join("\0");
-    if (scrollResetKeyRef.current === scrollResetKey) return;
-    scrollResetKeyRef.current = scrollResetKey;
+    // The fold reset needs no DOM, and the container is unmounted while the
+    // card is collapsed — reset before the null-container bail (advancing the
+    // ref only alongside its reset) so a content change that arrives while
+    // collapsed can't leave stale row-index ranges behind for the new rows.
+    if (foldResetKeyRef.current !== foldResetKey) {
+      foldResetKeyRef.current = foldResetKey;
+      setExpandedFoldRanges((prev) => (prev.length === 0 ? prev : []));
+    }
     const container = diffRef.current;
     if (!container) return;
-    container.scrollLeft = 0;
-    container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
-    setExpandedFoldRanges([]);
-    plusKeyRef.current = null;
-    lastPlusAnchor.current = null;
-    setPlus(null);
-  });
+    if (scrollResetKeyRef.current !== scrollResetKey) {
+      scrollResetKeyRef.current = scrollResetKey;
+      container.scrollLeft = 0;
+      container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
+      plusKeyRef.current = null;
+      lastPlusAnchor.current = null;
+      setPlus(null);
+    }
+  }, [foldResetKey, scrollResetKey]);
 
   useLayoutEffect(() => {
     // Content and folded-row changes need a fresh no-wrap measurement even
@@ -1337,16 +1387,15 @@ export function DiffFile({
     const pieces: ReactNode[] = [];
     let offset = 0;
     let pieceIndex = 0;
-    const activeRanges = mergeInlineRanges(ranges, text);
 
     for (const token of tokens) {
       let tokenOffset = 0;
       while (tokenOffset < token.content.length) {
         const absolute = offset + tokenOffset;
-        const range = activeRanges.find(
+        const range = ranges.find(
           (candidate) => candidate.from <= absolute && absolute < candidate.to,
         );
-        const nextRange = activeRanges.find((candidate) => candidate.from > absolute);
+        const nextRange = ranges.find((candidate) => candidate.from > absolute);
         const end = range
           ? Math.min(token.content.length, range.to - offset)
           : Math.min(
@@ -1419,15 +1468,16 @@ export function DiffFile({
     );
   }
 
-  function renderGutterCell(
-    side: "old" | "new",
-    line: number | undefined,
-    status: "added" | "removed" | undefined,
+  function renderGutterCell({
+    side,
+    line,
+    status,
     unified = false,
-    label?: string,
-    oldLine?: number,
-    newLine?: number,
-  ) {
+    label,
+    oldLine,
+    newLine,
+    title,
+  }: GutterCellOptions) {
     const primaryLine = label ?? (line ? String(line) : "");
     return (
       <td
@@ -1443,6 +1493,7 @@ export function DiffFile({
         data-old-line={oldLine}
         data-new-line={newLine}
         data-staff-unified-gutter={unified ? "true" : undefined}
+        title={title}
       >
         <pre>{primaryLine}</pre>
       </td>
@@ -1466,15 +1517,14 @@ export function DiffFile({
     return (
       <td
         className={cn(
-          "staff-content react-diff-content",
+          "staff-content",
           side === "old" ? "staff-content-old" : side === "new" && "staff-content-new",
           status === "added" && "diff-added",
           status === "removed" && "diff-removed",
-          text === undefined && "empty-line",
         )}
       >
         <div className="staff-content-clip">
-          <pre className="staff-content-text react-diff-content-text">
+          <pre className="staff-content-text">
             {text === undefined
               ? "\u00a0"
               : renderLineText(
@@ -1490,11 +1540,11 @@ export function DiffFile({
 
   function renderFold(item: Extract<DiffItem, { type: "fold" }>, colSpan: number) {
     return (
-      <tr key={item.key} className="react-diff-code-fold code-fold">
+      <tr key={item.key} className="code-fold">
         <td colSpan={colSpan}>
           <button
             type="button"
-            className="react-diff-code-fold-expand-button code-fold-expand-button outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="code-fold-expand-button outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={() =>
               setExpandedFoldRanges((prev) =>
                 prev.some((range) => range.start <= item.start && item.end <= range.end)
@@ -1545,13 +1595,13 @@ export function DiffFile({
     return [
       <tr
         key={row.key}
-        className="react-diff-line"
+        className="staff-diff-line"
         data-anchored={rowAnchored(row) ? "true" : undefined}
       >
-        {renderGutterCell("old", row.oldLine, oldStatus)}
+        {renderGutterCell({ line: row.oldLine, side: "old", status: oldStatus })}
         {renderMarkerCell("old")}
         {renderContentCell(row.oldText, row.oldRanges, oldStatus, "old")}
-        {renderGutterCell("new", row.newLine, newStatus)}
+        {renderGutterCell({ line: row.newLine, side: "new", status: newStatus })}
         {renderMarkerCell("new")}
         {renderContentCell(row.newText, row.newRanges, newStatus, "new")}
       </tr>,
@@ -1567,10 +1617,18 @@ export function DiffFile({
       rows.push(
         <tr
           key={`${row.key}:old`}
-          className="react-diff-line"
+          className="staff-diff-line"
           data-anchored={rowAnchored(oldOnlyRow) ? "true" : undefined}
         >
-          {renderGutterCell("old", row.oldLine, "removed", true, "-", row.oldLine, undefined)}
+          {renderGutterCell({
+            label: "-",
+            line: row.oldLine,
+            oldLine: row.oldLine,
+            side: "old",
+            status: "removed",
+            title: row.oldLine ? `Deleted old line ${row.oldLine}` : undefined,
+            unified: true,
+          })}
           {renderMarkerCell("old")}
           {renderContentCell(row.oldText, row.oldRanges, "removed")}
         </tr>,
@@ -1586,18 +1644,17 @@ export function DiffFile({
       rows.push(
         <tr
           key={`${row.key}:new`}
-          className="react-diff-line"
+          className="staff-diff-line"
           data-anchored={rowAnchored(newOnlyRow) ? "true" : undefined}
         >
-          {renderGutterCell(
-            "new",
-            row.newLine,
+          {renderGutterCell({
+            line: row.newLine,
+            newLine: row.newLine,
+            oldLine: newOnlyRow.oldLine,
+            side: "new",
             status,
-            true,
-            undefined,
-            newOnlyRow.oldLine,
-            row.newLine,
-          )}
+            unified: true,
+          })}
           {renderMarkerCell("new")}
           {renderContentCell(row.newText, row.newRanges, status)}
         </tr>,

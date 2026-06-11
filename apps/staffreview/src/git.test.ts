@@ -36,7 +36,7 @@ async function git(args: string[]) {
   return out;
 }
 
-test("getDiff keeps renamed files marked binary by attributes as binary rows", async () => {
+async function initRepoWithBinaryAttributes() {
   await git(["init"]);
   await git(["config", "user.email", "test@example.com"]);
   await git(["config", "user.name", "Test User"]);
@@ -46,6 +46,10 @@ test("getDiff keeps renamed files marked binary by attributes as binary rows", a
   await Bun.write(join(tmp, "old.dat"), "plain text that attributes mark binary\n");
   await git(["add", "."]);
   await git(["commit", "-m", "initial"]);
+}
+
+test("getDiff keeps renamed files marked binary by attributes as binary rows", async () => {
+  await initRepoWithBinaryAttributes();
   await git(["mv", "old.dat", "new.dat"]);
 
   const files = await getDiff({ kind: "commit", ref: "HEAD" }, { kind: "staged" }, tmp);
@@ -55,6 +59,22 @@ test("getDiff keeps renamed files marked binary by attributes as binary rows", a
     path: "new.dat",
     oldPath: "old.dat",
     status: "renamed",
+    oldContent: "",
+    newContent: "",
+    isBinary: true,
+  });
+});
+
+test("getDiff keeps modified files marked binary by attributes as binary rows", async () => {
+  await initRepoWithBinaryAttributes();
+  await Bun.write(join(tmp, "old.dat"), "changed text that attributes still mark binary\n");
+
+  const files = await getDiff({ kind: "commit", ref: "HEAD" }, { kind: "working-tree" }, tmp);
+
+  expect(files).toHaveLength(1);
+  expect(files[0]).toMatchObject({
+    path: "old.dat",
+    status: "modified",
     oldContent: "",
     newContent: "",
     isBinary: true,

@@ -116,27 +116,37 @@ function diffTargetsKey(base: DiffTarget, head: DiffTarget): string {
   return JSON.stringify([base, head]);
 }
 
-function fileDiffsEqual(a: FileDiff[], b: FileDiff[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (
-      left.path !== right.path ||
-      left.oldPath !== right.oldPath ||
-      left.status !== right.status ||
-      left.oldContent !== right.oldContent ||
-      left.newContent !== right.newContent ||
-      left.isSymlink !== right.isSymlink ||
-      left.symlinkTarget !== right.symlinkTarget ||
-      left.oldSymlinkTarget !== right.oldSymlinkTarget ||
-      left.isBinary !== right.isBinary
-    ) {
-      return false;
-    }
-  }
-  return true;
+function fileDiffEqual(left: FileDiff, right: FileDiff): boolean {
+  return (
+    left.path === right.path &&
+    left.oldPath === right.oldPath &&
+    left.status === right.status &&
+    left.oldContent === right.oldContent &&
+    left.newContent === right.newContent &&
+    left.isSymlink === right.isSymlink &&
+    left.symlinkTarget === right.symlinkTarget &&
+    left.oldSymlinkTarget === right.oldSymlinkTarget &&
+    left.isBinary === right.isBinary
+  );
+}
+
+/**
+ * Merge a freshly fetched file list into the previous one, reusing the
+ * previous object for every path whose fields are unchanged. Per-file memos
+ * in DiffFile key on `file` identity, so committing the raw response array —
+ * a fresh object per file — would re-run diffLines/buildDiffRows for every
+ * open card when only one file changed (e.g. each save during a live WT
+ * review). Returns `prev` itself when nothing changed at all.
+ */
+function mergeFileDiffs(prev: FileDiff[], next: FileDiff[]): FileDiff[] {
+  if (prev === next) return prev;
+  const prevByPath = new Map(prev.map((f) => [f.path, f]));
+  const merged = next.map((f) => {
+    const old = prevByPath.get(f.path);
+    return old && fileDiffEqual(old, f) ? old : f;
+  });
+  const identical = merged.length === prev.length && merged.every((f, i) => f === prev[i]);
+  return identical ? prev : merged;
 }
 
 export function App() {
@@ -443,7 +453,7 @@ export function App() {
         try {
           const filesResp = await api.files(currentBase, currentHead);
           if (requestKey === diffTargetsKey(baseRef.current, headRef.current)) {
-            setFiles((prev) => (fileDiffsEqual(prev, filesResp.files) ? prev : filesResp.files));
+            setFiles((prev) => mergeFileDiffs(prev, filesResp.files));
           }
         } catch {
         } finally {
@@ -511,7 +521,7 @@ export function App() {
         api.files(base, head),
         api.createDiff(base, head),
       ]);
-      setFiles((prev) => (fileDiffsEqual(prev, filesResp.files) ? prev : filesResp.files));
+      setFiles((prev) => mergeFileDiffs(prev, filesResp.files));
       slugRef.current = diffResp.diff.slug;
       setDiff(diffResp.diff);
     } catch (e) {

@@ -222,16 +222,16 @@
   color: var(--color-destructive);
 }
 
-.staff-diff-unified tr.react-diff-line:has(> .staff-content.diff-added) {
+.staff-diff-unified tr.staff-diff-line:has(> .staff-content.diff-added) {
   background: var(--staff-added-bg);
 }
 
-.staff-diff-unified tr.react-diff-line:has(> .staff-content.diff-removed) {
+.staff-diff-unified tr.staff-diff-line:has(> .staff-content.diff-removed) {
   background: var(--staff-removed-bg);
 }
 
 .staff-diff-split
-  tr.react-diff-line:has(> .staff-content.diff-removed):has(> .staff-content.diff-added) {
+  tr.staff-diff-line:has(> .staff-content.diff-removed):has(> .staff-content.diff-added) {
   background: linear-gradient(
     to right,
     var(--staff-removed-bg) 0 50%,
@@ -240,12 +240,12 @@
 }
 
 .staff-diff-split
-  tr.react-diff-line:has(> .staff-content.diff-removed):not(:has(> .staff-content.diff-added)) {
+  tr.staff-diff-line:has(> .staff-content.diff-removed):not(:has(> .staff-content.diff-added)) {
   background: linear-gradient(to right, var(--staff-removed-bg) 0 50%, transparent 50% 100%);
 }
 
 .staff-diff-split
-  tr.react-diff-line:has(> .staff-content.diff-added):not(:has(> .staff-content.diff-removed)) {
+  tr.staff-diff-line:has(> .staff-content.diff-added):not(:has(> .staff-content.diff-removed)) {
   background: linear-gradient(to right, transparent 0 50%, var(--staff-added-bg) 50% 100%);
 }
 
@@ -317,7 +317,7 @@
   display: none;
 }
 
-.staff-diff-nowrap.staff-diff-split tr.react-diff-line {
+.staff-diff-nowrap.staff-diff-split tr.staff-diff-line {
   display: grid;
   grid-template-columns:
     var(--staff-gutter-w) var(--staff-marker-w) minmax(0, calc(50% - var(--staff-fixed-line-w)))
@@ -325,7 +325,7 @@
   width: 100%;
 }
 
-.staff-diff-nowrap.staff-diff-unified tr.react-diff-line {
+.staff-diff-nowrap.staff-diff-unified tr.staff-diff-line {
   display: grid;
   grid-template-columns:
     var(--staff-gutter-w) var(--staff-marker-w)
@@ -333,8 +333,8 @@
   width: 100%;
 }
 
-.staff-diff-nowrap.staff-diff-split tr.react-diff-line > td,
-.staff-diff-nowrap.staff-diff-unified tr.react-diff-line > td {
+.staff-diff-nowrap.staff-diff-split tr.staff-diff-line > td,
+.staff-diff-nowrap.staff-diff-unified tr.staff-diff-line > td {
   display: block;
 }
 

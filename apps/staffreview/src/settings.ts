@@ -65,8 +65,9 @@ export type GlobalSettings = {
   /** Whether long diff lines wrap to fit the pane (default true). When off,
    * long lines extend past the pane and scroll horizontally instead. */
   wrapLines?: boolean;
-  /** Whether file diffs start expanded (default true). Per-file toggles
-   * in the UI override this. */
+  /** Whether file diffs start expanded (default false; see
+   * DEFAULT_FILES_EXPANDED_BY_DEFAULT). Per-file toggles in the UI override
+   * this. */
   filesExpandedByDefault?: boolean;
   /** Whether `staff serve` opens the browser automatically. */
   openBrowser?: boolean;
@@ -77,9 +78,9 @@ export type GlobalSettings = {
    * find agents into per-find verification. Defaults to
    * {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
-  /** How many scout sub-agents `/staff-docs` fans out across the local
-   * diffs + PRs it mines. A sweep covers far more ground than a single diff
-   * review, so this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
+  /** How many scout sub-agents `/staff-docs` fans out across GitHub PR review
+   * comments. A docs sweep can cover more ground than a single diff review, so
+   * this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
   docsAgents?: number;
 };
 

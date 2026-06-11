@@ -2,6 +2,7 @@
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
+import skillCopy from "../skills/staff-copy.md" with { type: "text" };
 import skillDocs from "../skills/staff-docs.md" with { type: "text" };
 import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
 import skillDocument from "../skills/staff-document.md" with { type: "text" };
@@ -29,6 +30,7 @@ const SKILLS: Record<string, string> = {
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
   "staff-comment": skillComment,
+  "staff-copy": skillCopy,
   "staff-document": skillDocument,
   "staff-resolve": skillResolve,
   "staff-loop": skillLoop,
@@ -158,7 +160,7 @@ USAGE
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
 
-  staff install                 Set up the repo: write the nine /staff-* skills to
+  staff install                 Set up the repo: write the ten /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 

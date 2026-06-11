@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { resetDiffsJson, staff } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
@@ -8,16 +9,45 @@ test.beforeEach(async () => {
   await rm(STAFF_CONFIG_DIR, { recursive: true, force: true });
 });
 
-async function openFeatureDiff(page: import("@playwright/test").Page) {
+async function openFeatureDiff(page: Page) {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
 }
 
-// The custom `<pre class="staff-content-text react-diff-content-text">` carries
+async function openGear(page: Page) {
+  await page.getByTestId("settings-menu-button").click();
+}
+
+async function clickSettingToggle(page: Page, testId: string) {
+  const postSettings = page.waitForResponse(
+    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
+  );
+  await page.getByTestId(testId).click();
+  await postSettings;
+}
+
+async function closeGear(page: Page) {
+  await page.keyboard.press("Escape");
+}
+
+async function setNoWrap(page: Page) {
+  await openGear(page);
+  await clickSettingToggle(page, "wrap-lines-toggle");
+  await closeGear(page);
+}
+
+async function useUnifiedNoWrap(page: Page) {
+  await openGear(page);
+  await clickSettingToggle(page, "view-mode-unified");
+  await clickSettingToggle(page, "wrap-lines-toggle");
+  await closeGear(page);
+}
+
+// The custom `<pre class="staff-content-text">` carries
 // the wrap: `pre-wrap` wraps, `pre` doesn't.
-function contentWhiteSpace(card: import("@playwright/test").Locator) {
+function contentWhiteSpace(card: Locator) {
   return card
     .locator('[class*="content-text"]')
     .first()
@@ -74,7 +104,7 @@ test("Wrap lines is on by default and the long line wraps", async ({ page }) => 
   await expect(card.locator(".staff-diff")).not.toHaveClass(/staff-diff-nowrap/);
   expect(await contentWhiteSpace(card)).toBe("pre-wrap");
 
-  await page.getByTestId("settings-menu-button").click();
+  await openGear(page);
   await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "true");
 });
 
@@ -86,15 +116,10 @@ test("turning Wrap lines off lets the long line overflow and scroll horizontally
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const toggle = page.getByTestId("wrap-lines-toggle");
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await toggle.click();
-  await postSettings;
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await page.keyboard.press("Escape");
+  await openGear(page);
+  await clickSettingToggle(page, "wrap-lines-toggle");
+  await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "false");
+  await closeGear(page);
 
   // No-wrap: the class is applied, content stops wrapping, and the wide 400-char
   // line makes the per-file container horizontally scrollable.
@@ -111,13 +136,7 @@ test("no-wrap split keeps changed-line tint behind the full scrollable line", as
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-split/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -146,13 +165,7 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-split/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -204,7 +217,7 @@ test("no-wrap split keeps both gutters fixed while clipping code to each pane", 
 
   const geometry = await staffDiff.evaluate((el) => {
     const diffRect = el.getBoundingClientRect();
-    const row = [...el.querySelectorAll("tr.react-diff-line")].find(
+    const row = [...el.querySelectorAll("tr.staff-diff-line")].find(
       (line) =>
         line.querySelector(".staff-content-old.diff-removed") &&
         line.querySelector(".staff-content-new.diff-added"),
@@ -379,13 +392,7 @@ test("no-wrap split keeps code text visible while horizontally scrolling", async
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-split/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -407,13 +414,7 @@ test("no-wrap keeps the fold pill centered on the card, not the wide table", asy
   const foldPill = card.locator('button[class*="code-fold-expand-button"]').first();
   await expect(foldPill).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
 
   // Distance between the pill's center and the card's center, in px.
@@ -459,13 +460,7 @@ test("no-wrap keeps the comment button pinned beside the sticky gutter after hor
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
 
   const gutter = card.locator(".staff-gutter.diff-added").first();
@@ -513,13 +508,7 @@ test("no-wrap colors changed gutters to match their line backgrounds", async ({ 
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
 
   await staffDiff.evaluate((el) => {
@@ -596,13 +585,7 @@ test("no-wrap centers the fold pill on short-line files too (no horizontal scrol
   const foldPill = card.locator('button[class*="code-fold-expand-button"]').first();
   await expect(foldPill).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
   await expect(card.locator(".staff-diff")).toHaveClass(/staff-diff-nowrap/);
 
   const offset = await foldPill.evaluate((btn) => {
@@ -622,15 +605,7 @@ test("no-wrap also overflows and scrolls in unified layout", async ({ page }) =>
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -654,15 +629,7 @@ test("no-wrap unified keeps code text visible while horizontally scrolling", asy
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -682,15 +649,7 @@ test("no-wrap unified keeps the gutter fixed while clipping code to the pane", a
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -741,15 +700,7 @@ test("no-wrap unified keeps the fold rule and pill fixed while horizontally scro
   const foldPill = card.locator('button[class*="code-fold-expand-button"]').first();
   await expect(foldPill).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -783,15 +734,7 @@ test("no-wrap unified keeps changed-line tint behind the full long line", async 
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
 
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
@@ -870,15 +813,7 @@ test("no-wrap unified fills the pane tint with no spurious scroll for short line
   const staffDiff = card.locator(".staff-diff");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  for (const testId of ["view-mode-unified", "wrap-lines-toggle"]) {
-    const postSettings = page.waitForResponse(
-      (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-    );
-    await page.getByTestId(testId).click();
-    await postSettings;
-  }
-  await page.keyboard.press("Escape");
+  await useUnifiedNoWrap(page);
   await expect(staffDiff).toHaveClass(/staff-diff-unified/);
   await expect(staffDiff).toHaveClass(/staff-diff-nowrap/);
 
@@ -904,13 +839,7 @@ test("Wrap lines preference persists across reload and can be set by CLI", async
   const card = page.getByTestId("file-card-wrapme.ts");
   await expect(card.locator('[class*="content-text"]').first()).toBeVisible({ timeout: 10_000 });
 
-  await page.getByTestId("settings-menu-button").click();
-  const postSettings = page.waitForResponse(
-    (r) => r.url().includes("/api/settings") && r.request().method() === "POST",
-  );
-  await page.getByTestId("wrap-lines-toggle").click();
-  await postSettings;
-  await page.keyboard.press("Escape");
+  await setNoWrap(page);
   await expect(card.locator(".staff-diff")).toHaveClass(/staff-diff-nowrap/);
 
   await page.reload();
@@ -918,7 +847,7 @@ test("Wrap lines preference persists across reload and can be set by CLI", async
   await expect(page.getByTestId("file-card-wrapme.ts").locator(".staff-diff")).toHaveClass(
     /staff-diff-nowrap/,
   );
-  await page.getByTestId("settings-menu-button").click();
+  await openGear(page);
   await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "false");
 
   expect((await staff(["settings", "set", "wrapLines", "true"])).trim()).toBe("wrapLines: true");
@@ -926,6 +855,6 @@ test("Wrap lines preference persists across reload and can be set by CLI", async
   await openFeatureDiff(page);
   const reloadedCard = page.getByTestId("file-card-wrapme.ts");
   await expect(reloadedCard.locator(".staff-diff")).not.toHaveClass(/staff-diff-nowrap/);
-  await page.getByTestId("settings-menu-button").click();
+  await openGear(page);
   await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "true");
 });

@@ -3,7 +3,7 @@ title: Skills
 description: The /staff-* skills that drive the review, and how to make them your own.
 ---
 
-`staff install` writes nine skills to `.agents/skills/` (the six below plus
+`staff install` writes ten skills to `.agents/skills/` (the seven below plus
 the three building blocks), symlinked into `.claude/skills/` so Claude Code exposes
 them as slash commands. They’re just Markdown — edit them to encode your team’s
 standards.
@@ -13,14 +13,15 @@ standards.
 | `/staff-review` | Reviews the active diff with find sub-agents, verifies each finder's output as it returns, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
+| `/staff-copy` | Copies open GitHub PR review comments from provided PR URL(s) into local Staff Review diffs. |
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
-| `/staff-docs` | Mines past Staff Review diffs and GitHub PRs for recurring lessons and writes the best ones into `.staffreview/docs/`. |
+| `/staff-docs` | Mines GitHub PR review history, or provided PR URL(s), for recurring lessons and writes the best ones into `.staffreview/docs/`. |
 | `/staff-loop` | Runs the same pipelined find → verify → post review flow, then resolves the diff in sub-agents round after round until it converges. |
 
 Three more are **building blocks**, not run directly: `/staff-review-find` (one
 find agent — reviews an assigned slice of the areas/docs and returns findings),
 `/staff-review-verify` (one verify agent — re-checks a batch of findings), and
-`/staff-docs-scout` (one scout agent — reads an assigned slice of history and
+`/staff-docs-scout` (one scout agent — reads an assigned slice of PR refs and
 returns candidate lessons). `/staff-review` and `/staff-loop` fan out to the
 first two, and `/staff-docs` fans out to the scouts, so the orchestrators never
 have to spawn a top-level skill as a sub-agent.
@@ -68,6 +69,18 @@ It does not commit; you review and commit the changes.
 The thin CLI wrapper the other skills use to add, edit, delete, list, and
 resolve comments via the `staff` CLI. You rarely invoke it directly.
 
+## /staff-copy
+
+Copies unresolved GitHub PR review threads from one or more provided PR refs into
+local Staff Review diffs. It preserves the original GitHub authors, copies
+replies, skips duplicates on repeat runs, and leaves the imported threads open
+for local triage or `/staff-resolve`.
+
+```text
+/staff-copy https://github.com/owner/repo/pull/123
+/staff-copy 123 456
+```
+
 ## /staff-document
 
 Imports a GitHub PR review comment by URL and turns it into a structured
@@ -76,16 +89,18 @@ that already lives on GitHub.
 
 ## /staff-docs
 
-Mines your review history — past Staff Review diffs and GitHub PRs (via `gh`) —
-for recurring, generalizable lessons worth keeping, then writes the best ones
-into `.staffreview/docs/`. It fans the reading out across parallel
-`/staff-docs-scout` sub-agents, ranks the survivors impact-first, surfaces the
-top candidates for you to flag, and documents the ones you keep. The scout
-fan-out width is the **`docsAgents`** setting (default **5**, range 1–20,
-adjustable in the gear menu).
+Mines GitHub PR review history for recurring, generalizable lessons worth
+keeping, then writes the best ones into `.staffreview/docs/`. By default it
+sweeps recent PRs in the current repo. You can also pass PR URL(s) or explicit PR
+refs to target specific PRs. It does not scan local Staff Review diffs. It fans
+the reading out across parallel `/staff-docs-scout` sub-agents, ranks the
+survivors impact-first, surfaces the top candidates for you to flag, and
+documents the ones you keep. The scout fan-out width is the **`docsAgents`**
+setting (default **5**, range 1–20, adjustable in the gear menu).
 
 ```text
 /staff-docs
+/staff-docs https://github.com/owner/repo/pull/123
 ```
 
 ## /staff-loop

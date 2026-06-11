@@ -273,6 +273,18 @@ test("inlineRangesForPair skips oversized token pairs before structural diffing"
   expect(inlineRangesForPair(oldText, newText)).toEqual({ oldRanges: [], newRanges: [] });
 });
 
+test("inlineRangesForPair highlights punctuation-only changed pairs", () => {
+  // No [a-z0-9_] tokens on either side — the similarity gate must not treat
+  // that as dissimilarity and suppress the single-character edit.
+  const { newRanges } = inlineRangesForPair("}", "};");
+  expect(newRanges.length).toBeGreaterThan(0);
+});
+
+test("inlineRangesForPair highlights non-Latin changed pairs", () => {
+  const { newRanges } = inlineRangesForPair("// комментарий старый", "// комментарий новый");
+  expect(newRanges.length).toBeGreaterThan(0);
+});
+
 test("fileChangeStats handles added and deleted files", () => {
   expect(
     fileChangeStats(

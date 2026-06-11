@@ -73,7 +73,7 @@ Prefer not to build? Run straight from source: `bun run apps/staffreview/src/cli
 From inside the git repo you want to review:
 
 ```bash
-# 1. One‑time setup: writes the nine /staff-* skills, creates the
+# 1. One-time setup: writes the ten /staff-* skills, creates the
 #    .staffreview/ store, and gitignores the per‑machine bits.
 staff install
 
@@ -111,15 +111,16 @@ staff --port 4400           # serve the UI on a specific port
 - **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so `/staff-resolve` captures it as a reusable lesson.
 - The diff and the comment sidebar scroll independently, with light/dark themes, split/unified view, and syntax highlighting in the gear menu.
 
-**The skills** are how agents review. `staff install` writes nine of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — six you run directly plus three building blocks:
+**The skills** are how agents review. `staff install` writes ten of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — seven you run directly plus three building blocks:
 
 | Skill | What it does |
 | --- | --- |
 | `/staff-review` | Fans the review across parallel sub-agents, verifies their findings to drop false positives, and leaves inline comments. |
 | `/staff-resolve` | Works each open thread: fixes the code, documents it, or skips with a justification. |
 | `/staff-comment` | The thin CLI wrapper the others use to post/edit/resolve comments. |
+| `/staff-copy` | Copies open GitHub PR review comments from provided PR URL(s) into local Staff Review diffs. |
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
-| `/staff-docs` | Mines past diffs and GitHub PRs for recurring lessons and writes the best into `.staffreview/docs/`. |
+| `/staff-docs` | Mines GitHub PR review history, or provided PR URL(s), for recurring lessons and writes the best into `.staffreview/docs/`. |
 | `/staff-loop` | Reviews (find → verify → post) then resolves the diff in subagents, round after round, until it converges. |
 
 Three more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to, plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
