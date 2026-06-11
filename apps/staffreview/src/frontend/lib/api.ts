@@ -9,6 +9,7 @@ export type GlobalSettings = {
   syntaxThemeLight?: string;
   syntaxThemeDark?: string;
   structuredHighlighting?: boolean;
+  wrapLines?: boolean;
   filesExpandedByDefault?: boolean;
   openBrowser?: boolean;
   loopMaxRounds?: number;

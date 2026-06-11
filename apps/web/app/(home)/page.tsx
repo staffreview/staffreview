@@ -120,15 +120,13 @@ export default function HomePage() {
       {/* Screenshot */}
       <section className="border-t border-fd-border bg-fd-muted/30">
         <div className="mx-auto w-full max-w-5xl px-4 py-16 sm:py-20">
-          <div className="overflow-hidden rounded-xl border border-fd-border shadow-sm">
-            <Image
-              src="/screenshot.png"
-              alt="Staff Review — an AI agent’s inline review on a diff, with the comment thread anchored to the changed line and the review sidebar alongside"
-              width={1600}
-              height={1000}
-              className="h-auto w-full"
-            />
-          </div>
+          <Image
+            src="/screenshot.png"
+            alt="Staff Review — an AI agent’s inline review on a diff, with the comment thread anchored to the changed line and the review sidebar alongside"
+            width={3680}
+            height={2212}
+            className="h-auto w-full"
+          />
         </div>
       </section>
 

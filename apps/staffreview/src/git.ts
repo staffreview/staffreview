@@ -227,52 +227,91 @@ async function listChangedFiles(
   cwd: string,
 ): Promise<{ path: string; status: string; oldPath?: string }[]> {
   const results: { path: string; status: string; oldPath?: string }[] = [];
+  const diffArgs = diffArgsForTargets(base, head);
+  if (!diffArgs) return results;
+
+  const out = (await run(["git", "diff", "--name-status", ...diffArgs.args], { cwd })).trim();
+  parseStatus(out, results);
+
+  if (diffArgs.includeUntracked) {
+    const untracked = (
+      await run(["git", "ls-files", "--others", "--exclude-standard"], {
+        cwd,
+        allowFail: true,
+      })
+    ).trim();
+    for (const p of untracked.split("\n").filter(Boolean)) {
+      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
+    }
+  }
+
+  return results;
+}
+
+function diffArgsForTargets(
+  base: DiffTarget,
+  head: DiffTarget,
+): { args: string[]; includeUntracked: boolean } | null {
   const baseRef = gitRefForTarget(base);
   const headRef = gitRefForTarget(head);
 
   if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
-    const out = (await run(["git", "diff", "--name-status", baseRef!], { cwd })).trim();
-    parseStatus(out, results);
-    const untracked = (
-      await run(["git", "ls-files", "--others", "--exclude-standard"], {
-        cwd,
-        allowFail: true,
-      })
-    ).trim();
-    for (const p of untracked.split("\n").filter(Boolean)) {
-      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
-    }
-    return results;
+    return { args: [baseRef!], includeUntracked: true };
   }
 
   if (base.kind === "staged" || head.kind === "staged") {
-    const out = (await run(["git", "diff", "--cached", "--name-status"], { cwd })).trim();
-    parseStatus(out, results);
-    return results;
+    return { args: ["--cached"], includeUntracked: false };
   }
 
   if (baseRef && headRef) {
-    const out = (await run(["git", "diff", "--name-status", baseRef, headRef], { cwd })).trim();
-    parseStatus(out, results);
-    return results;
+    return { args: [baseRef, headRef], includeUntracked: false };
   }
 
   if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
-    const out = (await run(["git", "diff", "--name-status", "HEAD"], { cwd })).trim();
-    parseStatus(out, results);
-    const untracked = (
-      await run(["git", "ls-files", "--others", "--exclude-standard"], {
-        cwd,
-        allowFail: true,
-      })
-    ).trim();
-    for (const p of untracked.split("\n").filter(Boolean)) {
-      if (!results.find((r) => r.path === p)) results.push({ path: p, status: "A" });
-    }
-    return results;
+    return { args: ["HEAD"], includeUntracked: true };
   }
 
-  return results;
+  return null;
+}
+
+async function listBinaryFiles(
+  base: DiffTarget,
+  head: DiffTarget,
+  cwd: string,
+): Promise<Set<string>> {
+  const binary = new Set<string>();
+  const diffArgs = diffArgsForTargets(base, head);
+  if (!diffArgs) return binary;
+  const out = await run(["git", "diff", "--numstat", "-z", ...diffArgs.args], {
+    cwd,
+    allowFail: true,
+  });
+
+  const records = out.split("\0");
+  for (let i = 0; i < records.length; ) {
+    const record = records[i++];
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = firstTab < 0 ? -1 : record.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+
+    const additions = record.slice(0, firstTab);
+    const deletions = record.slice(firstTab + 1, secondTab);
+    const path = record.slice(secondTab + 1);
+    const isRename = path === "";
+    const oldPath = isRename ? records[i++] : undefined;
+    const newPath = isRename ? records[i++] : undefined;
+
+    if (additions === "-" && deletions === "-") {
+      if (isRename) {
+        if (oldPath) binary.add(oldPath);
+        if (newPath) binary.add(newPath);
+      } else if (path) {
+        binary.add(path);
+      }
+    }
+  }
+  return binary;
 }
 
 function parseStatus(out: string, results: { path: string; status: string; oldPath?: string }[]) {
@@ -374,6 +413,7 @@ export async function getDiff(
   const files = (await listChangedFiles(base, head, cwd)).filter(
     (f) => !f.path.startsWith(".staffreview/") && !f.path.startsWith(".staff-review/"),
   );
+  const binaryFiles = await listBinaryFiles(base, head, cwd);
   const diffs: FileDiff[] = [];
   for (const f of files) {
     const status = f.status.startsWith("A")
@@ -387,13 +427,27 @@ export async function getDiff(
     const oldPath = f.oldPath ?? f.path;
     const baseIsSymlink = status === "added" ? false : await isSymlinkAt(base, oldPath, cwd);
     const headIsSymlink = status === "deleted" ? false : await isSymlinkAt(head, f.path, cwd);
+    const isSymlink = status === "deleted" ? baseIsSymlink : headIsSymlink;
+    const isKnownBinary = !isSymlink && (binaryFiles.has(f.path) || binaryFiles.has(oldPath));
+    if (isKnownBinary) {
+      diffs.push({
+        path: f.path,
+        oldPath: f.oldPath,
+        status,
+        oldContent: "",
+        newContent: "",
+        isSymlink,
+        isBinary: true,
+      });
+      continue;
+    }
+
     const oldContent = status === "added" ? "" : await readSide(base, oldPath, cwd, baseIsSymlink);
     const newContent = status === "deleted" ? "" : await readSide(head, f.path, cwd, headIsSymlink);
 
     // The file is "a symlink" when the side that exists for this status is
     // one (head normally; base for deletions). Then we show a compact
     // target row instead of the (non-)content.
-    const isSymlink = status === "deleted" ? baseIsSymlink : headIsSymlink;
     const symlinkTarget = isSymlink
       ? (status === "deleted" ? oldContent : newContent).trim() || undefined
       : undefined;

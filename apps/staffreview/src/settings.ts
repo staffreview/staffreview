@@ -20,6 +20,13 @@ import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "./docs-co
 
 export { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS };
 
+import {
+  DEFAULT_FILES_EXPANDED_BY_DEFAULT,
+  DEFAULT_SPLIT_VIEW,
+} from "./display-settings-config.ts";
+
+export { DEFAULT_FILES_EXPANDED_BY_DEFAULT, DEFAULT_SPLIT_VIEW };
+
 import { DEFAULT_OPEN_BROWSER } from "./open-browser-config.ts";
 
 export { DEFAULT_OPEN_BROWSER };
@@ -32,6 +39,13 @@ import { parseBooleanSetting } from "./boolean-setting.ts";
 import { DEFAULT_STRUCTURED_HIGHLIGHTING } from "./structured-highlighting-config.ts";
 
 export { DEFAULT_STRUCTURED_HIGHLIGHTING };
+
+// Line-wrap default lives in a dependency-free module so the frontend bundle
+// shares one source of truth; re-exported so existing `settings.*` callers keep
+// working.
+import { DEFAULT_WRAP_LINES } from "./wrap-lines-config.ts";
+
+export { DEFAULT_WRAP_LINES };
 
 export type ColorScheme = "system" | "light" | "dark";
 
@@ -48,20 +62,25 @@ export type GlobalSettings = {
   /** Whether intra-line (word-level) diff highlighting is enabled in rendered
    * diffs. Independent of Shiki syntax highlighting, which is always on. */
   structuredHighlighting?: boolean;
-  /** Whether file diffs start expanded (default true). Per-file toggles
-   * in the UI override this. */
+  /** Whether long diff lines wrap to fit the pane (default true). When off,
+   * long lines extend past the pane and scroll horizontally instead. */
+  wrapLines?: boolean;
+  /** Whether file diffs start expanded (default false; see
+   * DEFAULT_FILES_EXPANDED_BY_DEFAULT). Per-file toggles in the UI override
+   * this. */
   filesExpandedByDefault?: boolean;
   /** Whether `staff serve` opens the browser automatically. */
   openBrowser?: boolean;
   /** Hard cap on review→resolve rounds for the `/staff-loop` skill.
    * Defaults to {@link DEFAULT_LOOP_ROUNDS} when unset. */
   loopMaxRounds?: number;
-  /** How many sub-agents `/staff-review` fans out per phase (find, then
-   * verify). Defaults to {@link DEFAULT_REVIEW_AGENTS} when unset. */
+  /** Target number of live sub-agents `/staff-review` uses while it pipelines
+   * find agents into per-find verification. Defaults to
+   * {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
-  /** How many scout sub-agents `/staff-docs` fans out across the local
-   * diffs + PRs it mines. A sweep covers far more ground than a single diff
-   * review, so this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
+  /** How many scout sub-agents `/staff-docs` fans out across GitHub PR review
+   * comments. A docs sweep can cover more ground than a single diff review, so
+   * this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
   docsAgents?: number;
 };
 
@@ -96,8 +115,37 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
     reviewAgents: DEFAULT_REVIEW_AGENTS,
     docsAgents: DEFAULT_DOCS_AGENTS,
     structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+    wrapLines: DEFAULT_WRAP_LINES,
     ...settings,
   };
+}
+
+const BOOLEAN_SETTING_DEFAULTS = {
+  filesExpandedByDefault: DEFAULT_FILES_EXPANDED_BY_DEFAULT,
+  openBrowser: DEFAULT_OPEN_BROWSER,
+  splitView: DEFAULT_SPLIT_VIEW,
+  structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+  wrapLines: DEFAULT_WRAP_LINES,
+} satisfies Record<
+  keyof Pick<
+    GlobalSettings,
+    "filesExpandedByDefault" | "openBrowser" | "splitView" | "structuredHighlighting" | "wrapLines"
+  >,
+  boolean
+>;
+
+function coerceBooleanSettings(settings: GlobalSettings) {
+  for (const [key, defaultValue] of Object.entries(BOOLEAN_SETTING_DEFAULTS) as Array<
+    [keyof typeof BOOLEAN_SETTING_DEFAULTS, boolean]
+  >) {
+    if (key in settings && typeof settings[key] !== "boolean") {
+      try {
+        settings[key] = parseBooleanSetting(String(settings[key]), key);
+      } catch {
+        settings[key] = defaultValue;
+      }
+    }
+  }
 }
 
 export async function writeSettings(partial: GlobalSettings): Promise<GlobalSettings> {
@@ -126,32 +174,12 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       Math.max(MIN_DOCS_AGENTS, Math.round(next.docsAgents)),
     );
   }
-  // Coerce `openBrowser` to a real boolean regardless of caller (the server's
-  // `POST /api/settings` casts the request body straight to `GlobalSettings`),
-  // so a stray `{"openBrowser":"yes"}` or `{"openBrowser":1}` is normalized
-  // rather than persisted verbatim and silently un-honored by readers.
-  // Route through the shared `parseBooleanSetting` (the same parser the CLI
-  // `set` path uses) so server and CLI agree on the stringy spellings — most
-  // importantly `"false"`/`"no"`/`"off"`/`"0"`, which `Boolean(...)` would
-  // wrongly flip to `true`. Fall back to the default on an unrecognized value
-  // (normalize-over-reject) so a crafted request can't crash the server.
-  if ("openBrowser" in next && typeof next.openBrowser !== "boolean") {
-    try {
-      next.openBrowser = parseBooleanSetting(String(next.openBrowser), "openBrowser");
-    } catch {
-      next.openBrowser = DEFAULT_OPEN_BROWSER;
-    }
-  }
-  if ("structuredHighlighting" in next && typeof next.structuredHighlighting !== "boolean") {
-    try {
-      next.structuredHighlighting = parseBooleanSetting(
-        String(next.structuredHighlighting),
-        "structuredHighlighting",
-      );
-    } catch {
-      next.structuredHighlighting = DEFAULT_STRUCTURED_HIGHLIGHTING;
-    }
-  }
+  // Coerce boolean settings regardless of caller (the server's
+  // `POST /api/settings` casts the request body straight to `GlobalSettings`).
+  // Route through the shared parser so server and CLI agree on stringy
+  // spellings like `"false"`/`"no"`/`"off"`/`"0"`, and normalize unrecognized
+  // values to each setting's default instead of crashing the server.
+  coerceBooleanSettings(next);
   await mkdir(settingsDir(), { recursive: true });
   await Bun.write(settingsPath(), JSON.stringify(next, null, 2));
   return next;

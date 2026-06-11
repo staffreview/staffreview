@@ -16,6 +16,7 @@ import {
   DEFAULT_SYNTAX_THEME_DARK,
   DEFAULT_SYNTAX_THEME_LIGHT,
   DEFAULT_THEME,
+  DEFAULT_WRAP_LINES,
 } from "../default-settings.ts";
 import { api, type ColorScheme, type GlobalSettings } from "../lib/api.ts";
 import { DARK_SYNTAX_THEMES, LIGHT_SYNTAX_THEMES } from "../lib/highlight.ts";
@@ -61,6 +62,7 @@ const DEFAULT_SETTINGS = {
   syntaxThemeLight: DEFAULT_SYNTAX_THEME_LIGHT,
   syntaxThemeDark: DEFAULT_SYNTAX_THEME_DARK,
   structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+  wrapLines: DEFAULT_WRAP_LINES,
   filesExpandedByDefault: DEFAULT_FILES_EXPANDED_BY_DEFAULT,
   openBrowser: DEFAULT_OPEN_BROWSER,
   loopMaxRounds: DEFAULT_LOOP_ROUNDS,
@@ -209,6 +211,8 @@ export interface SettingsMenuProps {
   syntaxThemeDark: string;
   structuredHighlighting: boolean;
   onStructuredHighlightingChange: (next: boolean) => void;
+  wrapLines: boolean;
+  onWrapLinesChange: (next: boolean) => void;
   onSyntaxThemeChange: (mode: "light" | "dark", name: string) => void;
   onResetDisplaySettings: () => void;
 }
@@ -229,6 +233,8 @@ export function SettingsMenu({
   syntaxThemeDark,
   structuredHighlighting,
   onStructuredHighlightingChange,
+  wrapLines,
+  onWrapLinesChange,
   onSyntaxThemeChange,
   onResetDisplaySettings,
 }: SettingsMenuProps) {
@@ -238,8 +244,9 @@ export function SettingsMenu({
   // Hard cap on review→resolve rounds for the /staff-loop skill. Default and
   // bounds come from loop-config.ts, shared with the server (settings.ts).
   const [loopMaxRounds, setLoopMaxRoundsState] = useState<number>(DEFAULT_LOOP_ROUNDS);
-  // How many sub-agents /staff-review fans out per phase. Default + bounds from
-  // review-config.ts, shared with the server (settings.ts).
+  // Target live sub-agent count while /staff-review pipelines find agents into
+  // per-find verification. Default + bounds from review-config.ts, shared with
+  // the server (settings.ts).
   const [reviewAgents, setReviewAgentsState] = useState<number>(DEFAULT_REVIEW_AGENTS);
   // How many scout sub-agents /staff-docs fans out. Default + bounds from
   // docs-config.ts, shared with the server (settings.ts).
@@ -337,6 +344,15 @@ export function SettingsMenu({
               label="Structured highlighting"
               onCheckedChange={onStructuredHighlightingChange}
               testId="structured-highlighting-toggle"
+            />
+          </SettingRow>
+
+          <SettingRow label="Wrap lines">
+            <SwitchToggle
+              checked={wrapLines}
+              label="Wrap lines"
+              onCheckedChange={onWrapLinesChange}
+              testId="wrap-lines-toggle"
             />
           </SettingRow>
 

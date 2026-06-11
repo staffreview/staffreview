@@ -47,12 +47,7 @@ test("inline comments appear in the sidebar and clicking scrolls to them", async
   await expect(page.locator(`[data-thread-id="${comment.threadId}"]`)).toBeInViewport();
 });
 
-// Note: collapsed-expand-then-scroll has a known timing race because
-// react-diff-viewer-continued takes more than one frame to mount its
-// <table>. Skipped until we move off the library.
-test.skip("clicking a sidebar inline thread expands the file if it's collapsed", async ({
-  page,
-}) => {
+test("clicking a sidebar inline thread expands the file if it's collapsed", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("target-picker-head-button").click();
   await page.getByRole("option", { name: /feature\/improve-math/ }).click();

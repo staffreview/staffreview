@@ -8,7 +8,7 @@ test.beforeEach(async () => {
 // Regression: posting a comment must NOT highlight the line it's anchored to.
 // A line highlight is reserved for an explicit selection — clicking/dragging a
 // line number or arriving via a URL anchor. (The bug fed comment lines into
-// react-diff-viewer's `highlightLines`, tinting every commented line.)
+// the renderer's anchor/highlight path, tinting every commented line.)
 test("a comment does not highlight its line; clicking the line number still does", async ({
   page,
 }) => {
@@ -38,8 +38,8 @@ test("a comment does not highlight its line; clicking the line number still does
   await expect(
     mathCard.locator("[data-thread-id]", { hasText: "no highlight please" }),
   ).toBeVisible();
-  // ...but nothing is highlighted: neither react-diff-viewer's own
-  // `highlighted-line` class nor our `data-anchored` selection paint.
+  // ...but nothing is highlighted: neither a legacy highlighted-line class nor
+  // our `data-anchored` selection paint.
   await expect(mathCard.locator('[class*="highlighted-line"]')).toHaveCount(0);
   await expect(mathCard.locator('table tbody tr[data-anchored="true"]')).toHaveCount(0);
 

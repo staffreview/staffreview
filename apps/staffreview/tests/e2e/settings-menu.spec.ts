@@ -123,6 +123,7 @@ test("Reset to defaults requires confirmation and restores menu settings", async
       diffFontSize: 17,
       theme: "dark",
       structuredHighlighting: false,
+      wrapLines: false,
       filesExpandedByDefault: true,
       openBrowser: false,
       loopMaxRounds: 6,
@@ -142,6 +143,7 @@ test("Reset to defaults requires confirmation and restores menu settings", async
     "aria-checked",
     "false",
   );
+  await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "false");
   await expect(page.getByTestId("files-collapse-toggle")).toHaveAttribute("aria-checked", "false");
   await expect(page.getByTestId("diff-font-size")).toHaveText("17px");
   await expect(page.getByTestId("theme-dark")).toHaveAttribute("aria-checked", "true");
@@ -172,6 +174,7 @@ test("Reset to defaults requires confirmation and restores menu settings", async
     "aria-checked",
     "true",
   );
+  await expect(page.getByTestId("wrap-lines-toggle")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("files-collapse-toggle")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("diff-font-size")).toHaveText("14px");
   await expect(page.getByTestId("theme-system")).toHaveAttribute("aria-checked", "true");

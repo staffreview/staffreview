@@ -2,6 +2,7 @@
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
+import skillCopy from "../skills/staff-copy.md" with { type: "text" };
 import skillDocs from "../skills/staff-docs.md" with { type: "text" };
 import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
 import skillDocument from "../skills/staff-document.md" with { type: "text" };
@@ -29,6 +30,7 @@ const SKILLS: Record<string, string> = {
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
   "staff-comment": skillComment,
+  "staff-copy": skillCopy,
   "staff-document": skillDocument,
   "staff-resolve": skillResolve,
   "staff-loop": skillLoop,
@@ -148,14 +150,17 @@ USAGE
                                  (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
                                  (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}),
                                  openBrowser (whether serve opens a browser,
-                                 default ${settings.DEFAULT_OPEN_BROWSER}), or structuredHighlighting
+                                 default ${settings.DEFAULT_OPEN_BROWSER}), structuredHighlighting
                                  (intra-line word-diff highlighting,
-                                 default ${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}).
-  staff settings set <openBrowser|structuredHighlighting> <true|false>
+                                 default ${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}), or wrapLines
+                                 (wrap long diff lines vs. scroll horizontally,
+                                 default ${settings.DEFAULT_WRAP_LINES}).
+  staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                  Persist whether serve opens a browser / shows
-                                 intra-line word-diff highlighting.
+                                 intra-line word-diff highlighting / wraps long
+                                 diff lines.
 
-  staff install                 Set up the repo: write the nine /staff-* skills to
+  staff install                 Set up the repo: write the ten /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
                                  create the .staffreview/ store, and gitignore it.
 
@@ -612,15 +617,14 @@ async function main(argv: string[]) {
       }
       if (positional[1] === "set") {
         const key = positional[2];
-        if (key !== "openBrowser" && key !== "structuredHighlighting") {
+        if (key !== "openBrowser" && key !== "structuredHighlighting" && key !== "wrapLines") {
           throw new Error(
-            "usage: staff settings set <openBrowser|structuredHighlighting> <true|false>",
+            "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>",
           );
         }
         const value = parseBooleanSetting(positional[3], key);
-        await settings.writeSettings(
-          key === "openBrowser" ? { openBrowser: value } : { structuredHighlighting: value },
-        );
+        const update: settings.GlobalSettings = { [key]: value };
+        await settings.writeSettings(update);
         if (flags.json) console.log(JSON.stringify({ [key]: value }, null, 2));
         else console.log(`${key}: ${value}`);
         return;

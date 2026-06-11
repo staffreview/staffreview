@@ -19,8 +19,8 @@ async function openBigDiff(page: import("@playwright/test").Page) {
 
 // Regression: a comment anchored to a line inside a folded region must still
 // render INLINE (its host row placed in the diff), not only in the sidebar.
-// Fixed by forcing every commented line into react-diff-viewer's
-// `alwaysShowLines`, so the line is never folded in the first place.
+// Fixed by adding comment anchors to `forceVisibleLines`, then letting
+// `buildVisibleDiffItems` keep those host rows out of folded context blocks.
 test("a comment on a folded line renders inline, not just in the sidebar", async ({ page }) => {
   await page.goto("/");
   const card = await openBigDiff(page);
@@ -65,4 +65,42 @@ test("a comment on a folded line renders inline, not just in the sidebar", async
       return nums.map((t) => t.trim());
     })
     .toContain("3");
+});
+
+test("a folded range comment renders both endpoints for deep-link anchors", async ({ page }) => {
+  await page.goto("/");
+  const card = await openBigDiff(page);
+
+  const rows = card.locator("table tbody tr");
+  await expect.poll(async () => await rows.count()).toBeLessThan(40);
+
+  await staff([
+    "comment",
+    "add",
+    "--file",
+    "big.ts",
+    "--line",
+    "3",
+    "--end-line",
+    "21",
+    "--side",
+    "new",
+    "--author",
+    "Opus 4.8",
+    "--body",
+    "Folded range finding.",
+  ]);
+
+  await page.goto("/#big.ts:R3-R21");
+  const card2 = await openBigDiff(page);
+
+  await expect(
+    card2.locator("[data-thread-id]", { hasText: "Folded range finding." }),
+  ).toBeVisible();
+  await expect(
+    card2.locator('tr[data-anchored="true"] td[data-side="new"][data-line="3"]'),
+  ).toBeVisible();
+  await expect(
+    card2.locator('tr[data-anchored="true"] td[data-side="new"][data-line="21"]'),
+  ).toBeVisible();
 });

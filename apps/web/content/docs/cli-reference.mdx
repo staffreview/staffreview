@@ -70,10 +70,13 @@ staff settings get reviewAgents        # /staff-review agent fan-out (default 2)
 staff settings get docsAgents          # /staff-docs scout fan-out (default 5)
 staff settings get openBrowser         # browser auto-open preference
 staff settings set openBrowser false   # make --no-open the default
+staff settings get wrapLines           # diff line wrapping preference
+staff settings set wrapLines false     # make diffs horizontally scroll by default
 staff settings get structuredHighlighting        # intra-line word-diff toggle
 staff settings set structuredHighlighting false  # turn it off by default
 ```
 
 Settings (theme, split/unified, font size, syntax theme, browser auto-open,
-intra-line word-diff highlighting, review-loop cap, the review agent count, and
-the docs scout count) live in the gear menu and persist globally.
+line wrapping, intra-line word-diff highlighting, review-loop cap, the review
+agent count, and the docs scout count) live in the gear menu and persist
+globally.

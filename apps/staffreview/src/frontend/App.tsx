@@ -24,6 +24,7 @@ import {
   DEFAULT_SYNTAX_THEME_DARK,
   DEFAULT_SYNTAX_THEME_LIGHT,
   DEFAULT_THEME,
+  DEFAULT_WRAP_LINES,
 } from "./default-settings.ts";
 import { api, type ColorScheme, openSocket, type WSEvent } from "./lib/api.ts";
 import { ensureShikiTheme } from "./lib/highlight.ts";
@@ -93,6 +94,61 @@ function defaultTargets(
   };
 }
 
+function refListsEqual(a: GitRefInfo[], b: GitRefInfo[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.name !== right.name ||
+      left.kind !== right.kind ||
+      left.sha !== right.sha ||
+      left.subject !== right.subject
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function diffTargetsKey(base: DiffTarget, head: DiffTarget): string {
+  return JSON.stringify([base, head]);
+}
+
+function fileDiffEqual(left: FileDiff, right: FileDiff): boolean {
+  return (
+    left.path === right.path &&
+    left.oldPath === right.oldPath &&
+    left.status === right.status &&
+    left.oldContent === right.oldContent &&
+    left.newContent === right.newContent &&
+    left.isSymlink === right.isSymlink &&
+    left.symlinkTarget === right.symlinkTarget &&
+    left.oldSymlinkTarget === right.oldSymlinkTarget &&
+    left.isBinary === right.isBinary
+  );
+}
+
+/**
+ * Merge a freshly fetched file list into the previous one, reusing the
+ * previous object for every path whose fields are unchanged. Per-file memos
+ * in DiffFile key on `file` identity, so committing the raw response array —
+ * a fresh object per file — would re-run diffLines/buildDiffRows for every
+ * open card when only one file changed (e.g. each save during a live WT
+ * review). Returns `prev` itself when nothing changed at all.
+ */
+function mergeFileDiffs(prev: FileDiff[], next: FileDiff[]): FileDiff[] {
+  if (prev === next) return prev;
+  const prevByPath = new Map(prev.map((f) => [f.path, f]));
+  const merged = next.map((f) => {
+    const old = prevByPath.get(f.path);
+    return old && fileDiffEqual(old, f) ? old : f;
+  });
+  const identical = merged.length === prev.length && merged.every((f, i) => f === prev[i]);
+  return identical ? prev : merged;
+}
+
 export function App() {
   const [info, setInfo] = useState<{ cwd: string; root: string; branch: string | null } | null>(
     null,
@@ -102,6 +158,12 @@ export function App() {
   const [head, setHead] = useState<DiffTarget>({ kind: "working-tree" });
   const [diff, setDiff] = useState<Diff | null>(null);
   const [files, setFiles] = useState<FileDiff[]>([]);
+  const baseRef = useRef(base);
+  const headRef = useRef(head);
+  const infoRef = useRef<typeof info>(null);
+  const quietReloadTimerRef = useRef<number | null>(null);
+  const quietReloadInFlightRef = useRef(false);
+  const quietReloadPendingRef = useRef(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [splitView, setSplitViewState] = useState(DEFAULT_SPLIT_VIEW);
   const MIN_DIFF_FONT_SIZE = 9;
@@ -114,8 +176,11 @@ export function App() {
   const [structuredHighlighting, setStructuredHighlightingState] = useState(
     DEFAULT_STRUCTURED_HIGHLIGHTING,
   );
+  // Wrap long diff lines to fit the pane (default). Off lets long lines extend
+  // past the pane and scroll horizontally — see `staff-diff-nowrap` in DiffView.
+  const [wrapLines, setWrapLinesState] = useState(DEFAULT_WRAP_LINES);
   // Collapsed by default (showDiffOnly): only the changed hunks show,
-  // with react-diff-viewer's expand/fold-all controls to reveal the rest.
+  // with expand/fold-all controls to reveal the rest.
   // Switch to "Expanded" in the gear menu to always show whole files.
   const [filesExpandedByDefault, setFilesExpandedByDefaultState] = useState(
     DEFAULT_FILES_EXPANDED_BY_DEFAULT,
@@ -142,6 +207,9 @@ export function App() {
         }
         if (typeof settings.structuredHighlighting === "boolean") {
           setStructuredHighlightingState(settings.structuredHighlighting);
+        }
+        if (typeof settings.wrapLines === "boolean") {
+          setWrapLinesState(settings.wrapLines);
         }
         if (typeof settings.syntaxThemeLight === "string") {
           setSyntaxThemeLightState(settings.syntaxThemeLight);
@@ -178,6 +246,10 @@ export function App() {
     setStructuredHighlightingState(next);
     api.setSettings({ structuredHighlighting: next }).catch(() => {});
   }, []);
+  const setWrapLines = useCallback((next: boolean) => {
+    setWrapLinesState(next);
+    api.setSettings({ wrapLines: next }).catch(() => {});
+  }, []);
   const setSyntaxTheme = useCallback(async (mode: "light" | "dark", name: string) => {
     try {
       await ensureShikiTheme(name);
@@ -200,6 +272,7 @@ export function App() {
     setThemeState(DEFAULT_THEME);
     setFilesExpandedByDefaultState(DEFAULT_FILES_EXPANDED_BY_DEFAULT);
     setStructuredHighlightingState(DEFAULT_STRUCTURED_HIGHLIGHTING);
+    setWrapLinesState(DEFAULT_WRAP_LINES);
     setSyntaxThemeLightState(DEFAULT_SYNTAX_THEME_LIGHT);
     setSyntaxThemeDarkState(DEFAULT_SYNTAX_THEME_DARK);
     ensureShikiTheme(DEFAULT_SYNTAX_THEME_LIGHT).catch(() => {});
@@ -225,6 +298,15 @@ export function App() {
       return () => mql.removeEventListener("change", apply);
     }
   }, [theme]);
+  useEffect(() => {
+    baseRef.current = base;
+  }, [base]);
+  useEffect(() => {
+    headRef.current = head;
+  }, [head]);
+  useEffect(() => {
+    infoRef.current = info;
+  }, [info]);
   const [wsHello, setWsHello] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slugCopied, setSlugCopied] = useState(false);
@@ -314,7 +396,7 @@ export function App() {
           chosenHead ??= def.head;
         }
 
-        setRefs(r.refs);
+        setRefs((prev) => (refListsEqual(prev, r.refs) ? prev : r.refs));
         setBase(chosenBase);
         setHead(chosenHead);
         // setInfo last — it gates the reload effect, so no early HEAD..WT
@@ -342,19 +424,44 @@ export function App() {
   // that depend on it. No-ops unless the diff actually involves the
   // working tree or index — a static commit↔commit diff can't change from
   // a file edit, so there's nothing to refresh.
-  const reloadFilesQuiet = useCallback(async () => {
-    if (!info) return;
-    const dynamic =
-      base.kind === "working-tree" ||
-      base.kind === "staged" ||
-      head.kind === "working-tree" ||
-      head.kind === "staged";
-    if (!dynamic) return;
-    try {
-      const filesResp = await api.files(base, head);
-      setFiles(filesResp.files);
-    } catch {}
-  }, [base, head, info]);
+  const reloadFilesQuiet = useCallback(() => {
+    if (quietReloadTimerRef.current != null) {
+      window.clearTimeout(quietReloadTimerRef.current);
+    }
+    quietReloadTimerRef.current = window.setTimeout(async () => {
+      quietReloadTimerRef.current = null;
+      if (quietReloadInFlightRef.current) {
+        quietReloadPendingRef.current = true;
+        return;
+      }
+
+      do {
+        quietReloadPendingRef.current = false;
+        const currentInfo = infoRef.current;
+        const currentBase = baseRef.current;
+        const currentHead = headRef.current;
+        if (!currentInfo) return;
+        const dynamic =
+          currentBase.kind === "working-tree" ||
+          currentBase.kind === "staged" ||
+          currentHead.kind === "working-tree" ||
+          currentHead.kind === "staged";
+        if (!dynamic) return;
+
+        const requestKey = diffTargetsKey(currentBase, currentHead);
+        quietReloadInFlightRef.current = true;
+        try {
+          const filesResp = await api.files(currentBase, currentHead);
+          if (requestKey === diffTargetsKey(baseRef.current, headRef.current)) {
+            setFiles((prev) => mergeFileDiffs(prev, filesResp.files));
+          }
+        } catch {
+        } finally {
+          quietReloadInFlightRef.current = false;
+        }
+      } while (quietReloadPendingRef.current);
+    }, 250);
+  }, []);
 
   // Periodically refresh the refs list so we can detect when the branch
   // our base (or head) is pinned to advances past the SHA we've locked.
@@ -363,7 +470,7 @@ export function App() {
     const tick = async () => {
       try {
         const r = await api.refs();
-        setRefs(r.refs);
+        setRefs((prev) => (refListsEqual(prev, r.refs) ? prev : r.refs));
       } catch {}
     };
     const id = window.setInterval(tick, 15_000);
@@ -378,6 +485,10 @@ export function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(id);
+      if (quietReloadTimerRef.current != null) {
+        window.clearTimeout(quietReloadTimerRef.current);
+        quietReloadTimerRef.current = null;
+      }
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [info, reloadFilesQuiet]);
@@ -410,7 +521,7 @@ export function App() {
         api.files(base, head),
         api.createDiff(base, head),
       ]);
-      setFiles(filesResp.files);
+      setFiles((prev) => mergeFileDiffs(prev, filesResp.files));
       slugRef.current = diffResp.diff.slug;
       setDiff(diffResp.diff);
     } catch (e) {
@@ -431,11 +542,9 @@ export function App() {
     setDiff(d.diff);
   }, []);
 
-  // The live-update event handler. It closes over `reloadFilesQuiet` (whose
-  // identity changes with base/head/info), so it can't go straight into the
-  // socket effect's deps — that would reopen the WebSocket on every target
-  // change, and any event arriving during the reconnect gap would be lost
-  // (the cause of comments/resolutions not showing up until a manual refresh).
+  // Keep live-update handling separate from socket lifetime. The callback can
+  // depend on current refresh helpers while the socket below stays mounted, so
+  // events are not lost to reconnect churn.
   const handleWsEvent = useCallback(
     (ev: WSEvent) => {
       if (ev.type === "hello") {
@@ -492,6 +601,22 @@ export function App() {
   }, [info]);
 
   const comments = diff?.comments ?? [];
+  const sidebarHeaderLeft = useMemo(
+    () => (
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Hide review sidebar"
+        aria-pressed="false"
+        title="Hide review sidebar"
+        onClick={() => setSidebarOpen(false)}
+        data-testid="sidebar-toggle"
+      >
+        <PanelRightClose className="h-4 w-4" />
+      </Button>
+    ),
+    [],
+  );
 
   return (
     <div
@@ -576,6 +701,8 @@ export function App() {
                 syntaxThemeDark,
                 structuredHighlighting,
                 onStructuredHighlightingChange: setStructuredHighlighting,
+                wrapLines,
+                onWrapLinesChange: setWrapLines,
                 onSyntaxThemeChange: setSyntaxTheme,
                 onResetDisplaySettings: resetDisplaySettings,
               }}
@@ -646,6 +773,7 @@ export function App() {
               themeMode={effectiveTheme}
               syntaxTheme={effectiveTheme === "dark" ? syntaxThemeDark : syntaxThemeLight}
               structuredHighlighting={structuredHighlighting}
+              wrapLines={wrapLines}
               expandedByDefault={filesExpandedByDefault}
               onChange={refreshDiffOnly}
             />
@@ -675,19 +803,7 @@ export function App() {
                 onChange={refreshDiffOnly}
                 composing={composing}
                 onComposingChange={setComposing}
-                headerLeft={
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Hide review sidebar"
-                    aria-pressed="false"
-                    title="Hide review sidebar"
-                    onClick={() => setSidebarOpen(false)}
-                    data-testid="sidebar-toggle"
-                  >
-                    <PanelRightClose className="h-4 w-4" />
-                  </Button>
-                }
+                headerLeft={sidebarHeaderLeft}
               />
             )
           ) : (

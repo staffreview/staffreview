@@ -19,6 +19,6 @@ test("a binary file shows a placeholder, not a text diff", async ({ page }) => {
   await expect(card.getByTestId("binary-panel-pixel.png")).toBeVisible();
   await expect(card).toContainText("Binary file not shown");
 
-  // ...and react-diff-viewer never renders a table of (decoded) bytes for it.
+  // ...and the diff renderer never renders a table of (decoded) bytes for it.
   await expect(card.locator("table")).toHaveCount(0);
 });

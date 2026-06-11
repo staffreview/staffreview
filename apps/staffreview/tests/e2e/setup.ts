@@ -41,6 +41,55 @@ const BIG_LINES = Array.from({ length: 40 }, (_, i) => `const v${i} = ${i};`);
 const BIG_OLD = `${BIG_LINES.join("\n")}\n`;
 const BIG_NEW = `${BIG_LINES.map((l, i) => (i === 20 ? `const v20 = 200;` : l)).join("\n")}\n`;
 
+// A file whose changed line is far wider than any pane, padded with unchanged
+// context on both sides so showDiffOnly folds it into "N unchanged lines" pills.
+// Exercises the "Wrap lines" toggle (wrap-lines.spec.ts): wrapped, the long line
+// fits the pane; no-wrap, it overflows and the file scrolls horizontally, and
+// the fold pill stays centered on the card (not the content-wide table).
+const WRAP_LONG = "x".repeat(400);
+const WRAP_CTX = Array.from({ length: 14 }, (_, i) => `const pad${i} = ${i};`).join("\n");
+const WRAP_OLD = `${WRAP_CTX}\nexport const wide = "${WRAP_LONG}";\n${WRAP_CTX}\n`;
+const WRAP_NEW = `${WRAP_CTX}\nexport const wide = "${WRAP_LONG}!!";\n${WRAP_CTX}\n`;
+
+const STRUCTURAL_OLD = `export async function setSetting(
+  positional: string[],
+  settings: {
+    writeSettings(value: unknown): Promise<void>;
+  },
+) {
+  const key = positional[2];
+  if (key !== "openBrowser" && key !== "structuredHighlighting") {
+    throw new Error(
+      "usage: staff settings set <openBrowser|structuredHighlighting> <true|false>",
+    );
+  }
+
+  const value = parseBooleanSetting(positional[3], key);
+  await settings.writeSettings(
+    key === "openBrowser" ? { openBrowser: value } : { structuredHighlighting: value },
+  );
+}
+`;
+
+const STRUCTURAL_NEW = `export async function setSetting(
+  positional: string[],
+  settings: {
+    writeSettings(value: unknown): Promise<void>;
+  },
+) {
+  const key = positional[2];
+  if (key !== "openBrowser" && key !== "structuredHighlighting" && key !== "wrapLines") {
+    throw new Error(
+      "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>",
+    );
+  }
+
+  const value = parseBooleanSetting(positional[3], key);
+  const update: settings.GlobalSettings = { [key]: value };
+  await settings.writeSettings(update);
+}
+`;
+
 const README_OLD = `# Demo
 A toy module.
 `;
@@ -78,6 +127,8 @@ export default async function globalSetup() {
   await writeFile(join(SCRATCH_DIR, "math.ts"), FILE_A_OLD);
   await writeFile(join(SCRATCH_DIR, "README.md"), README_OLD);
   await writeFile(join(SCRATCH_DIR, "big.ts"), BIG_OLD);
+  await writeFile(join(SCRATCH_DIR, "wrapme.ts"), WRAP_OLD);
+  await writeFile(join(SCRATCH_DIR, "structural.ts"), STRUCTURAL_OLD);
   await run("git", ["add", "."], SCRATCH_DIR);
   await run("git", ["commit", "-qm", "initial"], SCRATCH_DIR);
 
@@ -85,6 +136,8 @@ export default async function globalSetup() {
   await writeFile(join(SCRATCH_DIR, "math.ts"), FILE_A_NEW);
   await writeFile(join(SCRATCH_DIR, "README.md"), README_NEW);
   await writeFile(join(SCRATCH_DIR, "big.ts"), BIG_NEW);
+  await writeFile(join(SCRATCH_DIR, "wrapme.ts"), WRAP_NEW);
+  await writeFile(join(SCRATCH_DIR, "structural.ts"), STRUCTURAL_NEW);
   // A symlink (git mode 120000) added on the feature branch — exercises
   // the symlink indicator in the UI.
   await symlink("README.md", join(SCRATCH_DIR, "readme-link"));

@@ -99,6 +99,33 @@ test("structured highlighting preference persists across reload", async ({ page 
   );
 });
 
+test("structured highlighting ignores rewrites but keeps spaces inside changed phrases", async ({
+  page,
+}) => {
+  await openFeatureDiff(page);
+  const card = page.getByTestId("file-card-structural.ts");
+  await expect(card).toBeVisible({ timeout: 10_000 });
+
+  const unrelatedRemovedCell = card.locator('td[class*="diff-removed"]', {
+    hasText: "await settings.writeSettings(",
+  });
+  await expect(unrelatedRemovedCell).toBeVisible();
+  await expect(
+    unrelatedRemovedCell.locator('[class*="word-added"], [class*="word-removed"]'),
+  ).toHaveCount(0);
+
+  const relatedAddedRow = card.locator("tr", {
+    hasText: 'key !== "wrapLines"',
+  });
+  await expect(relatedAddedRow).toBeVisible();
+  const highlightedText = await relatedAddedRow.evaluate((row) =>
+    Array.from(row.querySelectorAll<HTMLElement>('[class*="word-added"]'))
+      .map((node) => node.textContent ?? "")
+      .join(""),
+  );
+  expect(highlightedText).toContain('&& key !== "wrapLines"');
+});
+
 test("anchored changed-line highlight stays blue with subtle change tint in dark mode", async ({
   page,
 }) => {

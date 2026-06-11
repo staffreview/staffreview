@@ -115,7 +115,7 @@
   }
 }
 
-/* react-diff-viewer-continued reset to match our theme */
+/* Diff table reset to match our theme. */
 /* Mono + diff font size only on actual diff rows. Composer-host rows
  * inherit the app's sans font so embedded UI (buttons, textareas) matches
  * the rest of the app. */
@@ -133,35 +133,329 @@
   cursor: pointer;
 }
 
-.staff-diff td[class*="marker"] pre {
+.staff-diff {
+  --staff-added-bg: color-mix(in srgb, var(--color-success) 11%, var(--color-card));
+  --staff-removed-bg: color-mix(in srgb, var(--color-destructive) 10%, var(--color-card));
+  --staff-gutter-w: 52px;
+  --staff-marker-w: 24px;
+  --staff-fixed-line-w: calc(var(--staff-gutter-w) + var(--staff-marker-w));
+  overflow-x: clip;
+  background: var(--color-card);
+}
+
+.dark .staff-diff {
+  --staff-added-bg: color-mix(in srgb, var(--color-success) 17%, var(--color-card));
+  --staff-removed-bg: color-mix(in srgb, var(--color-destructive) 18%, var(--color-card));
+}
+
+.staff-diff table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.staff-diff col.staff-col-gutter {
+  width: var(--staff-gutter-w);
+}
+
+.staff-diff col.staff-col-marker {
+  width: var(--staff-marker-w);
+}
+
+.staff-diff col.staff-col-content {
+  width: auto;
+}
+
+.staff-diff td {
+  border: 0;
+  padding: 0;
+  vertical-align: top;
+}
+
+.staff-diff .staff-gutter {
+  width: var(--staff-gutter-w);
+  min-width: var(--staff-gutter-w);
+  color: var(--color-muted-foreground);
+  text-align: right;
+  user-select: none;
+}
+
+.staff-diff .staff-marker {
+  width: var(--staff-marker-w);
+  min-width: var(--staff-marker-w);
+}
+
+.staff-diff .staff-gutter pre,
+.staff-diff .staff-content-text {
+  margin: 0;
+  padding: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: var(--staff-diff-font-size, 14px);
+  line-height: 1.55;
+  font-feature-settings: "calt", "liga";
+  tab-size: 2;
+}
+
+.staff-diff .staff-content-text {
+  min-height: calc(var(--staff-diff-font-size, 14px) * 1.55);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.staff-diff .staff-content.diff-added,
+.staff-diff .staff-marker:has(+ .staff-content.diff-added) {
+  background: var(--staff-added-bg);
+}
+
+.staff-diff .staff-content.diff-removed,
+.staff-diff .staff-marker:has(+ .staff-content.diff-removed) {
+  background: var(--staff-removed-bg);
+}
+
+.staff-diff .staff-gutter.diff-added {
+  background: var(--staff-added-bg);
+  color: var(--color-success);
+}
+
+.staff-diff .staff-gutter.diff-removed {
+  background: var(--staff-removed-bg);
+  color: var(--color-destructive);
+}
+
+.staff-diff-unified tr.staff-diff-line:has(> .staff-content.diff-added) {
+  background: var(--staff-added-bg);
+}
+
+.staff-diff-unified tr.staff-diff-line:has(> .staff-content.diff-removed) {
+  background: var(--staff-removed-bg);
+}
+
+.staff-diff-split
+  tr.staff-diff-line:has(> .staff-content.diff-removed):has(> .staff-content.diff-added) {
+  background: linear-gradient(
+    to right,
+    var(--staff-removed-bg) 0 50%,
+    var(--staff-added-bg) 50% 100%
+  );
+}
+
+.staff-diff-split
+  tr.staff-diff-line:has(> .staff-content.diff-removed):not(:has(> .staff-content.diff-added)) {
+  background: linear-gradient(to right, var(--staff-removed-bg) 0 50%, transparent 50% 100%);
+}
+
+.staff-diff-split
+  tr.staff-diff-line:has(> .staff-content.diff-added):not(:has(> .staff-content.diff-removed)) {
+  background: linear-gradient(to right, transparent 0 50%, var(--staff-added-bg) 50% 100%);
+}
+
+.staff-diff .staff-word-added {
+  background: color-mix(in oklch, var(--color-success) 18%, transparent);
+}
+
+.staff-diff .staff-word-removed {
+  background: color-mix(in oklch, var(--color-destructive) 17%, transparent);
+}
+
+.dark .staff-diff .staff-word-added {
+  background: color-mix(in oklch, var(--color-success) 22%, transparent);
+}
+
+.dark .staff-diff .staff-word-removed {
+  background: color-mix(in oklch, var(--color-destructive) 24%, transparent);
+}
+
+/* "Wrap lines" off (`staff-diff-nowrap`): long lines extend past the pane and
+ * the file scrolls horizontally instead of wrapping. Filling vs. scrolling is
+ * then view-specific (see below). */
+.staff-diff-nowrap [class*="content-text"] {
+  white-space: pre !important;
+  line-break: auto !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.staff-diff-nowrap {
+  overflow-x: clip;
+}
+
+.staff-diff-nowrap.staff-diff-xscroll {
+  overflow-x: auto;
+}
+
+.staff-diff-nowrap table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.staff-diff-nowrap.staff-diff-split table {
+  position: sticky;
+  left: 0;
+  width: 100%;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.staff-diff-nowrap.staff-diff-unified table {
+  position: sticky;
+  left: 0;
+  width: 100%;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.staff-diff-nowrap.staff-diff-split table,
+.staff-diff-nowrap.staff-diff-split tbody,
+.staff-diff-nowrap.staff-diff-unified table,
+.staff-diff-nowrap.staff-diff-unified tbody {
+  display: block;
+}
+
+.staff-diff-nowrap.staff-diff-split colgroup,
+.staff-diff-nowrap.staff-diff-unified colgroup {
+  display: none;
+}
+
+.staff-diff-nowrap.staff-diff-split tr.staff-diff-line {
+  display: grid;
+  grid-template-columns:
+    var(--staff-gutter-w) var(--staff-marker-w) minmax(0, calc(50% - var(--staff-fixed-line-w)))
+    var(--staff-gutter-w) var(--staff-marker-w) minmax(0, calc(50% - var(--staff-fixed-line-w)));
+  width: 100%;
+}
+
+.staff-diff-nowrap.staff-diff-unified tr.staff-diff-line {
+  display: grid;
+  grid-template-columns:
+    var(--staff-gutter-w) var(--staff-marker-w)
+    minmax(0, calc(100% - var(--staff-fixed-line-w)));
+  width: 100%;
+}
+
+.staff-diff-nowrap.staff-diff-split tr.staff-diff-line > td,
+.staff-diff-nowrap.staff-diff-unified tr.staff-diff-line > td {
+  display: block;
+}
+
+.staff-diff-nowrap.staff-diff-split tr[class*="code-fold"],
+.staff-diff-nowrap.staff-diff-split tr[data-composer-host="true"],
+.staff-diff-nowrap.staff-diff-unified tr[class*="code-fold"],
+.staff-diff-nowrap.staff-diff-unified tr[data-composer-host="true"] {
+  display: block;
+  width: 100%;
+}
+
+.staff-diff-nowrap.staff-diff-split tr[data-composer-host="true"] > td,
+.staff-diff-nowrap.staff-diff-unified tr[data-composer-host="true"] > td {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.staff-diff-scroll-spacer {
+  display: none;
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-diff-scroll-spacer,
+.staff-diff-nowrap.staff-diff-unified .staff-diff-scroll-spacer {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--staff-diff-scroll-width, 100%);
+  height: 1px;
   visibility: hidden;
+  pointer-events: none;
 }
 
-.staff-diff td[class*="gutter"] pre {
-  opacity: 1;
+.staff-diff-nowrap .staff-gutter,
+.staff-diff-nowrap .staff-marker {
+  position: sticky;
+  z-index: 4;
+  background: var(--color-card);
 }
 
-.staff-diff td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]) {
+.staff-diff-nowrap .staff-gutter.diff-added {
+  background: var(--staff-added-bg);
+}
+
+.staff-diff-nowrap .staff-gutter.diff-removed {
+  background: var(--staff-removed-bg);
+}
+
+.staff-diff-nowrap.staff-diff-unified .staff-gutter-unified,
+.staff-diff-nowrap.staff-diff-split .staff-gutter-old {
+  left: 0;
+}
+
+.staff-diff-nowrap.staff-diff-unified .staff-marker,
+.staff-diff-nowrap.staff-diff-split .staff-marker-old {
+  left: var(--staff-gutter-w);
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-gutter-new {
+  left: var(--staff-diff-half-width, 50%);
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-marker-new {
+  left: calc(var(--staff-diff-half-width, 50%) + var(--staff-gutter-w));
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-content-old,
+.staff-diff-nowrap.staff-diff-split .staff-content-new {
+  position: sticky;
+  z-index: 3;
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-content-old {
+  left: var(--staff-fixed-line-w);
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-content-new {
+  left: calc(var(--staff-diff-half-width, 50%) + var(--staff-fixed-line-w));
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-content-clip {
+  width: var(--staff-diff-pane-content-width, 1px);
+  overflow: hidden;
+}
+
+.staff-diff-nowrap.staff-diff-unified .staff-content-clip {
+  width: var(--staff-diff-unified-content-width, 1px);
+  overflow: hidden;
+}
+
+.staff-diff-nowrap.staff-diff-split .staff-content-text,
+.staff-diff-nowrap.staff-diff-unified .staff-content-text {
+  display: inline-block;
+  min-width: max-content;
+  transform: translateX(calc(var(--staff-diff-scroll-left, 0px) * -1));
+}
+
+.staff-diff tr[data-composer-host="true"] > td {
+  padding: 0;
+  width: 100%;
+  background: var(--color-muted);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+.staff-diff td[class*="gutter"][class*="diff-added"] {
   box-shadow: inset 1px 0 0 var(--color-success);
 }
 .staff-diff-unified td[data-staff-unified-gutter][class*="diff-added"] {
   box-shadow: inset 1px 0 0 var(--color-success);
 }
-.staff-diff td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+.staff-diff td[class*="gutter"][class*="diff-removed"] {
   box-shadow: inset 1px 0 0 var(--color-destructive);
 }
 .staff-diff-unified td[data-staff-unified-gutter][class*="diff-removed"] {
   box-shadow: inset 1px 0 0 var(--color-destructive);
 }
 
-/* Anchored row — the line referenced by `#<file>:R<line>`. We can't
- * use react-diff-viewer's own `highlightLines` for this because in
- * split view it only highlights cells on the side that matches the
- * prefix (R-2 lights up the new-side cells only), leaving the other
- * half of the row visually unstyled. Instead we paint the full row
- * ourselves with `!important` so both sides match, regardless of
- * whether they have diff-added / diff-removed / empty-gutter / empty-
- * line classes from the library.
+/* Anchored row — the line referenced by `#<file>:R<line>`. Paint the full row
+ * with `!important` so split and unified panes highlight consistently,
+ * regardless of whether a cell is added, removed, or empty.
  *
  * The first gutter in each visible pane gets a 1px URL-anchor accent.
  * Added/removed cells read as blue-highlighted first, with a small
@@ -183,55 +477,9 @@
 .staff-diff-split table tbody tr[data-anchored="true"] > td:nth-child(4) {
   box-shadow: inset 1px 0 0 var(--color-anchor);
 }
-.staff-diff
-  table
-  tbody
-  tr[data-anchored="true"]
-  > td[class*="gutter"][class*="diff-added"]:not([class*="empty-gutter"]),
-.staff-diff
-  table
-  tbody
-  tr[data-anchored="true"]
-  > td[class*="gutter"][class*="diff-removed"]:not([class*="empty-gutter"]) {
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="gutter"][class*="diff-added"],
+.staff-diff table tbody tr[data-anchored="true"] > td[class*="gutter"][class*="diff-removed"] {
   box-shadow: inset 1px 0 0 var(--color-anchor);
-}
-
-/* react-diff-viewer's `empty-gutter:hover` ties on specificity with
- * `gutter.diff-added`/`gutter.diff-removed` and is defined later in
- * the stylesheet, so on hover an empty gutter cell of an
- * added/deleted row washes back to the muted gray hover color
- * instead of staying tinted. Restore the diff color on those cells.
- * (Mostly visible in unified view, where a row's "blank" gutter still
- * carries the diff class.) Scoped to non-anchored rows so it doesn't
- * fight the yellow anchored override on hover. */
-.staff-diff table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 11%, transparent) !important;
-}
-.staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 10%, transparent) !important;
-}
-.dark
-  .staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-added"]:hover {
-  background: color-mix(in oklch, var(--color-success) 17%, transparent) !important;
-}
-.dark
-  .staff-diff
-  table
-  tbody
-  tr:not([data-anchored="true"])
-  td[class*="empty-gutter"][class*="diff-removed"]:hover {
-  background: color-mix(in oklch, var(--color-destructive) 18%, transparent) !important;
 }
 
 /* Markdown comment bodies (rendered by <Markdown>) and the WYSIWYG
@@ -400,6 +648,7 @@
 .staff-diff tr[class*="code-fold"] > td {
   height: 60px;
   vertical-align: middle;
+  text-align: center;
   background:
     linear-gradient(
       to bottom,
@@ -415,7 +664,7 @@
 }
 .staff-diff tr[class*="code-fold"] button[class*="code-fold-expand-button"] {
   position: relative;
-  transform: translate(var(--staff-code-fold-shift, 0px), 2px);
+  transform: translateY(2px);
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -430,6 +679,40 @@
   line-height: 1;
   padding: 4px 9px;
   white-space: nowrap;
+}
+.staff-diff-nowrap tr[class*="code-fold"] > td {
+  position: relative;
+}
+.staff-diff-nowrap tr[class*="code-fold"] button[class*="code-fold-expand-button"] {
+  position: absolute;
+  top: 50%;
+  left: var(--staff-code-fold-left, 50%);
+  transform: translate(-50%, -50%);
+}
+.staff-diff-nowrap.staff-diff-xscroll.staff-diff-unified tr[class*="code-fold"] > td {
+  display: block;
+  position: sticky;
+  left: 0;
+  width: var(--staff-diff-client-width, 100%);
+  min-width: var(--staff-diff-client-width, 100%);
+  z-index: 2;
+}
+.staff-diff-nowrap.staff-diff-xscroll.staff-diff-unified
+  tr[class*="code-fold"]
+  button[class*="code-fold-expand-button"] {
+  left: 50%;
+}
+.staff-diff-nowrap.staff-diff-split tr[class*="code-fold"] > td {
+  position: sticky;
+  left: 0;
+  width: var(--staff-diff-client-width, 100%);
+  min-width: var(--staff-diff-client-width, 100%);
+  z-index: 2;
+}
+.staff-diff-nowrap.staff-diff-split
+  tr[class*="code-fold"]
+  button[class*="code-fold-expand-button"] {
+  left: 50%;
 }
 .staff-diff tr[class*="code-fold"]:hover button[class*="code-fold-expand-button"] {
   color: var(--color-foreground);
