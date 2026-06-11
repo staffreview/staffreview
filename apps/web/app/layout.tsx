@@ -2,7 +2,7 @@ import { RootProvider } from "fumadocs-ui/provider/next";
 import "./global.css";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { appName } from "@/lib/shared";
+import { appName, socialImage } from "@/lib/shared";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -21,6 +21,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: appName,
     description,
+    images: [socialImage],
     siteName: appName,
   },
 };
