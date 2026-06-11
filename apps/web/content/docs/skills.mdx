@@ -67,10 +67,12 @@ and feed `/staff-resolve`.
 
 The novel part is **rotation**: each run records what it covered in
 `.staffreview/section-cache.json` (per-machine, gitignored), so the next run picks
-up where the last one stopped and moves on to the next slice — working all the way
-around the codebase, then back to the start, **re-reviewing a file only if it
-changed** since it was last looked at. Run it repeatedly (or on a schedule) to keep
-an existing codebase under continuous review.
+up where the last one stopped and moves on to the next section — working all the
+way around the codebase, then back to the start. A section is the unit of review:
+it's re-reviewed **as a whole** whenever *any* of its files changed (its files
+work together, so the unchanged ones get re-read too), and **skipped only when
+none of them have**. Run it repeatedly (or on a schedule) to keep an existing
+codebase under continuous review.
 
 The **`sectionAgents`** setting is the find-agent fan-out width, which also **sizes
 the section** — more agents review more code per run (default **2**, range 1–20,

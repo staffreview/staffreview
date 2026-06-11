@@ -1,6 +1,6 @@
 ---
 name: staff-section
-description: Review a rotating section of the current workspace's code — whole files, not a diff. Each run reviews a fresh slice sized to the sub-agent count (default 2), records what it covered in a cache, and on the next run moves on to the next slice — working all the way around the codebase, then back to the start, skipping any file that hasn't changed since it was last reviewed. Use when the user runs /staff-section or wants the existing codebase reviewed section by section over time.
+description: Review a rotating section of the current workspace's code — whole files, not a diff. Each run reviews a fresh section sized to the sub-agent count (default 2), records what it covered in a cache, and on the next run moves on to the next section — working all the way around the codebase, then back to the start, skipping a section only when none of its files have changed since it was last reviewed. Use when the user runs /staff-section or wants the existing codebase reviewed section by section over time.
 ---
 
 # Staff Section
@@ -10,8 +10,10 @@ code** in the current workspace. Unlike `/staff-review`, you are **not** reviewi
 a `base..head` diff — there are no "changes." You review **whole files**, a
 bounded **section** at a time, and you remember what you've already covered in a
 cache so that **each run advances to new ground**: section by section around the
-whole codebase, then back to the first section — re-reviewing a file only if it
-**changed** since you last looked at it.
+whole codebase, then back to the first section — re-reviewing a section only when
+one of its files **changed** since you last looked at it. A section is reviewed as
+a **whole unit**: its files work together, so if even one changed you re-review
+the entire section, not just the changed file.
 
 You do **not** review the code yourself. You fan the work out across **N find**
 sub-agents (each owning a slice of this run's section, following
@@ -83,13 +85,14 @@ hash. This is the full loop you rotate through.
 ## Step 3 — Pick this run's section from the cache
 
 The cache is **`.staffreview/section-cache.json`** (per-machine; gitignored by
-`staff install`). It records what you've reviewed and where you stopped:
+`staff install`). It records the content hash of every file the last time you
+reviewed it, plus a rotation cursor:
 
 ```json
 {
   "version": 1,
   "updatedAt": "<ISO timestamp>",
-  "cursor": "<path you stopped after last run, or \"\" on a fresh start>",
+  "cursor": "<path of the last file you reviewed last run, or \"\" on a fresh start>",
   "reviewed": {
     "src/foo.ts": { "hash": "<blobsha when reviewed>", "at": "<ISO>" }
   }
@@ -97,31 +100,40 @@ The cache is **`.staffreview/section-cache.json`** (per-machine; gitignored by
 ```
 
 Read it with `Read` (treat a missing/empty/corrupt file as a fresh start:
-`cursor: ""`, `reviewed: {}`). Then compute this run's section `S`:
+`cursor: ""`, `reviewed: {}`). Call a file **changed** when it is *not* in
+`reviewed` **or** its current hash differs from `reviewed[path].hash`. Then pick
+this run's section `S`:
 
-1. **Prune** `reviewed` entries whose path is no longer in `F` (deleted files).
-2. **Due check.** A file in `F` is **due** if it is *not* in `reviewed`, **or**
-   its current hash differs from `reviewed[path].hash` (it changed since you last
-   reviewed it). Everything else is **up to date** and gets skipped.
-3. **Rotation order.** Starting at the file **immediately after `cursor`** in `F`
-   (wrapping past the end back to the top; start at the top if `cursor` is empty
-   or no longer in `F`), walk `F` in order.
-4. **Fill the section to budget.** As you walk, collect **due** files (skip
-   up-to-date ones) into `S` until the **section budget** is reached or you've
-   walked the entire loop once. The budget scales with `N`:
+1. **Tile `F` into candidate sections.** Walking `F` in order from the top, group
+   consecutive files into sections whose line totals each reach the **section
+   budget** (below). This tiling covers the whole codebase end to end; a
+   "section" is one of these contiguous groups. **The section is the unit of
+   review — you review *all* of its files together, or none of them.**
 
-   > **A single sub-agent can thoroughly review ~1,500–2,500 lines of source**
-   > (a handful of files) in one pass while still reading callers and tests. Aim
-   > for a section of about **N × 2,000 lines**, divided so each agent gets
-   > ~2,000. Use the files' real sizes (`wc -l`) — pack fewer, denser files or
-   > more small ones so each agent's slice fits **comfortably** in context.
+   > **A single sub-agent can thoroughly review ~1,500–2,500 lines of source** (a
+   > handful of files) in one pass while still reading callers and tests. Size
+   > each section at about **N × 2,000 lines**, divided so each of the N agents
+   > gets ~2,000. Use the files' real sizes (`wc -l`); pack denser files more
+   > loosely so each agent's slice fits **comfortably** in context.
 
-   Stop adding files once `S` is at budget. Always include at least one due file
-   if any exist.
-5. If `S` is **empty**, nothing is due: the whole codebase has been reviewed and
-   nothing changed since. **Report that and stop** — do not spawn agents or post.
+2. **Mark each section DUE or up-to-date.** A section is **DUE** if **any** file
+   in it is *changed* (or it contains a file never reviewed). It is **up to date**
+   only when **every** file in it is unchanged. *This is the whole point:* a
+   section's files work together, so a single changed file makes the **entire**
+   section due — you re-review its unchanged files too, never just the changed one.
 
-`S` is this run's section. Note its files and their hashes.
+3. **Rotate to the next due section.** Begin **just after the `cursor`**: the
+   section containing the first file in `F` whose path sorts after `cursor` (wrap
+   to the top of `F` if `cursor` is empty or past the end). Walk the sections in
+   order from there, wrapping once all the way around. **`S` is the first DUE
+   section you reach** — skip up-to-date sections as you pass them.
+
+4. If you go a full loop and **every** section is up to date, the whole codebase
+   has been reviewed and nothing changed since. **Report that and stop** — do not
+   spawn agents or post.
+
+`S` is this run's section: **all** of its files, changed or not. Note them and
+their current hashes.
 
 ## Step 4 — FIND: launch N find agents in the background
 
@@ -189,14 +201,15 @@ completed ones before starting more.
 
 After every survivor is posted, persist progress so the **next** run advances:
 
-1. For each file in `S`, set `reviewed[path] = { hash: <the hash from Step 2>, at: <now> }`.
-2. Set `cursor` to the **last file of `S` in `F`'s order** (so the next run
-   resumes right after it).
-3. Set `updatedAt` to now, keep `version: 1`, and **`Write` the JSON back** to
-   `.staffreview/section-cache.json`.
-
-Mark each file with the hash you captured in Step 2 (not a fresh re-hash), so the
-cache reflects the version you actually reviewed.
+1. For **every file in `S`** — the whole section, changed *and* unchanged — set
+   `reviewed[path] = { hash: <its current hash from Step 2>, at: <now> }`. Use the
+   hash you captured in Step 2 (not a fresh re-hash), so the cache reflects the
+   version you actually reviewed.
+2. Optionally drop `reviewed` entries whose path is no longer in `F` (deleted
+   files) to keep the cache tidy.
+3. Set `cursor` to the **last file of `S` in `F`'s order** (so the next run
+   resumes at the following section), set `updatedAt` to now, keep `version: 1`,
+   and **`Write` the JSON back** to `.staffreview/section-cache.json`.
 
 ## Step 7 — Report back
 
@@ -227,10 +240,12 @@ the comments.
 - **Whole files, not a diff.** The slug exists only to anchor comments. Neither
   you nor the sub-agents should fetch the whole-tree diff (`staff files --slug`) —
   it spans the entire repo. Read assigned files directly.
-- **Advance every run; skip the unchanged.** Honor the cache: resume after the
-  `cursor`, review only **due** (new or changed) files, and update the cache so
-  the next run picks up where you left off. Re-review a file only when its hash
-  changed.
+- **Advance every run; skip unchanged *sections*, never individual files.** Honor
+  the cache: resume after the `cursor` and review the next **due section** — a
+  contiguous group where *at least one* file changed — **in full**, including its
+  unchanged files, because the section's files work together. Skip a section only
+  when *every* file in it is unchanged. Update the cache so the next run picks up
+  at the following section.
 - **Verify before post.** Each finding flows find → verify → survivor → dedup →
   post; nothing is posted unverified. Reap each background agent the instant you
   consume it.

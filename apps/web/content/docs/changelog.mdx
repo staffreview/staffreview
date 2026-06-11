@@ -12,7 +12,8 @@ description: Notable changes to Staff Review, newest first.
   files a rotating section at a time, sized by the new **`sectionAgents`** setting
   (default **2**, adjustable in the gear menu), and records progress in
   `.staffreview/section-cache.json` so each run advances to new ground — around the
-  whole codebase, then back to the start, re-reviewing a file only when it changed.
+  whole codebase, then back to the start. A section is re-reviewed as a whole unit
+  whenever any of its files changed, and skipped only when none of them have.
   Backed by the `/staff-section-find` and `/staff-section-verify` building blocks.
 
 ## 1.3.0 — 2026-06-11
