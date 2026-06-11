@@ -275,6 +275,36 @@ async function listChangedFiles(
   return results;
 }
 
+async function listBinaryFiles(
+  base: DiffTarget,
+  head: DiffTarget,
+  cwd: string,
+): Promise<Set<string>> {
+  const binary = new Set<string>();
+  const baseRef = gitRefForTarget(base);
+  const headRef = gitRefForTarget(head);
+  let out = "";
+
+  if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
+    out = await run(["git", "diff", "--numstat", baseRef!], { cwd, allowFail: true });
+  } else if (base.kind === "staged" || head.kind === "staged") {
+    out = await run(["git", "diff", "--cached", "--numstat"], { cwd, allowFail: true });
+  } else if (baseRef && headRef) {
+    out = await run(["git", "diff", "--numstat", baseRef, headRef], { cwd, allowFail: true });
+  } else if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
+    out = await run(["git", "diff", "--numstat", "HEAD"], { cwd, allowFail: true });
+  }
+
+  for (const line of out.split("\n").filter(Boolean)) {
+    const parts = line.split("\t");
+    if (parts[0] === "-" && parts[1] === "-") {
+      const path = parts.at(-1);
+      if (path) binary.add(path);
+    }
+  }
+  return binary;
+}
+
 function parseStatus(out: string, results: { path: string; status: string; oldPath?: string }[]) {
   for (const line of out.split("\n").filter(Boolean)) {
     const parts = line.split("\t");
@@ -374,6 +404,7 @@ export async function getDiff(
   const files = (await listChangedFiles(base, head, cwd)).filter(
     (f) => !f.path.startsWith(".staffreview/") && !f.path.startsWith(".staff-review/"),
   );
+  const binaryFiles = await listBinaryFiles(base, head, cwd);
   const diffs: FileDiff[] = [];
   for (const f of files) {
     const status = f.status.startsWith("A")
@@ -387,13 +418,27 @@ export async function getDiff(
     const oldPath = f.oldPath ?? f.path;
     const baseIsSymlink = status === "added" ? false : await isSymlinkAt(base, oldPath, cwd);
     const headIsSymlink = status === "deleted" ? false : await isSymlinkAt(head, f.path, cwd);
+    const isSymlink = status === "deleted" ? baseIsSymlink : headIsSymlink;
+    const isKnownBinary = !isSymlink && (binaryFiles.has(f.path) || binaryFiles.has(oldPath));
+    if (isKnownBinary) {
+      diffs.push({
+        path: f.path,
+        oldPath: f.oldPath,
+        status,
+        oldContent: "",
+        newContent: "",
+        isSymlink,
+        isBinary: true,
+      });
+      continue;
+    }
+
     const oldContent = status === "added" ? "" : await readSide(base, oldPath, cwd, baseIsSymlink);
     const newContent = status === "deleted" ? "" : await readSide(head, f.path, cwd, headIsSymlink);
 
     // The file is "a symlink" when the side that exists for this status is
     // one (head normally; base for deletions). Then we show a compact
     // target row instead of the (non-)content.
-    const isSymlink = status === "deleted" ? baseIsSymlink : headIsSymlink;
     const symlinkTarget = isSymlink
       ? (status === "deleted" ? oldContent : newContent).trim() || undefined
       : undefined;

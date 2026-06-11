@@ -94,6 +94,51 @@ function defaultTargets(
   };
 }
 
+function refListsEqual(a: GitRefInfo[], b: GitRefInfo[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.name !== right.name ||
+      left.kind !== right.kind ||
+      left.sha !== right.sha ||
+      left.subject !== right.subject
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function diffTargetsKey(base: DiffTarget, head: DiffTarget): string {
+  return JSON.stringify([base, head]);
+}
+
+function fileDiffsEqual(a: FileDiff[], b: FileDiff[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.path !== right.path ||
+      left.oldPath !== right.oldPath ||
+      left.status !== right.status ||
+      left.oldContent !== right.oldContent ||
+      left.newContent !== right.newContent ||
+      left.isSymlink !== right.isSymlink ||
+      left.symlinkTarget !== right.symlinkTarget ||
+      left.oldSymlinkTarget !== right.oldSymlinkTarget ||
+      left.isBinary !== right.isBinary
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function App() {
   const [info, setInfo] = useState<{ cwd: string; root: string; branch: string | null } | null>(
     null,
@@ -103,6 +148,12 @@ export function App() {
   const [head, setHead] = useState<DiffTarget>({ kind: "working-tree" });
   const [diff, setDiff] = useState<Diff | null>(null);
   const [files, setFiles] = useState<FileDiff[]>([]);
+  const baseRef = useRef(base);
+  const headRef = useRef(head);
+  const infoRef = useRef<typeof info>(null);
+  const quietReloadTimerRef = useRef<number | null>(null);
+  const quietReloadInFlightRef = useRef(false);
+  const quietReloadPendingRef = useRef(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [splitView, setSplitViewState] = useState(DEFAULT_SPLIT_VIEW);
   const MIN_DIFF_FONT_SIZE = 9;
@@ -237,6 +288,15 @@ export function App() {
       return () => mql.removeEventListener("change", apply);
     }
   }, [theme]);
+  useEffect(() => {
+    baseRef.current = base;
+  }, [base]);
+  useEffect(() => {
+    headRef.current = head;
+  }, [head]);
+  useEffect(() => {
+    infoRef.current = info;
+  }, [info]);
   const [wsHello, setWsHello] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slugCopied, setSlugCopied] = useState(false);
@@ -326,7 +386,7 @@ export function App() {
           chosenHead ??= def.head;
         }
 
-        setRefs(r.refs);
+        setRefs((prev) => (refListsEqual(prev, r.refs) ? prev : r.refs));
         setBase(chosenBase);
         setHead(chosenHead);
         // setInfo last — it gates the reload effect, so no early HEAD..WT
@@ -354,19 +414,44 @@ export function App() {
   // that depend on it. No-ops unless the diff actually involves the
   // working tree or index — a static commit↔commit diff can't change from
   // a file edit, so there's nothing to refresh.
-  const reloadFilesQuiet = useCallback(async () => {
-    if (!info) return;
-    const dynamic =
-      base.kind === "working-tree" ||
-      base.kind === "staged" ||
-      head.kind === "working-tree" ||
-      head.kind === "staged";
-    if (!dynamic) return;
-    try {
-      const filesResp = await api.files(base, head);
-      setFiles(filesResp.files);
-    } catch {}
-  }, [base, head, info]);
+  const reloadFilesQuiet = useCallback(() => {
+    if (quietReloadTimerRef.current != null) {
+      window.clearTimeout(quietReloadTimerRef.current);
+    }
+    quietReloadTimerRef.current = window.setTimeout(async () => {
+      quietReloadTimerRef.current = null;
+      if (quietReloadInFlightRef.current) {
+        quietReloadPendingRef.current = true;
+        return;
+      }
+
+      do {
+        quietReloadPendingRef.current = false;
+        const currentInfo = infoRef.current;
+        const currentBase = baseRef.current;
+        const currentHead = headRef.current;
+        if (!currentInfo) return;
+        const dynamic =
+          currentBase.kind === "working-tree" ||
+          currentBase.kind === "staged" ||
+          currentHead.kind === "working-tree" ||
+          currentHead.kind === "staged";
+        if (!dynamic) return;
+
+        const requestKey = diffTargetsKey(currentBase, currentHead);
+        quietReloadInFlightRef.current = true;
+        try {
+          const filesResp = await api.files(currentBase, currentHead);
+          if (requestKey === diffTargetsKey(baseRef.current, headRef.current)) {
+            setFiles((prev) => (fileDiffsEqual(prev, filesResp.files) ? prev : filesResp.files));
+          }
+        } catch {
+        } finally {
+          quietReloadInFlightRef.current = false;
+        }
+      } while (quietReloadPendingRef.current);
+    }, 250);
+  }, []);
 
   // Periodically refresh the refs list so we can detect when the branch
   // our base (or head) is pinned to advances past the SHA we've locked.
@@ -375,7 +460,7 @@ export function App() {
     const tick = async () => {
       try {
         const r = await api.refs();
-        setRefs(r.refs);
+        setRefs((prev) => (refListsEqual(prev, r.refs) ? prev : r.refs));
       } catch {}
     };
     const id = window.setInterval(tick, 15_000);
@@ -390,6 +475,10 @@ export function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(id);
+      if (quietReloadTimerRef.current != null) {
+        window.clearTimeout(quietReloadTimerRef.current);
+        quietReloadTimerRef.current = null;
+      }
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [info, reloadFilesQuiet]);
@@ -422,7 +511,7 @@ export function App() {
         api.files(base, head),
         api.createDiff(base, head),
       ]);
-      setFiles(filesResp.files);
+      setFiles((prev) => (fileDiffsEqual(prev, filesResp.files) ? prev : filesResp.files));
       slugRef.current = diffResp.diff.slug;
       setDiff(diffResp.diff);
     } catch (e) {
@@ -504,6 +593,22 @@ export function App() {
   }, [info]);
 
   const comments = diff?.comments ?? [];
+  const sidebarHeaderLeft = useMemo(
+    () => (
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Hide review sidebar"
+        aria-pressed="false"
+        title="Hide review sidebar"
+        onClick={() => setSidebarOpen(false)}
+        data-testid="sidebar-toggle"
+      >
+        <PanelRightClose className="h-4 w-4" />
+      </Button>
+    ),
+    [],
+  );
 
   return (
     <div
@@ -690,19 +795,7 @@ export function App() {
                 onChange={refreshDiffOnly}
                 composing={composing}
                 onComposingChange={setComposing}
-                headerLeft={
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Hide review sidebar"
-                    aria-pressed="false"
-                    title="Hide review sidebar"
-                    onClick={() => setSidebarOpen(false)}
-                    data-testid="sidebar-toggle"
-                  >
-                    <PanelRightClose className="h-4 w-4" />
-                  </Button>
-                }
+                headerLeft={sidebarHeaderLeft}
               />
             )
           ) : (

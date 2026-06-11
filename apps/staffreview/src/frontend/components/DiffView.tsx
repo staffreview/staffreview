@@ -14,7 +14,7 @@ import {
   Plus,
   UnfoldVertical,
 } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Comment, FileDiff } from "../../types.ts";
 import {
   ensureShikiLanguage,
@@ -1788,7 +1788,7 @@ export function DiffFile({
   );
 }
 
-export function DiffView({
+export const DiffView = memo(function DiffView({
   files,
   slug,
   comments,
@@ -1856,4 +1856,4 @@ export function DiffView({
       ))}
     </div>
   );
-}
+});
