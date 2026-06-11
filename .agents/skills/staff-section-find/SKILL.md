@@ -10,6 +10,8 @@ code** in the current workspace. An orchestrator (`/staff-section`) spawned you
 and, in its prompt, gave you:
 
 - **`files`** — the specific whole files you own this pass (paths in the repo).
+  Occasionally, for a file too large to fit one agent, your assignment is a
+  **line range** within a single file (e.g. `src/huge.ts:1–800`).
 - **`slug`** — the whole-tree diff comments are hosted on, **for checking
   existing comments only**. It spans the entire repo, so **never run
   `staff files --slug` on it** — read your assigned files directly.
@@ -24,7 +26,9 @@ do not spawn other agents, and do not modify or commit code.**
 `Read` **every** file you were assigned, in full. Then read enough surrounding
 code to judge each one in context — its callers (`Grep` the exported symbols),
 its tests, the sibling modules it mirrors. Never judge code in isolation; correct
-behavior is only visible against how the code is actually used.
+behavior is only visible against how the code is actually used. If you were given
+a **line range** within a large file, still read the whole file for context, but
+**report only findings that fall in your range** (a sibling agent owns the rest).
 
 ## Step 2 — Review through the review areas
 

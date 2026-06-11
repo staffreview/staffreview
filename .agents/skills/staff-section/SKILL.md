@@ -104,17 +104,30 @@ Read it with `Read` (treat a missing/empty/corrupt file as a fresh start:
 `reviewed` **or** its current hash differs from `reviewed[path].hash`. Then pick
 this run's section `S`:
 
-1. **Tile `F` into candidate sections.** Walking `F` in order from the top, group
-   consecutive files into sections whose line totals each reach the **section
-   budget** (below). This tiling covers the whole codebase end to end; a
-   "section" is one of these contiguous groups. **The section is the unit of
-   review — you review *all* of its files together, or none of them.**
+1. **Tile `F` into candidate sections — fresh every run, from the files' _current_
+   sizes.** Walking `F` in order from the top, group consecutive files into
+   sections whose line totals each reach the **section budget** (below), and
+   **prefer to cut at natural seams** (directory / module boundaries) so a section
+   is a cohesive unit, not an arbitrary byte-count slice. This tiling covers the
+   whole codebase end to end. **A section is the unit of review — you review *all*
+   of its files together, or none of them.**
 
    > **A single sub-agent can thoroughly review ~1,500–2,500 lines of source** (a
    > handful of files) in one pass while still reading callers and tests. Size
    > each section at about **N × 2,000 lines**, divided so each of the N agents
    > gets ~2,000. Use the files' real sizes (`wc -l`); pack denser files more
    > loosely so each agent's slice fits **comfortably** in context.
+
+   Because you re-tile from current sizes on **every** run, a section's
+   composition adapts as files change: a file that **grew** leaves less room, so
+   the files after it spill into the next section; a file that **shrank** leaves
+   more, pulling the next file in. A section therefore **always fits the budget** —
+   it never overflows an agent's context just because something grew. (Pinning a
+   section's membership once and reusing it would do exactly that — a grown file
+   would push a fixed section past the budget — which is why the tiling is
+   recomputed instead.) If a **single file is itself larger than one agent's
+   budget**, give it its own section (one or more agents can split it by line
+   range); never pad a section past the budget to keep a file with its neighbors.
 
 2. **Mark each section DUE or up-to-date.** A section is **DUE** if **any** file
    in it is *changed* (or it contains a file never reviewed). It is **up to date**
@@ -135,14 +148,23 @@ this run's section `S`:
 `S` is this run's section: **all** of its files, changed or not. Note them and
 their current hashes.
 
+Boundaries landing differently from run to run (as sizes shift) is **expected and
+safe**: coverage rides on the per-file hashes in the cache and the full
+wrap-around walk, not on stable boundaries. Every changed or never-seen file lands
+in *some* due section and is reached as the cursor sweeps around, so nothing is
+dropped; the only effect of drift is which cohesive neighbors a file is reviewed
+alongside.
+
 ## Step 4 — FIND: launch N find agents in the background
 
 Partition `S`'s files into **N roughly-equal slices by size** (keep each slice's
 line total near the per-agent budget; keep files from the same directory together
 where it's natural). Spawn **N find agents in the background** (`run_in_background`)
 so each reports independently — do **not** wait for the whole wave; Step 5 consumes
-each as it returns. If `S` has fewer files than `N`, spawn one agent per file and
-use fewer than `N` agents.
+each as it returns. If `S` has fewer files than `N`, use fewer than `N` agents
+(roughly one per file) — **unless** `S` is a single file too big for one agent's
+budget (the oversized-file case from Step 3): then split *that file* across
+several agents by line range, telling each which range it owns.
 
 Spawn each with:
 
