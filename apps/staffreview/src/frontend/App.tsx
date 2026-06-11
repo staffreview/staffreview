@@ -532,11 +532,9 @@ export function App() {
     setDiff(d.diff);
   }, []);
 
-  // The live-update event handler. It closes over `reloadFilesQuiet` (whose
-  // identity changes with base/head/info), so it can't go straight into the
-  // socket effect's deps — that would reopen the WebSocket on every target
-  // change, and any event arriving during the reconnect gap would be lost
-  // (the cause of comments/resolutions not showing up until a manual refresh).
+  // Keep live-update handling separate from socket lifetime. The callback can
+  // depend on current refresh helpers while the socket below stays mounted, so
+  // events are not lost to reconnect churn.
   const handleWsEvent = useCallback(
     (ev: WSEvent) => {
       if (ev.type === "hello") {

@@ -286,20 +286,40 @@ async function listBinaryFiles(
   let out = "";
 
   if (base.kind !== "working-tree" && base.kind !== "staged" && head.kind === "working-tree") {
-    out = await run(["git", "diff", "--numstat", baseRef!], { cwd, allowFail: true });
+    out = await run(["git", "diff", "--numstat", "-z", baseRef!], { cwd, allowFail: true });
   } else if (base.kind === "staged" || head.kind === "staged") {
-    out = await run(["git", "diff", "--cached", "--numstat"], { cwd, allowFail: true });
+    out = await run(["git", "diff", "--cached", "--numstat", "-z"], { cwd, allowFail: true });
   } else if (baseRef && headRef) {
-    out = await run(["git", "diff", "--numstat", baseRef, headRef], { cwd, allowFail: true });
+    out = await run(["git", "diff", "--numstat", "-z", baseRef, headRef], {
+      cwd,
+      allowFail: true,
+    });
   } else if (head.kind === "working-tree" && (base.kind === "working-tree" || !baseRef)) {
-    out = await run(["git", "diff", "--numstat", "HEAD"], { cwd, allowFail: true });
+    out = await run(["git", "diff", "--numstat", "-z", "HEAD"], { cwd, allowFail: true });
   }
 
-  for (const line of out.split("\n").filter(Boolean)) {
-    const parts = line.split("\t");
-    if (parts[0] === "-" && parts[1] === "-") {
-      const path = parts.at(-1);
-      if (path) binary.add(path);
+  const records = out.split("\0");
+  for (let i = 0; i < records.length; ) {
+    const record = records[i++];
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = firstTab < 0 ? -1 : record.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+
+    const additions = record.slice(0, firstTab);
+    const deletions = record.slice(firstTab + 1, secondTab);
+    const path = record.slice(secondTab + 1);
+    const isRename = path === "";
+    const oldPath = isRename ? records[i++] : undefined;
+    const newPath = isRename ? records[i++] : undefined;
+
+    if (additions === "-" && deletions === "-") {
+      if (isRename) {
+        if (oldPath) binary.add(oldPath);
+        if (newPath) binary.add(newPath);
+      } else if (path) {
+        binary.add(path);
+      }
     }
   }
   return binary;

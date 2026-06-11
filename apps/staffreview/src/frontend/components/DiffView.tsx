@@ -722,15 +722,18 @@ export function DiffFile({
     () => groupFileCommentsByRootThread(comments, file.path),
     [comments, file.path],
   );
-  const rootByLine = new Map<string, Comment[]>();
-  for (const thread of threads) {
-    const root = thread.find((c) => !c.parentId);
-    if (!root || !root.line) continue;
-    // Range threads render their host at endLine (matching GitHub).
-    const hostLine = root.endLine ?? root.line;
-    const key = `${root.side ?? "new"}:${hostLine}`;
-    rootByLine.set(key, thread);
-  }
+  const rootByLine = useMemo(() => {
+    const map = new Map<string, Comment[]>();
+    for (const thread of threads) {
+      const root = thread.find((c) => !c.parentId);
+      if (!root || !root.line) continue;
+      // Range threads render their host at endLine (matching GitHub).
+      const hostLine = root.endLine ?? root.line;
+      const key = `${root.side ?? "new"}:${hostLine}`;
+      map.set(key, thread);
+    }
+    return map;
+  }, [threads]);
   const orphanThreads = threads.filter((t) => {
     const r = t.find((c) => !c.parentId);
     return !r?.line;
@@ -1225,13 +1228,10 @@ export function DiffFile({
       const halfWidth = container.clientWidth / 2;
       const splitPaneContentWidth = splitView ? Math.max(1, halfWidth - 76) : 0;
       const unifiedContentWidth = splitView ? 0 : Math.max(1, container.clientWidth - 76);
-      const contentNodes = Array.from(
-        container.querySelectorAll<HTMLElement>(".staff-content-text"),
-      );
-      const maxTextWidth = Math.max(
-        0,
-        ...contentNodes.map((node) => node.getBoundingClientRect().width),
-      );
+      let maxTextWidth = 0;
+      for (const node of container.querySelectorAll<HTMLElement>(".staff-content-text")) {
+        maxTextWidth = Math.max(maxTextWidth, node.getBoundingClientRect().width);
+      }
       const visibleContentWidth = splitView ? splitPaneContentWidth : unifiedContentWidth;
       const scrollMax = Math.max(0, Math.ceil(maxTextWidth - visibleContentWidth + 12));
       container.style.setProperty("--staff-diff-scroll-max", `${scrollMax}px`);
@@ -1583,6 +1583,30 @@ export function DiffFile({
     return rows;
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The local render helpers are pure closures; this dependency list names the reactive values they read so hover-only `plus` state does not rebuild every visible row.
+  const renderedDiffRows = useMemo(
+    () =>
+      diffItems.flatMap((item) => {
+        if (item.type === "fold") return [renderFold(item, splitView ? 6 : 3)];
+        return splitView ? renderSplitRow(item.row) : renderUnifiedRow(item.row);
+      }),
+    [
+      anchored,
+      anchoredRangeRowKeys,
+      composingLines,
+      diffItems,
+      file.path,
+      highlighter,
+      inlineTargetMap,
+      lang,
+      onChange,
+      rootByLine,
+      slug,
+      splitView,
+      syntaxTheme,
+    ],
+  );
+
   return (
     <div
       className="rounded-lg border border-border bg-card overflow-hidden"
@@ -1725,12 +1749,7 @@ export function DiffFile({
           <div className="staff-diff-scroll-spacer" aria-hidden="true" />
           <table>
             {renderColGroup()}
-            <tbody>
-              {diffItems.flatMap((item) => {
-                if (item.type === "fold") return [renderFold(item, splitView ? 6 : 3)];
-                return splitView ? renderSplitRow(item.row) : renderUnifiedRow(item.row);
-              })}
-            </tbody>
+            <tbody>{renderedDiffRows}</tbody>
           </table>
           {plus && (
             <button

@@ -9,12 +9,11 @@ You are the **orchestrator** of a staff/principal-level code review. You do
 **not** review the code yourself. You fan the review out across parallel **find**
 sub-agents (each owning a slice of the work and following the shared
 `/staff-review-find` skill), and you **pipeline** each one's output straight into
-its own **verify** sub-agent (following `/staff-review-verify`) and then post the
-survivors — so feedback reaches the author as each find agent finishes, not after
-the whole wave drains. Nothing is posted unverified, but verification and posting
-run **per find agent** rather than behind a single barrier. Your audience is the
-author. Your goal is to make the change shippable, durable, and consistent with
-the codebase — not to perform expertise.
+its own **verify** sub-agent (following `/staff-review-verify`). Verification
+runs per find agent as soon as that finder returns; posting waits until every
+verify chain drains, then you dedup the confirmed survivors and post them in one
+final pass. Your audience is the author. Your goal is to make the change
+shippable, durable, and consistent with the codebase — not to perform expertise.
 
 The find/verify briefs live in their own skills so `/staff-loop` reuses the exact
 same sub-agent units without ever spawning a `/staff-review` sub-agent (which
@@ -224,14 +223,15 @@ Then stop. Do not commit or modify code. The user will run `/staff-resolve` next
   yourself — spawn find agents (`/staff-review-find`) and verify agents
   (`/staff-review-verify`). Keep your context lean — pass slugs and short
   findings, not file contents.
-- **Verify before post, but pipeline per find agent.** Each finding still flows
-  find → verify → post in order, and **nothing is posted unverified** — but the
-  chains run independently: a find agent's verifier and post don't wait on the
-  other find agents. Spawn find and verify agents with `run_in_background` so you
-  can react to each completion the moment it lands.
+- **Verify before post, but pipeline verification per find agent.** Each finding
+  still flows find → verify → collect survivor → dedup → post in order, and
+  **nothing is posted unverified**. A find agent's verifier starts as soon as
+  that finder returns; posting waits for every verify chain to drain so the final
+  survivor list can be deduped once.
 - **Reap each background agent as soon as you've consumed it.** Stop a find
   agent's task (`TaskStop`) the instant you read its findings — then start its
-  verifier — and stop a verify agent's task once you've posted its survivors.
+  verifier — and stop a verify agent's task once you've consumed its verdicts
+  and appended any confirmed survivors to the in-memory list.
   Finished agents left open keep holding slots in a **limited pool** and will trip
   the sub-agent limit. Reaping on consume keeps the *live* count at ~`N` (a find
   slot converts to a verify slot), not 2N; if `N` is large, launch finds in

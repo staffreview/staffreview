@@ -126,7 +126,7 @@ Three more skills are **building blocks** the orchestrators fan out to — `/sta
 
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your team’s standards.
 
-**The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the docs) across parallel sub-agents, and pipelines each one's findings straight into a verify agent that re-checks them against the code — so confirmed comments start landing as each agent finishes, and false positives never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
+**The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the docs) across parallel sub-agents, and pipelines each one's findings straight into a verify agent that re-checks them against the code. Confirmed findings are collected as verifiers finish, then deduped and posted in one final pass so false positives and duplicates never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
 
 **The docs** (`.staffreview/docs/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The docs is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored automatically.
 

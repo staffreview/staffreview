@@ -112,6 +112,29 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
   };
 }
 
+const BOOLEAN_SETTING_DEFAULTS = {
+  openBrowser: DEFAULT_OPEN_BROWSER,
+  structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+  wrapLines: DEFAULT_WRAP_LINES,
+} satisfies Record<
+  keyof Pick<GlobalSettings, "openBrowser" | "structuredHighlighting" | "wrapLines">,
+  boolean
+>;
+
+function coerceBooleanSettings(settings: GlobalSettings) {
+  for (const [key, defaultValue] of Object.entries(BOOLEAN_SETTING_DEFAULTS) as Array<
+    [keyof typeof BOOLEAN_SETTING_DEFAULTS, boolean]
+  >) {
+    if (key in settings && typeof settings[key] !== "boolean") {
+      try {
+        settings[key] = parseBooleanSetting(String(settings[key]), key);
+      } catch {
+        settings[key] = defaultValue;
+      }
+    }
+  }
+}
+
 export async function writeSettings(partial: GlobalSettings): Promise<GlobalSettings> {
   const current = await readSettings();
   const next = { ...current, ...partial };
@@ -138,43 +161,12 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
       Math.max(MIN_DOCS_AGENTS, Math.round(next.docsAgents)),
     );
   }
-  // Coerce `openBrowser` to a real boolean regardless of caller (the server's
-  // `POST /api/settings` casts the request body straight to `GlobalSettings`),
-  // so a stray `{"openBrowser":"yes"}` or `{"openBrowser":1}` is normalized
-  // rather than persisted verbatim and silently un-honored by readers.
-  // Route through the shared `parseBooleanSetting` (the same parser the CLI
-  // `set` path uses) so server and CLI agree on the stringy spellings — most
-  // importantly `"false"`/`"no"`/`"off"`/`"0"`, which `Boolean(...)` would
-  // wrongly flip to `true`. Fall back to the default on an unrecognized value
-  // (normalize-over-reject) so a crafted request can't crash the server.
-  if ("openBrowser" in next && typeof next.openBrowser !== "boolean") {
-    try {
-      next.openBrowser = parseBooleanSetting(String(next.openBrowser), "openBrowser");
-    } catch {
-      next.openBrowser = DEFAULT_OPEN_BROWSER;
-    }
-  }
-  if ("structuredHighlighting" in next && typeof next.structuredHighlighting !== "boolean") {
-    try {
-      next.structuredHighlighting = parseBooleanSetting(
-        String(next.structuredHighlighting),
-        "structuredHighlighting",
-      );
-    } catch {
-      next.structuredHighlighting = DEFAULT_STRUCTURED_HIGHLIGHTING;
-    }
-  }
-  // Same defensive boolean coercion for the line-wrap toggle (the server's
-  // `POST /api/settings` casts the request body straight to `GlobalSettings`),
-  // so a stray `{"wrapLines":"false"}` is normalized rather than persisted
-  // verbatim and silently flipped to `true` by `Boolean(...)`.
-  if ("wrapLines" in next && typeof next.wrapLines !== "boolean") {
-    try {
-      next.wrapLines = parseBooleanSetting(String(next.wrapLines), "wrapLines");
-    } catch {
-      next.wrapLines = DEFAULT_WRAP_LINES;
-    }
-  }
+  // Coerce boolean settings regardless of caller (the server's
+  // `POST /api/settings` casts the request body straight to `GlobalSettings`).
+  // Route through the shared parser so server and CLI agree on stringy
+  // spellings like `"false"`/`"no"`/`"off"`/`"0"`, and normalize unrecognized
+  // values to each setting's default instead of crashing the server.
+  coerceBooleanSettings(next);
   await mkdir(settingsDir(), { recursive: true });
   await Bun.write(settingsPath(), JSON.stringify(next, null, 2));
   return next;

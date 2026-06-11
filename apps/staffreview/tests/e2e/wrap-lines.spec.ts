@@ -15,8 +15,8 @@ async function openFeatureDiff(page: import("@playwright/test").Page) {
   await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
 }
 
-// The `.content-text` element (a div/ins/del the library tags with that emotion
-// label) is what carries the wrap: `pre-wrap` wraps, `pre` doesn't.
+// The custom `<pre class="staff-content-text react-diff-content-text">` carries
+// the wrap: `pre-wrap` wraps, `pre` doesn't.
 function contentWhiteSpace(card: import("@playwright/test").Locator) {
   return card
     .locator('[class*="content-text"]')

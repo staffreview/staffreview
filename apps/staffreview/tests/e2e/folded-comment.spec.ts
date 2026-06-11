@@ -19,8 +19,8 @@ async function openBigDiff(page: import("@playwright/test").Page) {
 
 // Regression: a comment anchored to a line inside a folded region must still
 // render INLINE (its host row placed in the diff), not only in the sidebar.
-// Fixed by forcing every commented line into react-diff-viewer's
-// `alwaysShowLines`, so the line is never folded in the first place.
+// Fixed by adding comment anchors to `forceVisibleLines`, then letting
+// `buildVisibleDiffItems` keep those host rows out of folded context blocks.
 test("a comment on a folded line renders inline, not just in the sidebar", async ({ page }) => {
   await page.goto("/");
   const card = await openBigDiff(page);

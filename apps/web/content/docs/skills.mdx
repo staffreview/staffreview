@@ -34,8 +34,9 @@ security, data, interfaces, tests, consistency, readability, performance) and a
 slice of the [review docs](/docs/docs) — so a large diff and a growing docs both
 stay fast. As each finder returns, the orchestrator stops that finished task,
 starts an independent verifier for just that finder’s results, drops false
-positives, and posts the confirmed survivors as inline comments with a
-**priority** (`P1` must-fix, `P2` should-fix, `P3` minor) so you can triage.
+positives, and collects the confirmed survivors. After every verifier drains, it
+dedups the survivor list and posts the final inline comments with a **priority**
+(`P1` must-fix, `P2` should-fix, `P3` minor) so you can triage.
 
 The **`reviewAgents`** setting controls the find-agent fan-out width and the
 target live sub-agent count (default **2**, range 1–20, adjustable in the gear

@@ -178,6 +178,34 @@ test("buildDiffRows keeps final-newline-only changes as changed rows", () => {
   expect(eofRow?.newText).toBe("b");
 });
 
+test("buildDiffRows pairs leftover removed lines after a shorter replacement", () => {
+  const rows = buildDiffRows(
+    file("changed.ts", 1, {
+      oldContent: "a\nb\nc\n",
+      newContent: "x\n",
+    }),
+    true,
+  );
+
+  expect(rows.map((row) => row.kind)).toEqual(["changed", "removed", "removed"]);
+  expect(rows.map((row) => row.oldLine)).toEqual([1, 2, 3]);
+  expect(rows.map((row) => row.newLine)).toEqual([1, undefined, undefined]);
+});
+
+test("buildDiffRows pairs leftover added lines after a longer replacement", () => {
+  const rows = buildDiffRows(
+    file("changed.ts", 1, {
+      oldContent: "a\n",
+      newContent: "x\ny\nz\n",
+    }),
+    true,
+  );
+
+  expect(rows.map((row) => row.kind)).toEqual(["changed", "added", "added"]);
+  expect(rows.map((row) => row.oldLine)).toEqual([1, undefined, undefined]);
+  expect(rows.map((row) => row.newLine)).toEqual([1, 2, 3]);
+});
+
 test("inlineRangesForPair skips oversized token pairs before structural diffing", () => {
   const oldText = Array.from({ length: 600 }, (_, i) => `old${i}`).join(" ");
   const newText = Array.from({ length: 600 }, (_, i) => `new${i}`).join(" ");
