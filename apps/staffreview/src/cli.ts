@@ -38,7 +38,7 @@ const SKILLS: Record<string, string> = {
   "staff-docs-scout": skillDocsScout,
 };
 
-const VERSION = "1.1.2";
+const VERSION = "1.3.0";
 const BOOLEAN_FLAGS = new Set([
   "help",
   "h",

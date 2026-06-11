@@ -5,6 +5,30 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.3.0 — 2026-06-11
+
+### Added
+- **`/staff-copy` mirrors open PR review comments locally.** Pass one or more
+  GitHub PR URLs, `owner/repo#number` refs, or PR numbers to copy unresolved
+  review threads into the active Staff Review diff.
+- **Diff line wrapping is configurable.** The web UI and CLI now support a
+  persistent wrap-lines setting for switching between wrapped and horizontally
+  scrollable diff lines.
+
+### Fixed
+- **Large active diffs stay responsive longer.** The first-party diff renderer
+  now skips unnecessary work for collapsed files, preserves inline comments on
+  resolved lines, and avoids rendering binary files as text.
+- **Focus rings match the shadcn/ui button style.** Inline comments, unfold
+  buttons, and diff badges no longer show duplicate blue outlines when focused.
+- **Binary detection respects `.gitattributes`.** Files marked with `-diff`
+  render as binary rows instead of expensive text diffs.
+
+### Changed
+- **`/staff-docs` now reads GitHub PR history only.** It no longer mines local
+  Staff Review diffs, still sweeps recent PRs by default, and can be targeted to
+  specific PR URLs or refs when provided.
+
 ## 1.2.0 — 2026-06-05
 
 ### Added
