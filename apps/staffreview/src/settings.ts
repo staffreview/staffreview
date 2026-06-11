@@ -20,6 +20,13 @@ import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "./docs-co
 
 export { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS };
 
+import {
+  DEFAULT_FILES_EXPANDED_BY_DEFAULT,
+  DEFAULT_SPLIT_VIEW,
+} from "./display-settings-config.ts";
+
+export { DEFAULT_FILES_EXPANDED_BY_DEFAULT, DEFAULT_SPLIT_VIEW };
+
 import { DEFAULT_OPEN_BROWSER } from "./open-browser-config.ts";
 
 export { DEFAULT_OPEN_BROWSER };
@@ -113,11 +120,16 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
 }
 
 const BOOLEAN_SETTING_DEFAULTS = {
+  filesExpandedByDefault: DEFAULT_FILES_EXPANDED_BY_DEFAULT,
   openBrowser: DEFAULT_OPEN_BROWSER,
+  splitView: DEFAULT_SPLIT_VIEW,
   structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
   wrapLines: DEFAULT_WRAP_LINES,
 } satisfies Record<
-  keyof Pick<GlobalSettings, "openBrowser" | "structuredHighlighting" | "wrapLines">,
+  keyof Pick<
+    GlobalSettings,
+    "filesExpandedByDefault" | "openBrowser" | "splitView" | "structuredHighlighting" | "wrapLines"
+  >,
   boolean
 >;
 

@@ -223,7 +223,9 @@ test("buildVisibleDiffItems expands only the clicked folded block", () => {
   const foldItems = folded.filter((item) => item.type === "fold");
   expect(foldItems.length).toBeGreaterThan(1);
 
-  const expanded = buildVisibleDiffItems(rows, false, new Set(), new Set([foldItems[0]!.key]));
+  const expanded = buildVisibleDiffItems(rows, false, new Set(), [
+    { end: foldItems[0]!.end, start: foldItems[0]!.start },
+  ]);
 
   expect(expanded.some((item) => item.type === "fold" && item.key === foldItems[0]!.key)).toBe(
     false,
@@ -231,6 +233,37 @@ test("buildVisibleDiffItems expands only the clicked folded block", () => {
   expect(expanded.some((item) => item.type === "fold" && item.key === foldItems[1]!.key)).toBe(
     true,
   );
+  expect(expanded.length).toBeLessThan(rows.length);
+});
+
+test("buildVisibleDiffItems keeps an expanded fold open when force-visible lines split it", () => {
+  const oldLines = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`);
+  const newLines = [...oldLines];
+  newLines[9] = "changed 10";
+  newLines[34] = "changed 35";
+  const rows = buildDiffRows(
+    file("changed.ts", 1, {
+      oldContent: `${oldLines.join("\n")}\n`,
+      newContent: `${newLines.join("\n")}\n`,
+    }),
+    true,
+  );
+  const folded = buildVisibleDiffItems(rows, false, new Set());
+  const fold = folded.find((item) => item.type === "fold");
+  expect(fold).toBeDefined();
+  const range = { end: fold!.end, start: fold!.start };
+  const forceVisibleLine = rows[Math.floor((range.start + range.end) / 2)]?.newLine;
+  expect(forceVisibleLine).toBeDefined();
+
+  const expanded = buildVisibleDiffItems(rows, false, new Set([`new:${forceVisibleLine}`]), [
+    range,
+  ]);
+
+  const splitFoldItems = expanded.filter(
+    (item) => item.type === "fold" && range.start <= item.start && item.end <= range.end,
+  );
+  expect(splitFoldItems).toHaveLength(0);
+  expect(expanded.length).toBeGreaterThan(folded.length);
   expect(expanded.length).toBeLessThan(rows.length);
 });
 

@@ -427,7 +427,10 @@ type DiffRow = {
   oldRanges: InlineRange[];
   newRanges: InlineRange[];
 };
-type DiffItem = { type: "row"; row: DiffRow } | { type: "fold"; key: string; count: number };
+type FoldRange = { start: number; end: number };
+type DiffItem =
+  | { type: "row"; row: DiffRow }
+  | ({ type: "fold"; key: string; count: number } & FoldRange);
 type DiffLinePart = { text: string; hasTrailingNewline: boolean };
 
 function splitDiffLines(value: string): string[] {
@@ -578,7 +581,7 @@ export function buildVisibleDiffItems(
   rows: DiffRow[],
   expanded: boolean,
   forceVisible: Set<string>,
-  expandedFoldKeys = new Set<string>(),
+  expandedFoldRanges: FoldRange[] = [],
 ): DiffItem[] {
   if (expanded) return rows.map((row) => ({ row, type: "row" }));
   const visible = new Set<number>();
@@ -609,12 +612,13 @@ export function buildVisibleDiffItems(
     const start = i;
     while (i < rows.length && !visible.has(i)) i++;
     const key = `fold:${start}:${i}`;
-    if (expandedFoldKeys.has(key)) {
+    const isExpanded = expandedFoldRanges.some((range) => range.start <= start && i <= range.end);
+    if (isExpanded) {
       for (let j = start; j < i; j++) {
         items.push({ row: rows[j]!, type: "row" });
       }
     } else {
-      items.push({ count: i - start, key, type: "fold" });
+      items.push({ count: i - start, end: i, key, start, type: "fold" });
     }
   }
   return items;
@@ -720,7 +724,7 @@ export function DiffFile({
   };
 
   const [contextExpanded, setContextExpanded] = useState(false);
-  const [expandedFoldKeys, setExpandedFoldKeys] = useState<Set<string>>(() => new Set());
+  const [expandedFoldRanges, setExpandedFoldRanges] = useState<FoldRange[]>([]);
   const changeStats = useMemo(() => fileChangeStats(file), [file]);
   const hasChangeStats = changeStats.additions > 0 || changeStats.deletions > 0;
   const canToggleFoldedContext = !expandedByDefault && !file.isSymlink && !file.isBinary;
@@ -754,7 +758,7 @@ export function DiffFile({
 
   function toggleFoldedContext() {
     setContextExpanded((prev) => {
-      if (prev) setExpandedFoldKeys(new Set());
+      if (prev) setExpandedFoldRanges([]);
       return !prev;
     });
   }
@@ -1086,11 +1090,23 @@ export function DiffFile({
   useEffect(() => {
     const apply = () => {
       const parsed = parseLineHash(window.location.hash);
-      setAnchored(
+      const next =
         parsed && parsed.file === file.path
           ? { side: parsed.side, startLine: parsed.startLine, endLine: parsed.endLine }
-          : null,
-      );
+          : null;
+      setAnchored((prev) => {
+        if (!prev && !next) return prev;
+        if (
+          prev &&
+          next &&
+          prev.side === next.side &&
+          prev.startLine === next.startLine &&
+          prev.endLine === next.endLine
+        ) {
+          return prev;
+        }
+        return next;
+      });
     };
     apply();
     window.addEventListener("hashchange", apply);
@@ -1106,7 +1122,7 @@ export function DiffFile({
   // links land in the right place. Skip when `staff:hashchange` fires
   // (it's a click on our own line numbers; the user is already looking
   // at it).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: File content changes remount/redraw the third-party diff table and should re-apply the current hash anchor.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: File content changes rebuild the rendered diff rows and should re-apply the current hash anchor.
   useEffect(() => {
     if (collapsed) return;
     const apply = () => {
@@ -1139,8 +1155,9 @@ export function DiffFile({
     [inlineLines],
   );
   const diffItems = useMemo(
-    () => buildVisibleDiffItems(diffRows, allContextExpanded, forceVisibleLines, expandedFoldKeys),
-    [diffRows, allContextExpanded, forceVisibleLines, expandedFoldKeys],
+    () =>
+      buildVisibleDiffItems(diffRows, allContextExpanded, forceVisibleLines, expandedFoldRanges),
+    [diffRows, allContextExpanded, forceVisibleLines, expandedFoldRanges],
   );
   const noWrapMeasureKey = useMemo(() => {
     if (!shouldRenderTextDiff) return "unmounted";
@@ -1151,7 +1168,7 @@ export function DiffFile({
       contentSignature(file.oldContent),
       contentSignature(file.newContent),
       allContextExpanded ? "expanded" : "folded",
-      Array.from(expandedFoldKeys).sort().join(","),
+      expandedFoldRanges.map((range) => `${range.start}:${range.end}`).join(","),
       Array.from(forceVisibleLines).sort().join(","),
     ].join("\0");
   }, [
@@ -1160,7 +1177,7 @@ export function DiffFile({
     file.oldContent,
     file.path,
     file.status,
-    expandedFoldKeys,
+    expandedFoldRanges,
     forceVisibleLines,
     shouldRenderTextDiff,
     wrapLines,
@@ -1184,7 +1201,7 @@ export function DiffFile({
     if (!container) return;
     container.scrollLeft = 0;
     container.style.setProperty("--staff-code-fold-left", `${container.clientWidth / 2}px`);
-    setExpandedFoldKeys(new Set());
+    setExpandedFoldRanges([]);
     plusKeyRef.current = null;
     lastPlusAnchor.current = null;
     setPlus(null);
@@ -1479,11 +1496,11 @@ export function DiffFile({
             type="button"
             className="react-diff-code-fold-expand-button code-fold-expand-button outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={() =>
-              setExpandedFoldKeys((prev) => {
-                const next = new Set(prev);
-                next.add(item.key);
-                return next;
-              })
+              setExpandedFoldRanges((prev) =>
+                prev.some((range) => range.start <= item.start && item.end <= range.end)
+                  ? prev
+                  : [...prev, { end: item.end, start: item.start }],
+              )
             }
             data-testid={`fold-block-${file.path}`}
           >
@@ -1740,7 +1757,7 @@ export function DiffFile({
       )}
 
       {!collapsed && !file.isSymlink && !file.isBinary && (
-        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithMouseEvents: Mouse handlers target third-party diff rows for line selection and hover state.
+        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithMouseEvents: Mouse handlers resolve line/side from rendered diff rows for selection and hover state.
         <div
           className={cn(
             "staff-diff relative",
