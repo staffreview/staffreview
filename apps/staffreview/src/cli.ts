@@ -1,18 +1,16 @@
 #!/usr/bin/env bun
-import { mkdir, rm, symlink } from "node:fs/promises";
-import { join } from "node:path";
-import skillComment from "../skills/staff-comment.md" with { type: "text" };
-import skillCopy from "../skills/staff-copy.md" with { type: "text" };
-import skillDocs from "../skills/staff-docs.md" with { type: "text" };
-import skillDocsScout from "../skills/staff-docs-scout.md" with { type: "text" };
-import skillDocument from "../skills/staff-document.md" with { type: "text" };
-import skillLoop from "../skills/staff-loop.md" with { type: "text" };
-import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
-import skillReview from "../skills/staff-review.md" with { type: "text" };
-import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
-import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
+import { cancel, intro, isCancel, multiselect, outro, select } from "@clack/prompts";
 import { parseBooleanSetting } from "./boolean-setting.ts";
 import * as git from "./git.ts";
+import {
+  GLOBAL_HARNESSES,
+  type GlobalHarnessId,
+  type InstallScope,
+  installedGlobalHarnesses,
+  installGlobal,
+  installProject,
+  parseGlobalHarnessIds,
+} from "./install.ts";
 import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
 import { PORT_RANGE_START, resolvePort } from "./port.ts";
 import { startServer } from "./server.ts";
@@ -25,27 +23,16 @@ import {
   type ResolutionStatus,
 } from "./types.ts";
 
-const SKILLS: Record<string, string> = {
-  "staff-review": skillReview,
-  "staff-review-find": skillReviewFind,
-  "staff-review-verify": skillReviewVerify,
-  "staff-comment": skillComment,
-  "staff-copy": skillCopy,
-  "staff-document": skillDocument,
-  "staff-resolve": skillResolve,
-  "staff-loop": skillLoop,
-  "staff-docs": skillDocs,
-  "staff-docs-scout": skillDocsScout,
-};
-
 const VERSION = "1.3.0";
 const BOOLEAN_FLAGS = new Set([
+  "global",
   "help",
   "h",
   "json",
   "no-open",
   "no-set-active",
   "open",
+  "project",
   "version",
   "v",
 ]);
@@ -85,6 +72,149 @@ function parseArgs(argv: string[]): {
 
 function booleanFlag(value: string | boolean | undefined): boolean {
   return value === true || value === "true" || value === "1" || value === "yes" || value === "on";
+}
+
+function isInteractiveTerminal(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+export function installScopeFromFlags(
+  flags: Record<string, string | boolean>,
+): InstallScope | undefined {
+  const project = booleanFlag(flags.project);
+  const global = booleanFlag(flags.global);
+  const scopeFlag = typeof flags.scope === "string" ? flags.scope.trim().toLowerCase() : undefined;
+
+  if (flags.scope === true) {
+    throw new Error("--scope requires a value: project or global");
+  }
+  if (project && global) {
+    throw new Error("choose only one of --project or --global");
+  }
+  if (scopeFlag && (project || global)) {
+    throw new Error("use either --scope or --project/--global, not both");
+  }
+  if (project) return "project";
+  if (global) return "global";
+  if (!scopeFlag) return undefined;
+  if (scopeFlag === "project" || scopeFlag === "global") return scopeFlag;
+  throw new Error("--scope must be one of: project, global");
+}
+
+export function globalHarnessSpecFromFlags(
+  flags: Record<string, string | boolean>,
+): string | undefined {
+  const raw =
+    typeof flags.harness === "string"
+      ? flags.harness
+      : typeof flags.harnesses === "string"
+        ? flags.harnesses
+        : undefined;
+  // Once a real string value was supplied via either alias, honour it — even if
+  // the *other* alias happens to parse as a valueless `true` (e.g.
+  // `--harness codex --harnesses`). Only reject when no usable value was found:
+  // a non-blank string already returned above, so reaching the guard with a
+  // blank `raw` (`--harness=` / `--harness " "`) or a valueless flag and no
+  // string at all (`raw === undefined`) both mean "asked for a harness but named
+  // none". Without the blank-string guard, `--harness=` would fall through as a
+  // falsy spec and silently downgrade to a project install.
+  if (raw !== undefined) {
+    if (raw.trim()) return raw;
+    throw new Error(`--harness requires a value, e.g. --harness ${supportedGlobalHarnessIds()}`);
+  }
+  if (flags.harness === true || flags.harnesses === true) {
+    throw new Error(`--harness requires a value, e.g. --harness ${supportedGlobalHarnessIds()}`);
+  }
+  return undefined;
+}
+
+/**
+ * Pure resolution of the install command's scope/harness flags. Returns the
+ * explicitly-requested `scope` (or `undefined`, to be filled in by the prompt /
+ * project default) and the `harnessSpec` string, applying the precedence rule
+ * (a bare `--harness` implies a global install) and rejecting the
+ * `--project --harness` combination. Shared by `main`'s `install` dispatch and
+ * the unit tests so the resolution table is asserted against the real logic.
+ */
+export function resolveInstallFlags(flags: Record<string, string | boolean>): {
+  scope: InstallScope | undefined;
+  harnessSpec: string | undefined;
+} {
+  const harnessSpec = globalHarnessSpecFromFlags(flags);
+  const scope = installScopeFromFlags(flags) ?? (harnessSpec ? "global" : undefined);
+  if (scope === "project" && harnessSpec) {
+    throw new Error("--harness only applies to global installs");
+  }
+  return { scope, harnessSpec };
+}
+
+export async function globalHarnessesFromSpec(
+  spec: string,
+  homeDir?: string,
+): Promise<GlobalHarnessId[]> {
+  const allHarnesses = await installedGlobalHarnesses(homeDir);
+  const harnesses = parseGlobalHarnessIds(spec, { allHarnesses });
+  if (harnesses.length === 0) {
+    throw new Error(
+      "no installed global harness skill directories found. Install an agent first or create its skills directory.",
+    );
+  }
+  return harnesses;
+}
+
+function supportedGlobalHarnessIds(): string {
+  return GLOBAL_HARNESSES.map((h) => h.id).join(",");
+}
+
+function exitInstallCancelled(message = "Install cancelled."): never {
+  cancel(message);
+  process.exit(0);
+}
+
+async function promptInstallScope(): Promise<InstallScope> {
+  const scope = await select<InstallScope>({
+    message: "Where should Staff Review install its skills?",
+    options: [
+      {
+        value: "project",
+        label: "Project",
+        hint: ".agents/skills + .claude/skills in this repo",
+      },
+      {
+        value: "global",
+        label: "Global",
+        hint: "Install once into user-level harness skill directories",
+      },
+    ],
+    initialValue: "project",
+  });
+  if (isCancel(scope)) {
+    exitInstallCancelled();
+  }
+  return scope;
+}
+
+async function promptGlobalHarnesses(): Promise<GlobalHarnessId[] | undefined> {
+  const availableHarnesses = await installedGlobalHarnesses();
+  if (availableHarnesses.length === 0) {
+    cancel(
+      "No installed global harness skill directories found. Install an agent first or create its skills directory.",
+    );
+    return undefined;
+  }
+  const harnesses = await multiselect<GlobalHarnessId>({
+    message: "Install globally to which harnesses? Press a to toggle all.",
+    options: availableHarnesses.map((h) => ({
+      value: h.id,
+      label: h.label,
+      hint: h.hint,
+    })),
+    required: true,
+  });
+  if (isCancel(harnesses)) {
+    exitInstallCancelled();
+  }
+  return harnesses;
 }
 
 function parseTarget(spec: string | undefined): DiffTarget {
@@ -160,9 +290,17 @@ USAGE
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
 
-  staff install                 Set up the repo: write the ten /staff-* skills to
+  staff install [--scope project|global] [--harness <ids|all>]
+                                 Set up Staff Review skills. In an interactive
+                                 terminal, prompts for project vs global install.
+                                 Project install writes the ten /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
-                                 create the .staffreview/ store, and gitignore it.
+                                 creates the .staffreview/ store, and gitignores it.
+                                 Global install writes the skills to selected installed
+                                 harness skill directories. Supported ids:
+                                 ${supportedGlobalHarnessIds()}, or all installed.
+                                 Use --project or --global as shorthand
+                                 for --scope.
 
   staff --version | --help
 `);
@@ -305,55 +443,47 @@ async function main(argv: string[]) {
     }
 
     case "install": {
-      // 1. Skills: canonical copies under .agents/skills/<name>/SKILL.md,
-      //    symlinked into .claude/skills/<name> so both Claude Code and
-      //    other agents resolve them.
-      const agentsRoot = join(cwd, ".agents", "skills");
-      const claudeRoot = join(cwd, ".claude", "skills");
-      await mkdir(claudeRoot, { recursive: true });
-      let count = 0;
-      for (const [name, body] of Object.entries(SKILLS)) {
-        const canonicalDir = join(agentsRoot, name);
-        await mkdir(canonicalDir, { recursive: true });
-        await Bun.write(join(canonicalDir, "SKILL.md"), body);
+      const interactive = isInteractiveTerminal();
+      const { scope: resolvedScope, harnessSpec: harnessSpecFromFlags } =
+        resolveInstallFlags(flags);
+      let scope = resolvedScope;
+      let usedPrompt = false;
 
-        const link = join(claudeRoot, name);
-        // Replace whatever's there (a prior real dir or a stale symlink)
-        // with a relative symlink to the canonical copy.
-        await rm(link, { recursive: true, force: true });
-        await symlink(join("..", "..", ".agents", "skills", name), link, "dir");
-        console.log(`  ${join(".agents", "skills", name)}/SKILL.md  ←  .claude/skills/${name}`);
-        count++;
+      if (!scope) {
+        if (interactive) {
+          intro("Staff Review install");
+          usedPrompt = true;
+          scope = await promptInstallScope();
+        } else {
+          scope = "project";
+        }
       }
 
-      // 2. Store: create the .staffreview directory tree.
-      await store.ensureDirs(cwd);
-      console.log("  created .staffreview/");
-
-      // 3. gitignore the per-machine review data — the diffs (review
-      //    sessions), attachments (pasted images), and the active-diff
-      //    pointer. The docs (documented examples) and the skills are
-      //    meant to be committed.
-      const ignoreEntries = [
-        ".staffreview/diffs/",
-        ".staffreview/attachments/",
-        ".staffreview/active.json",
-      ];
-      const giPath = join(cwd, ".gitignore");
-      const giFile = Bun.file(giPath);
-      let existing = (await giFile.exists()) ? await giFile.text() : "";
-      const present = new Set(existing.split("\n").map((l) => l.trim().replace(/\/$/, "")));
-      const missing = ignoreEntries.filter((e) => !present.has(e.replace(/\/$/, "")));
-      if (missing.length > 0) {
-        const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
-        existing = `${existing}${prefix}${missing.join("\n")}\n`;
-        await Bun.write(giPath, existing);
-        for (const e of missing) console.log(`  added ${e} to .gitignore`);
-      } else {
-        console.log("  .gitignore already up to date");
+      if (scope === "project") {
+        await installProject(cwd);
+        if (usedPrompt) outro("Project install complete.");
+        return;
       }
 
-      console.log(`\nInstalled ${count} skills + initialized the store.`);
+      let harnesses = harnessSpecFromFlags
+        ? await globalHarnessesFromSpec(harnessSpecFromFlags)
+        : undefined;
+      if (!harnesses) {
+        if (!interactive) {
+          throw new Error(
+            `--global requires --harness <${supportedGlobalHarnessIds()}|all> when not running interactively`,
+          );
+        }
+        if (!usedPrompt) {
+          intro("Staff Review install");
+          usedPrompt = true;
+        }
+        harnesses = await promptGlobalHarnesses();
+        if (!harnesses) return;
+      }
+
+      await installGlobal(harnesses);
+      if (usedPrompt) outro("Global install complete.");
       return;
     }
 
@@ -639,8 +769,14 @@ async function main(argv: string[]) {
   }
 }
 
-main(process.argv.slice(2)).catch((e: unknown) => {
-  const msg = e instanceof Error ? e.message : String(e);
-  console.error(`\x1b[31merror:\x1b[0m ${msg}`);
-  process.exit(1);
-});
+// Only dispatch the CLI when run as the entrypoint (`bun src/cli.ts` or the
+// compiled binary). Guarding on `import.meta.main` lets tests import the pure
+// flag-resolution helpers above without invoking `main` against the test
+// runner's argv.
+if (import.meta.main) {
+  main(process.argv.slice(2)).catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`\x1b[31merror:\x1b[0m ${msg}`);
+    process.exit(1);
+  });
+}

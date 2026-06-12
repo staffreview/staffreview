@@ -68,7 +68,7 @@ A **diff is a slug**: `base..head`, where each side is a git ref, `WT` (working 
 
 The automated review is driven by ten Markdown skills. **Canonical source lives in `.agents/skills/<name>/SKILL.md`**; `apps/staffreview/skills/*.md` are symlinks to those, and `cli.ts` imports them as text (`import … with { type: "text" }`) so they're baked into the binary. `staff install` writes them out to a consuming repo's `.agents/skills/` and symlinks them into `.claude/skills/` (Claude Code picks them up as slash commands), then creates `.staffreview/` and gitignores the per-machine bits.
 
-**To change skill behavior, edit `.agents/skills/<name>/SKILL.md`** (the `skills/*.md` symlinks and the `SKILLS` map in `cli.ts` follow automatically). Orchestrators (`staff-review`, `staff-loop`, `staff-docs`) fan out to building-block skills (`staff-review-find`, `staff-review-verify`, `staff-docs-scout`); `staff-copy` imports open GitHub PR review threads locally; `staff-comment` is the thin CLI wrapper they all post through.
+**To change skill behavior, edit `.agents/skills/<name>/SKILL.md`** (the `skills/*.md` symlinks and the `SKILLS` map in `apps/staffreview/src/install.ts` follow automatically). Orchestrators (`staff-review`, `staff-loop`, `staff-docs`) fan out to building-block skills (`staff-review-find`, `staff-review-verify`, `staff-docs-scout`); `staff-copy` imports open GitHub PR review threads locally; `staff-comment` is the thin CLI wrapper they all post through.
 
 ## `.staffreview/` layout
 
