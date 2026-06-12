@@ -70,12 +70,14 @@ Section reviews accumulate on one long-lived diff, so your files may already car
 comments from earlier runs:
 
 ```bash
-staff comment list --json
+staff comment list --slug <slug> --json
 ```
 
 Treat any thread already resolved (`fixed`/`skipped`/`documented`) as **settled** —
 do not report it or a trivial variant. Don't duplicate a still-open thread either.
-Report only genuinely new or still-unaddressed issues.
+Report only genuinely new or still-unaddressed issues. This read-only
+`staff comment list` check is allowed; the prohibition below is against mutating
+comment commands such as `add`, `edit`, `delete`, or `resolve`.
 
 ## Output — return findings, do not post
 
@@ -96,4 +98,5 @@ finding:
 ```
 
 Return `[]` if you find nothing. One issue per finding; don't bundle three. Do
-not run `staff comment`, do not spawn agents, do not modify or commit code.
+not run mutating `staff comment` commands, do not spawn agents, do not modify or
+commit code.

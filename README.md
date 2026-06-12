@@ -73,8 +73,9 @@ Prefer not to build? Run straight from source: `bun run apps/staffreview/src/cli
 From inside the git repo you want to review:
 
 ```bash
-# 1. One-time setup: writes the ten /staff-* skills, creates the
-#    .staffreview/ store, and gitignores the per‑machine bits.
+# 1. One-time setup: writes the thirteen /staff-* skills, creates the
+#    .staffreview/ store, and gitignores per-machine state including
+#    .staffreview/section-cache.json.
 staff install
 
 # 2. Open a diff in the browser. WT = working tree, STAGED = index.
@@ -111,7 +112,7 @@ staff --port 4400           # serve the UI on a specific port
 - **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so `/staff-resolve` captures it as a reusable lesson.
 - The diff and the comment sidebar scroll independently, with light/dark themes, split/unified view, and syntax highlighting in the gear menu.
 
-**The skills** are how agents review. `staff install` writes ten of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — seven you run directly plus three building blocks:
+**The skills** are how agents review. `staff install` writes thirteen of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — eight you run directly plus five building blocks:
 
 | Skill | What it does |
 | --- | --- |
@@ -122,14 +123,17 @@ staff --port 4400           # serve the UI on a specific port
 | `/staff-document` | Imports a GitHub PR review comment (by URL) as a `.staffreview/docs/` example. |
 | `/staff-docs` | Mines GitHub PR review history, or provided PR URL(s), for recurring lessons and writes the best into `.staffreview/docs/`. |
 | `/staff-loop` | Reviews (find → verify → post) then resolves the diff in subagents, round after round, until it converges. |
+| `/staff-section` | Reviews the existing codebase, not a diff, a rotating section at a time while tracking progress in `.staffreview/section-cache.json`. |
 
-Three more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to, plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
+Five more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to; `/staff-section-find` and `/staff-section-verify`, which `/staff-section` fans out to for whole-file review; plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
 
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your team’s standards.
 
 **The review fans out.** `/staff-review` is a multi-agent orchestration: it splits the ten review areas (and the docs) across parallel sub-agents, and pipelines each one's findings straight into a verify agent that re-checks them against the code. Confirmed findings are collected as verifiers finish, then deduped and posted in one final pass so false positives and duplicates never reach you. The fan-out width is the `reviewAgents` setting (default **2**, adjustable in the gear menu), or pass a number inline — `/staff-review main..WT 6` — to tailor it to the change’s size.
 
-**The docs** (`.staffreview/docs/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The docs is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored automatically.
+**The section review rotates through the codebase.** `/staff-section` reviews whole files from the existing tree instead of a diff, remembers coverage in `.staffreview/section-cache.json`, and advances to a fresh section on the next run. The `sectionAgents` setting (default **2**, adjustable in the gear menu) controls both the find-agent fan-out and the size of each section, or pass a number inline — `/staff-section 6` — for a bigger pass.
+
+**The docs** (`.staffreview/docs/`) is your team’s captured review wisdom. `/staff-review` reads it on every pass and re‑flags any recurrence of a documented mistake. The docs is meant to be **committed**; the session data (`.staffreview/diffs/`, `attachments/`, `active.json`, `section-cache.json`) is gitignored automatically.
 
 **The loop** (`/staff-loop`) chains review and resolution in subagents until a review surfaces nothing new, capped by the `loopMaxRounds` setting (default **5**, adjustable in the gear menu). It’s the “set it going and come back to a higher‑quality result” button.
 
@@ -159,11 +163,11 @@ staff comment add|edit|delete|list|resolve|unresolve
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                        Persist browser auto-open, line wrapping, or intra-line word-diff highlighting.
-staff install                          Write the skills + initialize the .staffreview/ store.
+staff install                          Write the thirteen skills + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, browser auto-open, line wrapping, intra-line word-diff highlighting, review‑loop cap, the `/staff-review` agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, browser auto-open, line wrapping, intra-line word-diff highlighting, review-loop cap, the `/staff-review` agent count, the `/staff-section` section agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
 
 ---
 

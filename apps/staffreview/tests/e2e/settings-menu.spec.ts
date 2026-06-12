@@ -128,6 +128,7 @@ test("Reset to defaults requires confirmation and restores menu settings", async
       openBrowser: false,
       loopMaxRounds: 6,
       reviewAgents: 3,
+      sectionAgents: 4,
       docsAgents: 7,
     },
   });
@@ -150,6 +151,7 @@ test("Reset to defaults requires confirmation and restores menu settings", async
   await expect(page.getByTestId("open-browser-auto")).toHaveAttribute("aria-checked", "false");
   await expect(page.getByTestId("loop-rounds-value")).toHaveText("6 rounds max");
   await expect(page.getByTestId("review-agents-value")).toHaveText("3 agents");
+  await expect(page.getByTestId("section-agents-value")).toHaveText("4 agents");
   await expect(page.getByTestId("docs-agents-value")).toHaveText("7 agents");
 
   const resetButton = page.getByTestId("settings-reset-button");
@@ -181,5 +183,6 @@ test("Reset to defaults requires confirmation and restores menu settings", async
   await expect(page.getByTestId("open-browser-auto")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("loop-rounds-value")).toHaveText("5 rounds max");
   await expect(page.getByTestId("review-agents-value")).toHaveText("2 agents");
+  await expect(page.getByTestId("section-agents-value")).toHaveText("2 agents");
   await expect(page.getByTestId("docs-agents-value")).toHaveText("5 agents");
 });

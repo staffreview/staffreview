@@ -31,7 +31,7 @@ test("sectionAgents: CLI default, gear-menu stepper persists, and the [1,20] cla
     .toBe("3");
 
   // Out-of-range writes are clamped to [1, 20] server-side.
-  const setAgents = async (v: number) => {
+  const setAgents = async (v: unknown) => {
     const res = await page.request.post("/api/settings", { data: { sectionAgents: v } });
     return (await res.json()).settings.sectionAgents;
   };
@@ -42,4 +42,10 @@ test("sectionAgents: CLI default, gear-menu stepper persists, and the [1,20] cla
   await page.reload();
   await page.getByTestId("settings-menu-button").click();
   await expect(page.getByTestId("section-agents-value")).toHaveText("1 agent");
+
+  // Malformed API payloads fall back to the default instead of persisting a
+  // non-number that would break `staff settings get sectionAgents`.
+  expect(await setAgents(null)).toBe(2);
+  expect(await setAgents("foo")).toBe(2);
+  expect((await staff(["settings", "get", "sectionAgents"])).trim()).toBe("2");
 });

@@ -63,13 +63,20 @@ capture each one's **working-tree content hash** (used in Step 3 to tell whether
 file changed since its last review):
 
 ```bash
-git ls-files -- ':!:.staffreview/' > /tmp/staff-section-paths.txt
-git hash-object --stdin-paths < /tmp/staff-section-paths.txt > /tmp/staff-section-hashes.txt
-paste /tmp/staff-section-paths.txt /tmp/staff-section-hashes.txt   # path<TAB>blobsha
+paths=$(mktemp "${TMPDIR:-/tmp}/staff-section-paths.XXXXXX")
+hashes=$(mktemp "${TMPDIR:-/tmp}/staff-section-hashes.XXXXXX")
+trap 'rm -f "$paths" "$hashes"' EXIT
+git ls-files -s -- ':!:.staffreview/' |
+  awk '$1 == "100644" || $1 == "100755" { sub(/^[0-9]+ [0-9a-f]+ [0-9]+\t/, ""); print }' |
+  sort > "$paths"
+git hash-object --stdin-paths < "$paths" > "$hashes"
+paste "$paths" "$hashes"   # path<TAB>blobsha
 ```
 
 (If `git hash-object --stdin-paths` aborts on a tracked-but-deleted path, drop
-missing paths first — `git ls-files` then filter to existing files.)
+missing paths first — `git ls-files -s` then filter to existing files. Keep only
+regular file modes (`100644` / `100755`) before hashing so symlinks and
+submodule gitlinks do not produce anchors that diverge from the whole-tree diff.)
 
 From that list, **exclude what isn't worth a human-grade read**, keeping a stable
 order (sort by path):
@@ -203,13 +210,20 @@ Identical in shape to `/staff-review` Step 4 — **event-driven, reaping as you 
 3. **Dedup and post after every verify chain drains.** Dedup true duplicates
    (same `file`+`line`, same issue — keep the clearest/highest-severity one), then
    post each survivor via the `staff` CLI (see `/staff-comment`). Pipe the body via
-   stdin, pass `--author` with **your model name**, the survivor's `--priority`,
-   and **`--side new`**:
+   stdin, pass `--author` with **your model name** and the survivor's
+   `--priority`. For inline findings, pass `--side new`; for range findings, also
+   pass `--end-line <n>`. For top-level findings (`file: null` / `line: null`),
+   omit `--file`, `--line`, `--end-line`, and `--side`:
 
    ```bash
+   # inline (anchored). Add --end-line <n> for a range.
    printf '%s' "$BODY" | staff comment add \
      --slug "$SLUG" --file <path> --line <n> --side new \
      --author "<your model name>" --priority <P1|P2|P3>
+
+   # top-level (cross-cutting).
+   printf '%s' "$BODY" | staff comment add \
+     --slug "$SLUG" --author "<your model name>" --priority <P1|P2|P3>
    ```
 
    `--priority`: **P1** (must fix), **P2** (should fix), **P3** (minor). Be honest

@@ -76,6 +76,26 @@ test("writeSettings rounds a fractional sectionAgents to the nearest integer", a
   expect(next.sectionAgents).toBe(3);
 });
 
+test("writeSettings falls back to default sectionAgents for malformed values", async () => {
+  const nullValue = await writeSettings({ sectionAgents: null as unknown as number });
+  expect(nullValue.sectionAgents).toBe(DEFAULT_SECTION_AGENTS);
+
+  const stringValue = await writeSettings({ sectionAgents: "foo" as unknown as number });
+  expect(stringValue.sectionAgents).toBe(DEFAULT_SECTION_AGENTS);
+
+  const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+  expect(onDisk.sectionAgents).toBe(DEFAULT_SECTION_AGENTS);
+});
+
+test("settingsWithDefaults falls back to default sectionAgents for malformed values", () => {
+  expect(settingsWithDefaults({ sectionAgents: null as unknown as number }).sectionAgents).toBe(
+    DEFAULT_SECTION_AGENTS,
+  );
+  expect(settingsWithDefaults({ sectionAgents: "foo" as unknown as number }).sectionAgents).toBe(
+    DEFAULT_SECTION_AGENTS,
+  );
+});
+
 test("writeSettings persists openBrowser", async () => {
   const next = await writeSettings({ openBrowser: false });
   expect(next.openBrowser).toBe(false);
