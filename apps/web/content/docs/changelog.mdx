@@ -16,6 +16,25 @@ description: Notable changes to Staff Review, newest first.
   whenever any of its files changed, and skipped only when none of them have.
   Backed by the `/staff-section-find` and `/staff-section-verify` building blocks.
 
+## 1.4.0 — 2026-06-12
+
+### Added
+- **`staff install` can now install project-local or global skills.** Interactive
+  installs ask where to install, while non-interactive project installs keep the
+  previous behavior for automation.
+- **Global installs support common agent harnesses.** Staff Review can install
+  its bundled skills into existing Codex, Claude Code, Cursor CLI Agent,
+  OpenCode, Pi, Amp, and generic agent skill directories.
+
+### Fixed
+- **Install prompts now cancel cleanly.** Pressing Esc or Ctrl+C exits the
+  install flow with status 0 on the first keypress.
+
+### Changed
+- **Global install selection only shows configured harnesses.** The prompt lists
+  harnesses whose skills directory already exists, and `--harness all` targets
+  only those installed roots.
+
 ## 1.3.0 — 2026-06-11
 
 ### Added
