@@ -1,0 +1,1 @@
+../../../.agents/skills/staff-section-verify/SKILL.md

@@ -14,6 +14,16 @@ import { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS } from "./r
 
 export { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS };
 
+// `/staff-section` agent fan-out default + bounds (also sizes the per-run
+// section), same dependency-free pattern so the frontend bundle shares them.
+import {
+  DEFAULT_SECTION_AGENTS,
+  MAX_SECTION_AGENTS,
+  MIN_SECTION_AGENTS,
+} from "./section-config.ts";
+
+export { DEFAULT_SECTION_AGENTS, MAX_SECTION_AGENTS, MIN_SECTION_AGENTS };
+
 // `/staff-docs` scout fan-out default + bounds, same dependency-free pattern
 // so the frontend bundle can share them with the server.
 import { DEFAULT_DOCS_AGENTS, MAX_DOCS_AGENTS, MIN_DOCS_AGENTS } from "./docs-config.ts";
@@ -78,6 +88,10 @@ export type GlobalSettings = {
    * find agents into per-find verification. Defaults to
    * {@link DEFAULT_REVIEW_AGENTS} when unset. */
   reviewAgents?: number;
+  /** Find-agent fan-out width for `/staff-section`, which also sizes the slice
+   * of the codebase reviewed each run (more agents → a bigger section).
+   * Defaults to {@link DEFAULT_SECTION_AGENTS} when unset. */
+  sectionAgents?: number;
   /** How many scout sub-agents `/staff-docs` fans out across GitHub PR review
    * comments. A docs sweep can cover more ground than a single diff review, so
    * this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
@@ -104,22 +118,6 @@ export async function readSettings(): Promise<GlobalSettings> {
   }
 }
 
-// Server-side subset of the default set. Kept in sync with the two frontend
-// default enumerations: `DEFAULT_SETTINGS` (SettingsMenu.tsx, persisted on
-// reset) and `resetDisplaySettings` (App.tsx, applied to live React state). A
-// new setting whose materialized default the server must surface goes here too.
-export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
-  return {
-    openBrowser: DEFAULT_OPEN_BROWSER,
-    loopMaxRounds: DEFAULT_LOOP_ROUNDS,
-    reviewAgents: DEFAULT_REVIEW_AGENTS,
-    docsAgents: DEFAULT_DOCS_AGENTS,
-    structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
-    wrapLines: DEFAULT_WRAP_LINES,
-    ...settings,
-  };
-}
-
 const BOOLEAN_SETTING_DEFAULTS = {
   filesExpandedByDefault: DEFAULT_FILES_EXPANDED_BY_DEFAULT,
   openBrowser: DEFAULT_OPEN_BROWSER,
@@ -133,6 +131,59 @@ const BOOLEAN_SETTING_DEFAULTS = {
   >,
   boolean
 >;
+
+type NumericSettingKey = keyof Pick<
+  GlobalSettings,
+  "docsAgents" | "loopMaxRounds" | "reviewAgents" | "sectionAgents"
+>;
+
+type NumericSettingConfig = {
+  defaultValue: number;
+  min: number;
+  max: number;
+};
+
+const NUMERIC_SETTING_CONFIG = {
+  loopMaxRounds: {
+    defaultValue: DEFAULT_LOOP_ROUNDS,
+    min: MIN_LOOP_ROUNDS,
+    max: MAX_LOOP_ROUNDS,
+  },
+  reviewAgents: {
+    defaultValue: DEFAULT_REVIEW_AGENTS,
+    min: MIN_REVIEW_AGENTS,
+    max: MAX_REVIEW_AGENTS,
+  },
+  sectionAgents: {
+    defaultValue: DEFAULT_SECTION_AGENTS,
+    min: MIN_SECTION_AGENTS,
+    max: MAX_SECTION_AGENTS,
+  },
+  docsAgents: {
+    defaultValue: DEFAULT_DOCS_AGENTS,
+    min: MIN_DOCS_AGENTS,
+    max: MAX_DOCS_AGENTS,
+  },
+} satisfies Record<NumericSettingKey, NumericSettingConfig>;
+
+// Server-side subset of the default set. Kept in sync with the two frontend
+// default enumerations: `DEFAULT_SETTINGS` (SettingsMenu.tsx, persisted on
+// reset) and `resetDisplaySettings` (App.tsx, applied to live React state). A
+// new setting whose materialized default the server must surface goes here too.
+export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
+  const withDefaults = {
+    openBrowser: DEFAULT_OPEN_BROWSER,
+    loopMaxRounds: DEFAULT_LOOP_ROUNDS,
+    reviewAgents: DEFAULT_REVIEW_AGENTS,
+    sectionAgents: DEFAULT_SECTION_AGENTS,
+    docsAgents: DEFAULT_DOCS_AGENTS,
+    structuredHighlighting: DEFAULT_STRUCTURED_HIGHLIGHTING,
+    wrapLines: DEFAULT_WRAP_LINES,
+    ...settings,
+  };
+  coerceNumericSettings(withDefaults);
+  return withDefaults;
+}
 
 function coerceBooleanSettings(settings: GlobalSettings) {
   for (const [key, defaultValue] of Object.entries(BOOLEAN_SETTING_DEFAULTS) as Array<
@@ -148,32 +199,34 @@ function coerceBooleanSettings(settings: GlobalSettings) {
   }
 }
 
+function parseNumericSetting(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function coerceNumericSettings(settings: GlobalSettings) {
+  for (const [key, config] of Object.entries(NUMERIC_SETTING_CONFIG) as Array<
+    [NumericSettingKey, NumericSettingConfig]
+  >) {
+    if (!(key in settings)) continue;
+    const parsed = parseNumericSetting(settings[key]);
+    const value = parsed ?? config.defaultValue;
+    settings[key] = Math.min(config.max, Math.max(config.min, Math.round(value)));
+  }
+}
+
 export async function writeSettings(partial: GlobalSettings): Promise<GlobalSettings> {
   const current = await readSettings();
   const next = { ...current, ...partial };
-  // Defensively clamp the loop cap regardless of caller (UI or a future CLI
-  // writer) so a bad value can never make `/staff-loop` run forever or zero.
-  if (typeof next.loopMaxRounds === "number") {
-    next.loopMaxRounds = Math.min(
-      MAX_LOOP_ROUNDS,
-      Math.max(MIN_LOOP_ROUNDS, Math.round(next.loopMaxRounds)),
-    );
-  }
-  // Same defensive clamp for the review fan-out so a bad value can't spawn a
-  // runaway number of sub-agents (or zero).
-  if (typeof next.reviewAgents === "number") {
-    next.reviewAgents = Math.min(
-      MAX_REVIEW_AGENTS,
-      Math.max(MIN_REVIEW_AGENTS, Math.round(next.reviewAgents)),
-    );
-  }
-  // Same defensive clamp for the docs scout fan-out.
-  if (typeof next.docsAgents === "number") {
-    next.docsAgents = Math.min(
-      MAX_DOCS_AGENTS,
-      Math.max(MIN_DOCS_AGENTS, Math.round(next.docsAgents)),
-    );
-  }
+  // Defensively normalize numeric settings regardless of caller (UI or API)
+  // so malformed payloads cannot persist values that override defaults.
+  coerceNumericSettings(next);
   // Coerce boolean settings regardless of caller (the server's
   // `POST /api/settings` casts the request body straight to `GlobalSettings`).
   // Route through the shared parser so server and CLI agree on stringy

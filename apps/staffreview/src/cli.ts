@@ -23,7 +23,7 @@ import {
   type ResolutionStatus,
 } from "./types.ts";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const BOOLEAN_FLAGS = new Set([
   "global",
   "help",
@@ -277,7 +277,8 @@ USAGE
   staff settings [--json]       Print global settings (with defaults applied).
   staff settings get <key>      Print one setting's value: loopMaxRounds (the
                                  /staff-loop round cap, default ${settings.DEFAULT_LOOP_ROUNDS}), reviewAgents
-                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), or docsAgents
+                                 (the /staff-review fan-out, default ${settings.DEFAULT_REVIEW_AGENTS}), sectionAgents
+                                 (the /staff-section fan-out, default ${settings.DEFAULT_SECTION_AGENTS}), or docsAgents
                                  (the /staff-docs scout fan-out, default ${settings.DEFAULT_DOCS_AGENTS}),
                                  openBrowser (whether serve opens a browser,
                                  default ${settings.DEFAULT_OPEN_BROWSER}), structuredHighlighting
@@ -293,9 +294,10 @@ USAGE
   staff install [--scope project|global] [--harness <ids|all>]
                                  Set up Staff Review skills. In an interactive
                                  terminal, prompts for project vs global install.
-                                 Project install writes the ten /staff-* skills to
+                                 Project install writes the thirteen /staff-* skills to
                                  .agents/skills/ (symlinked into .claude/skills/),
-                                 creates the .staffreview/ store, and gitignores it.
+                                 creates the .staffreview/ store, and gitignores
+                                 per-machine state including section-cache.json.
                                  Global install writes the skills to selected installed
                                  harness skill directories. Supported ids:
                                  ${supportedGlobalHarnessIds()}, or all installed.

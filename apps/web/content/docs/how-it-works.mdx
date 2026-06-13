@@ -36,12 +36,12 @@ up changes over a WebSocket and re-renders live as the agent posts.
 
 ## The skills
 
-`staff install` writes ten skills to `.agents/skills/` (symlinked into
-`.claude/skills/` so Claude Code picks them up as slash commands) — seven you run
-directly (`/staff-review`, `/staff-resolve`, `/staff-comment`, `/staff-document`,
-`/staff-copy`, `/staff-docs`, `/staff-loop`) plus three building blocks the
-orchestrators fan out to (`/staff-review-find`, `/staff-review-verify`,
-`/staff-docs-scout`).
+`staff install` writes thirteen skills to `.agents/skills/` (symlinked into
+`.claude/skills/` so Claude Code picks them up as slash commands) — eight you run
+directly (`/staff-review`, `/staff-section`, `/staff-resolve`, `/staff-comment`,
+`/staff-document`, `/staff-copy`, `/staff-docs`, `/staff-loop`) plus five building
+blocks the orchestrators fan out to (`/staff-review-find`, `/staff-review-verify`,
+`/staff-section-find`, `/staff-section-verify`, `/staff-docs-scout`).
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it
 to your team’s standards. See the [Skills reference](/docs/skills) for what each
 one does.
@@ -51,8 +51,8 @@ one does.
 `.staffreview/docs/` is your team’s captured review wisdom. `/staff-review`
 reads it on every pass and re-flags any recurrence of a documented mistake. The
 docs is meant to be **committed**; the session data
-(`.staffreview/diffs/`, `attachments/`, `active.json`) is gitignored
-automatically. See [The docs](/docs/docs).
+(`.staffreview/diffs/`, `attachments/`, `active.json`, `section-cache.json`) is
+gitignored automatically. See [The docs](/docs/docs).
 
 ## The loop
 

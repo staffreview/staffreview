@@ -62,17 +62,26 @@ A **diff is a slug**: `base..head`, where each side is a git ref, `WT` (working 
 - **`server.ts`** — `Bun.serve` with `routes` for the JSON API (`/api/diff`, `/api/files`, `/api/comment`, `/api/resolve`, `/api/document`, `/api/settings`, `/api/refs`, `/attachments/:name`) plus a `/api/ws` WebSocket. Mutations `broadcast` an event so open tabs live-refresh. Several `fs.watch` watchers (the diffs dir, `active.json`, the working tree filtered through `git check-ignore`, and `.git/index`) emit `repo:changed`/`diff:changed` so editing a source file or staging refreshes the UI with no manual reload. Binds the port **exclusively** (`reusePort: false`) so a second `staff` walks to the next free port instead of load-balancing.
 - **`store.ts`** — persistence. Each diff is a JSON file at `.staffreview/diffs/<slug>.json`; `active.json` points at the current one. Writes are **atomic** (temp-`<uuid>`-file then `rename`); a startup `sweepStaleTmp` reaps temps from crashed writes (never on the hot path — see the long comment there for the race it avoids). All comment/thread CRUD lives here.
 - **`git.ts`** — every git interaction via `Bun.spawn`. Builds `FileDiff`s (old/new content per side), detects symlinks (mode 120000 → render a target row) and binary blobs (NUL/U+FFFD heuristic → render a "Binary file" row), and skips `.staffreview/` paths.
-- **`settings.ts`** — **global** (per-user) settings at `$XDG_CONFIG_HOME/staffreview/settings.json` (override with `$STAFF_CONFIG_DIR`), *not* per-repo. Values are clamped/coerced on write. Numeric defaults/bounds live in tiny dependency-free modules (`loop-config.ts`, `review-config.ts`, `docs-config.ts`, `open-browser-config.ts`, `boolean-setting.ts`) so the **frontend bundle can import them too**.
+- **`settings.ts`** — **global** (per-user) settings at `$XDG_CONFIG_HOME/staffreview/settings.json` (override with `$STAFF_CONFIG_DIR`), *not* per-repo. Values are clamped/coerced on write. Numeric defaults/bounds live in tiny dependency-free modules (`loop-config.ts`, `review-config.ts`, `section-config.ts`, `docs-config.ts`, `open-browser-config.ts`, `boolean-setting.ts`) so the **frontend bundle can import them too**.
 
 ## The skills system
 
-The automated review is driven by ten Markdown skills. **Canonical source lives in `.agents/skills/<name>/SKILL.md`**; `apps/staffreview/skills/*.md` are symlinks to those, and `cli.ts` imports them as text (`import … with { type: "text" }`) so they're baked into the binary. `staff install` writes them out to a consuming repo's `.agents/skills/` and symlinks them into `.claude/skills/` (Claude Code picks them up as slash commands), then creates `.staffreview/` and gitignores the per-machine bits.
+The automated review is driven by thirteen Markdown skills. **Canonical source lives in `.agents/skills/<name>/SKILL.md`**; `apps/staffreview/skills/*.md` are symlinks to those, and `cli.ts` imports them as text (`import … with { type: "text" }`) so they're baked into the binary. `staff install` writes them out to a consuming repo's `.agents/skills/` and symlinks them into `.claude/skills/` (Claude Code picks them up as slash commands), then creates `.staffreview/` and gitignores the per-machine bits.
 
-**To change skill behavior, edit `.agents/skills/<name>/SKILL.md`** (the `skills/*.md` symlinks and the `SKILLS` map in `apps/staffreview/src/install.ts` follow automatically). Orchestrators (`staff-review`, `staff-loop`, `staff-docs`) fan out to building-block skills (`staff-review-find`, `staff-review-verify`, `staff-docs-scout`); `staff-copy` imports open GitHub PR review threads locally; `staff-comment` is the thin CLI wrapper they all post through.
+**To change skill behavior, edit `.agents/skills/<name>/SKILL.md`** (the
+`skills/*.md` symlinks and the `SKILLS` map in `apps/staffreview/src/install.ts`
+follow automatically). Orchestrators (`staff-review`, `staff-loop`, `staff-docs`)
+fan out to building-block skills (`staff-review-find`, `staff-review-verify`,
+`staff-docs-scout`); `staff-section` reviews whole files of the existing codebase
+a rotating section at a time (tracking progress in
+`.staffreview/section-cache.json`) and fans out to its own
+`staff-section-find`/`staff-section-verify` pair; `staff-copy` imports open GitHub
+PR review threads locally; `staff-comment` is the thin CLI wrapper they all post
+through.
 
 ## `.staffreview/` layout
 
-- `diffs/`, `attachments/`, `active.json` — per-machine session data, **gitignored** by `staff install`.
+- `diffs/`, `attachments/`, `active.json`, `section-cache.json` — per-machine session data (the last is `/staff-section`'s rotation/progress cache), **gitignored** by `staff install`.
 - `docs/` — the team's captured review lessons; **committed** so every future review cross-checks against them.
 
 ## Frontend (`src/frontend/`)

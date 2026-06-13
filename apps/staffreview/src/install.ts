@@ -11,12 +11,18 @@ import skillResolve from "../skills/staff-resolve.md" with { type: "text" };
 import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
 import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
+import skillSection from "../skills/staff-section.md" with { type: "text" };
+import skillSectionFind from "../skills/staff-section-find.md" with { type: "text" };
+import skillSectionVerify from "../skills/staff-section-verify.md" with { type: "text" };
 import * as store from "./store.ts";
 
 export const SKILLS: Record<string, string> = {
   "staff-review": skillReview,
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
+  "staff-section": skillSection,
+  "staff-section-find": skillSectionFind,
+  "staff-section-verify": skillSectionVerify,
   "staff-comment": skillComment,
   "staff-copy": skillCopy,
   "staff-document": skillDocument,
@@ -207,12 +213,14 @@ export async function installProject(
   log("  created .staffreview/");
 
   // Gitignore the per-machine review data: diffs (review sessions),
-  // attachments (pasted images), and the active-diff pointer. The docs
-  // (documented examples) and the skills are meant to be committed.
+  // attachments (pasted images), the active-diff pointer, and the
+  // /staff-section progress cache. The docs (documented examples) and the
+  // skills are meant to be committed.
   const ignoreEntries = [
     ".staffreview/diffs/",
     ".staffreview/attachments/",
     ".staffreview/active.json",
+    ".staffreview/section-cache.json",
   ];
   const giPath = join(cwd, ".gitignore");
   const giFile = Bun.file(giPath);

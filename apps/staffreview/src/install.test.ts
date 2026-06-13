@@ -39,9 +39,14 @@ test("installProject writes project skills, claude symlinks, store dirs, and git
   expect(await readFile(join(tmp, ".agents", "skills", "staff-review", "SKILL.md"), "utf8")).toBe(
     SKILLS["staff-review"],
   );
+  expect(await readFile(join(tmp, ".agents", "skills", "staff-section", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-section"],
+  );
 
   const claudeLink = await lstat(join(tmp, ".claude", "skills", "staff-review"));
   expect(claudeLink.isSymbolicLink()).toBe(true);
+  const sectionLink = await lstat(join(tmp, ".claude", "skills", "staff-section"));
+  expect(sectionLink.isSymbolicLink()).toBe(true);
   expect(await lstat(join(tmp, ".staffreview", "diffs"))).toBeTruthy();
   expect(await lstat(join(tmp, ".staffreview", "docs"))).toBeTruthy();
   expect(await lstat(join(tmp, ".staffreview", "attachments"))).toBeTruthy();
@@ -50,6 +55,7 @@ test("installProject writes project skills, claude symlinks, store dirs, and git
   expect(gitignore).toContain(".staffreview/diffs/");
   expect(gitignore).toContain(".staffreview/attachments/");
   expect(gitignore).toContain(".staffreview/active.json");
+  expect(gitignore).toContain(".staffreview/section-cache.json");
   expect(logs.some((line) => line.includes(`Installed ${Object.keys(SKILLS).length} skills`))).toBe(
     true,
   );
@@ -65,6 +71,7 @@ test("installProject does not duplicate existing gitignore entries", async () =>
   expect(gitignore.match(/\.staffreview\/diffs\//g)?.length).toBe(1);
   expect(gitignore.match(/\.staffreview\/attachments\//g)?.length).toBe(1);
   expect(gitignore.match(/\.staffreview\/active\.json/g)?.length).toBe(1);
+  expect(gitignore.match(/\.staffreview\/section-cache\.json/g)?.length).toBe(1);
 });
 
 test("installGlobal writes selected harness skills under a custom home", async () => {
@@ -82,6 +89,9 @@ test("installGlobal writes selected harness skills under a custom home", async (
   expect(result.targets.map((target) => target.harness.id)).toEqual(["codex"]);
   expect(await readFile(join(codexRoot, "staff-loop", "SKILL.md"), "utf8")).toBe(
     SKILLS["staff-loop"],
+  );
+  expect(await readFile(join(codexRoot, "staff-section", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-section"],
   );
   expect(await Bun.file(join(tmp, ".claude", "skills", "staff-loop", "SKILL.md")).exists()).toBe(
     false,

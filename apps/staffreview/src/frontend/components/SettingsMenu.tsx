@@ -9,6 +9,11 @@ import {
   MIN_REVIEW_AGENTS,
 } from "../../review-config.ts";
 import {
+  DEFAULT_SECTION_AGENTS,
+  MAX_SECTION_AGENTS,
+  MIN_SECTION_AGENTS,
+} from "../../section-config.ts";
+import {
   DEFAULT_DIFF_FONT_SIZE,
   DEFAULT_FILES_EXPANDED_BY_DEFAULT,
   DEFAULT_SPLIT_VIEW,
@@ -67,6 +72,7 @@ const DEFAULT_SETTINGS = {
   openBrowser: DEFAULT_OPEN_BROWSER,
   loopMaxRounds: DEFAULT_LOOP_ROUNDS,
   reviewAgents: DEFAULT_REVIEW_AGENTS,
+  sectionAgents: DEFAULT_SECTION_AGENTS,
   docsAgents: DEFAULT_DOCS_AGENTS,
 } satisfies GlobalSettings;
 
@@ -248,6 +254,9 @@ export function SettingsMenu({
   // per-find verification. Default + bounds from review-config.ts, shared with
   // the server (settings.ts).
   const [reviewAgents, setReviewAgentsState] = useState<number>(DEFAULT_REVIEW_AGENTS);
+  // Find-agent fan-out for /staff-section, which also sizes the per-run section.
+  // Default + bounds from section-config.ts, shared with the server (settings.ts).
+  const [sectionAgents, setSectionAgentsState] = useState<number>(DEFAULT_SECTION_AGENTS);
   // How many scout sub-agents /staff-docs fans out. Default + bounds from
   // docs-config.ts, shared with the server (settings.ts).
   const [docsAgents, setDocsAgentsState] = useState<number>(DEFAULT_DOCS_AGENTS);
@@ -268,6 +277,11 @@ export function SettingsMenu({
         if (typeof settings.reviewAgents === "number") {
           setReviewAgentsState(
             Math.min(MAX_REVIEW_AGENTS, Math.max(MIN_REVIEW_AGENTS, settings.reviewAgents)),
+          );
+        }
+        if (typeof settings.sectionAgents === "number") {
+          setSectionAgentsState(
+            Math.min(MAX_SECTION_AGENTS, Math.max(MIN_SECTION_AGENTS, settings.sectionAgents)),
           );
         }
         if (typeof settings.docsAgents === "number") {
@@ -292,6 +306,11 @@ export function SettingsMenu({
     setReviewAgentsState(clamped);
     api.setSettings({ reviewAgents: clamped }).catch(() => {});
   };
+  const setSectionAgents = (next: number) => {
+    const clamped = Math.min(MAX_SECTION_AGENTS, Math.max(MIN_SECTION_AGENTS, next));
+    setSectionAgentsState(clamped);
+    api.setSettings({ sectionAgents: clamped }).catch(() => {});
+  };
   const setDocsAgents = (next: number) => {
     const clamped = Math.min(MAX_DOCS_AGENTS, Math.max(MIN_DOCS_AGENTS, next));
     setDocsAgentsState(clamped);
@@ -306,6 +325,7 @@ export function SettingsMenu({
     setOpenBrowserState(DEFAULT_OPEN_BROWSER);
     setLoopMaxRoundsState(DEFAULT_LOOP_ROUNDS);
     setReviewAgentsState(DEFAULT_REVIEW_AGENTS);
+    setSectionAgentsState(DEFAULT_SECTION_AGENTS);
     setDocsAgentsState(DEFAULT_DOCS_AGENTS);
     setResetDialogOpen(false);
     onOpenChange?.(false);
@@ -530,6 +550,24 @@ export function SettingsMenu({
               value={
                 <span data-testid="review-agents-value">
                   {reviewAgents} {reviewAgents === 1 ? "agent" : "agents"}
+                </span>
+              }
+            />
+          </SettingRow>
+
+          <SettingRow label="Section">
+            <Stepper
+              decreaseLabel="Fewer /staff-section agents"
+              decrementTestId="section-agents-decrease"
+              disabledDecrease={sectionAgents <= MIN_SECTION_AGENTS}
+              disabledIncrease={sectionAgents >= MAX_SECTION_AGENTS}
+              increaseLabel="More /staff-section agents"
+              incrementTestId="section-agents-increase"
+              onDecrease={() => setSectionAgents(sectionAgents - 1)}
+              onIncrease={() => setSectionAgents(sectionAgents + 1)}
+              value={
+                <span data-testid="section-agents-value">
+                  {sectionAgents} {sectionAgents === 1 ? "agent" : "agents"}
                 </span>
               }
             />
