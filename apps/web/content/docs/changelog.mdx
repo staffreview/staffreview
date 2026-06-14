@@ -7,6 +7,26 @@ description: Notable changes to Staff Review, newest first.
 
 ## Unreleased
 
+## 1.5.0 — 2026-06-14
+
+### Fixed
+- **`staff install` now ships each skill's reference files.** The 1.4.1 move of
+  detailed guidance into on-demand `references/*.md` files left the installer
+  writing only the thin `SKILL.md` entrypoints, so installed skills pointed at
+  reference files that were never written. Installs and the bundled binary now
+  include the full briefs again.
+
+### Changed
+- **`/staff-section` reuses the standard review workers.** It now shares the
+  `/staff-review-find` and `/staff-review-verify` building blocks in a whole-file
+  mode instead of a separate pair, so `/staff-section-find` and
+  `/staff-section-verify` are gone — eleven skills total, less always-loaded
+  context.
+- **Sharper review findings.** The find/verify guidance gained explicit P1/P2/P3
+  calibration, a push to cover the quieter review areas (tests, consistency,
+  stale docs, performance), more precise line anchoring, and a verify pass that
+  no longer drops plausible real issues on mere uncertainty.
+
 ## 1.4.1 — 2026-06-14
 
 ### Added
