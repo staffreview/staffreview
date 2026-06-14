@@ -41,3 +41,10 @@ playwright/.cache/
 
 # Staff Review local state inside this repo
 .staffreview/
+
+# Staff Review eval scratch repos
+apps/staffreview/evals/.runs/
+report.html
+.staffreview/diffs/
+.staffreview/attachments/
+.staffreview/active.json
