@@ -7,6 +7,8 @@ description: Notable changes to Staff Review, newest first.
 
 ## Unreleased
 
+## 1.4.1 — 2026-06-14
+
 ### Added
 - **`/staff-section` reviews the existing codebase, not a diff.** It reviews whole
   files a rotating section at a time, sized by the new **`sectionAgents`** setting
@@ -15,6 +17,12 @@ description: Notable changes to Staff Review, newest first.
   whole codebase, then back to the start. A section is re-reviewed as a whole unit
   whenever any of its files changed, and skipped only when none of them have.
   Backed by the `/staff-section-find` and `/staff-section-verify` building blocks.
+
+### Changed
+- **Bundled Staff Review skills now use smaller entrypoint instructions.** Detailed
+  workflow guidance lives in on-demand reference files, reducing the initial context
+  loaded by `/staff-review`, `/staff-resolve`, `/staff-loop`, `/staff-section`, and
+  related building-block skills.
 
 ## 1.4.0 — 2026-06-12
 
