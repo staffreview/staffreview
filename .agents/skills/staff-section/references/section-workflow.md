@@ -11,12 +11,12 @@ a **whole unit**: its files work together, so if even one changed you re-review
 the entire section, not just the changed file.
 
 You do **not** review the code yourself. You fan the work out across **N find**
-sub-agents (each owning a slice of this run's section, following
-`/staff-section-find`) and **pipeline** each one's findings into its own **verify**
-sub-agent (following `/staff-section-verify`), exactly like `/staff-review` does —
-then dedup the survivors and post them as inline comments. Keep your own context
-lean: pass file lists, the slug, and short findings between agents — never whole
-file contents.
+sub-agents (each owning a slice of this run's section, following the shared
+`/staff-review-find` skill in its **`files` mode**) and **pipeline** each one's
+findings into its own **verify** sub-agent (`/staff-review-verify`, also `files`
+mode), exactly like `/staff-review` does — then dedup the survivors and post them
+as inline comments. Keep your own context lean: pass file lists, the slug, and
+short findings between agents — never whole file contents.
 
 ## Where the comments live: one stable whole-tree diff
 
@@ -170,8 +170,9 @@ several agents by line range, telling each which range it owns.
 
 Spawn each with:
 
-> You are running in `<repo dir>`. Read `.agents/skills/staff-section-find/SKILL.md`
+> You are running in `<repo dir>`. Read `.agents/skills/staff-review-find/SKILL.md`
 > and follow it exactly. Your parameters:
+> - **mode:** `files`
 > - **slug:** `<slug>`  (for checking existing comments only — do NOT run `staff files` on it)
 > - **files:** `<this agent's file paths, newline- or comma-separated>`
 >
@@ -189,8 +190,9 @@ Identical in shape to `/staff-review` Step 4 — **event-driven, reaping as you 
    with *only that agent's* findings. A finder that returned `[]` is reaped and
    skipped.
 
-   > You are running in `<repo dir>`. Read `.agents/skills/staff-section-verify/SKILL.md`
+   > You are running in `<repo dir>`. Read `.agents/skills/staff-review-verify/SKILL.md`
    > and follow it exactly. Your parameters:
+   > - **mode:** `files`
    > - **slug:** `<slug>`
    > - **candidate findings:** `<this find agent's JSON array>`
    >
@@ -266,8 +268,9 @@ the comments.
 ## Constraints
 
 - **You orchestrate; sub-agents do the work.** Never review or verify inline
-  yourself — spawn `/staff-section-find` and `/staff-section-verify`. Keep your
-  context lean: pass file lists, the slug, and short findings — not file contents.
+  yourself — spawn `/staff-review-find` and `/staff-review-verify` in `files`
+  mode. Keep your context lean: pass file lists, the slug, and short findings —
+  not file contents.
 - **Whole files, not a diff.** The slug exists only to anchor comments. Neither
   you nor the sub-agents should fetch the whole-tree diff (`staff files --slug`) —
   it spans the entire repo. Read assigned files directly.

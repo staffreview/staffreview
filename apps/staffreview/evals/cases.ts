@@ -1,4 +1,14 @@
-import { chmod, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installProject, SKILLS } from "../src/install.ts";
@@ -361,6 +371,14 @@ async function installSourceSnapshotProject(repo: string, sourceRoot: string): P
     const canonicalDir = join(agentsRoot, name);
     await mkdir(canonicalDir, { recursive: true });
     await writeFile(join(canonicalDir, "SKILL.md"), await readFile(join(sourceSkillsRoot, entry)));
+
+    // Post-#6 tags split each brief into `references/*.md` beside the canonical
+    // SKILL.md; copy them so the snapshot install matches what `staff install`
+    // ships. Pre-#6 tags have no such dir, so this is a no-op for them.
+    const sourceReferences = join(sourceRoot, ".agents", "skills", name, "references");
+    if (await stat(sourceReferences).catch(() => undefined)) {
+      await cp(sourceReferences, join(canonicalDir, "references"), { recursive: true });
+    }
 
     const link = join(claudeRoot, name);
     await rm(link, { recursive: true, force: true });
@@ -882,19 +900,44 @@ function expandedFindingGroups(expected: ExpectedFinding): string[][] {
       ["across tenants", "tenant-scoped", "isolation", "global"],
     ],
     "export-path-traversal": [["..", "escape", "escapes", "path-like"], ["separator"], []],
+    "pagination-full-page": [
+      ["hasNextPage", "has next", "next-page"],
+      ["pageSize", "exactly full", "full page"],
+      ["prematurely", "terminates", "does not fetch"],
+    ],
+    "usage-poller-interval-leak": [
+      ["setInterval", "polling", "polls"],
+      ["cleanup handle", "unsubscribe", "dispose", "clear"],
+      ["second start", "multiple", "duplicate"],
+    ],
+    "account-plan-migration-default": [
+      ["schema", "migration"],
+      ["NOT NULL", "required"],
+      ["backfill", "default value", "existing data", "existing row"],
+    ],
     "missing-review-tests": [
       ["test", "tests", "coverage", "regression"],
-      ["report", "rate", "tenant", "export", "behavior"],
+      ["report", "rate", "tenant", "export", "pagination", "poller", "migration", "summary"],
     ],
     "session-expiry-units": [
       ["session", "expiry", "expired", "timeout", "idle"],
       ["millisecond", "milliseconds", "ms", "seconds", "unit", "units"],
       ["skew", "grace", "early", "soon"],
     ],
+    "feature-flag-drift": [
+      ["feature flags", "flag helper"],
+      ["isFeatureEnabled", "centralized", "shared"],
+      ["env var", "naming", "different variable"],
+    ],
     "stale-export-doc": [
       ["comment", "docs", "documentation", "jsdoc"],
       ["allowlist", "daily", "weekly", "known", "supported"],
       ["stale", "misleading", "wrong", "outdated"],
+    ],
+    "report-summary-quadratic": [
+      ["slow", "performance", "O(n^2)", "O(n*m)"],
+      ["linear lookup", "Map", "precompute", "index"],
+      ["summary", "every row", "large exports"],
     ],
     "unsupported-report-validation": [
       ["unknown report", "unsupported", "typo", "invalid", "allowlist", "daily", "weekly"],
@@ -1127,6 +1170,32 @@ const reviewQualityFindingSeeds: ReviewQualityFindingSeed[] = [
     needle: `return join(EXPORT_ROOT, \`\${cleaned}.csv\`);`,
   },
   {
+    id: "pagination-full-page",
+    description:
+      "hasNextPage now returns false for exactly-full pages, so pagination stops before fetching the next page whenever a page has pageSize items.",
+    file: "src/pagination.ts",
+    priority: "P2",
+    groups: [
+      ["pagination", "page", "hasnext", "next page"],
+      ["exactly", "full", "pagesize", "page size", "boundary"],
+      ["stops", "missing", "skips", "false"],
+    ],
+    needle: "return items.length > pageSize;",
+  },
+  {
+    id: "usage-poller-interval-leak",
+    description:
+      "startUsagePoller overwrites the account's timer without clearing the existing interval or returning a cleanup handle, leaking duplicate pollers for repeated starts.",
+    file: "src/usage-poller.ts",
+    priority: "P2",
+    groups: [
+      ["interval", "timer", "poller", "setinterval"],
+      ["clearinterval", "cleanup", "stop", "leak", "leaks"],
+      ["duplicate", "overwrites", "account", "repeated"],
+    ],
+    needle: "activePollers.set(accountId, timer);",
+  },
+  {
     id: "unsupported-report-validation",
     description:
       "exportPath no longer rejects unknown report names, widening the API contract from the supported daily/weekly reports to arbitrary strings.",
@@ -1138,6 +1207,19 @@ const reviewQualityFindingSeeds: ReviewQualityFindingSeed[] = [
       ["report"],
     ],
     needle: "export function exportPath(reportName: string): string {",
+  },
+  {
+    id: "account-plan-migration-default",
+    description:
+      "The account plan migration adds a NOT NULL column without a default or backfill, which fails on existing accounts and is not safely reversible.",
+    file: "migrations/003_add_account_plan.sql",
+    priority: "P1",
+    groups: [
+      ["migration", "alter table", "accounts"],
+      ["not null", "non-null", "nullable"],
+      ["default", "backfill", "existing rows", "existing accounts", "fails"],
+    ],
+    needle: "ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL;",
   },
   {
     id: "session-expiry-units",
@@ -1155,13 +1237,26 @@ const reviewQualityFindingSeeds: ReviewQualityFindingSeed[] = [
   {
     id: "missing-review-tests",
     description:
-      "The behavior changes are not covered by regression tests for tenant-scoped rate limits, supported report validation, export path safety, or session expiry units.",
+      "The behavior changes are not covered by regression tests for tenant-scoped rate limits, pagination boundaries, poller cleanup, supported report validation, export path safety, migrations, feature flag wiring, summary performance, or session expiry units.",
     file: null,
     priority: "P3",
     groups: [
       ["test", "tests", "coverage", "regression"],
-      ["report", "rate", "tenant", "export", "behavior"],
+      ["report", "rate", "tenant", "export", "pagination", "poller", "migration", "summary"],
     ],
+  },
+  {
+    id: "feature-flag-drift",
+    description:
+      "shouldRunReconciliation bypasses the central feature-flag helper and uses an ad-hoc ENABLE_RECONCILIATION variable, drifting from the codebase's FEATURE_* naming and defaults.",
+    file: "src/reconciliation.ts",
+    priority: "P3",
+    groups: [
+      ["feature flag", "feature-flag", "flag"],
+      ["isfeatureenabled", "central", "helper", "existing"],
+      ["enable_reconciliation", "feature_invoice_reconciliation", "drift", "inconsistent"],
+    ],
+    needle: `return env.ENABLE_RECONCILIATION === "true";`,
   },
   {
     id: "stale-export-doc",
@@ -1175,6 +1270,19 @@ const reviewQualityFindingSeeds: ReviewQualityFindingSeed[] = [
       ["stale", "misleading", "wrong", "outdated"],
     ],
     needle: "Builds paths for the known built-in reports only.",
+  },
+  {
+    id: "report-summary-quadratic",
+    description:
+      "summarizeReports now scans the full customer list for every report row, turning the hot summary path from linear Map lookups into O(rows * customers) work.",
+    file: "src/report-summary.ts",
+    priority: "P2",
+    groups: [
+      ["performance", "quadratic", "o(n", "n+1", "nested"],
+      ["customers.find", "find", "map", "lookup"],
+      ["report", "summary", "rows", "hot path"],
+    ],
+    needle: "const customer = customers.find((item) => item.id === row.customerId);",
   },
 ];
 
@@ -1497,7 +1605,7 @@ const cases: EvalCase[] = [
     title: "Review Quality Eval",
     skill: "/staff-review",
     summary:
-      "Reviews a multi-file working-tree diff with security, contract, test coverage, and maintainability regressions across P1/P2/P3 priorities.",
+      "Reviews a multi-file working-tree diff with at least one issue in each Staff Review review area across P1/P2/P3 priorities.",
     agentPrompt:
       "Run /staff-review on the active diff. Post only real review findings through the Staff Review CLI. Do not modify code.",
     async prepare(ctx) {
@@ -1517,6 +1625,38 @@ const cases: EvalCase[] = [
                 throw new Error("unknown report");
               }
               return join(EXPORT_ROOT, \`\${reportName}.csv\`);
+            }
+          `),
+          "migrations/001_initial.sql": dedent(`
+            CREATE TABLE accounts (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL
+            );
+          `),
+          "src/feature-flags.ts": dedent(`
+            export type FeatureFlag = "invoice-reconciliation" | "report-export";
+
+            const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
+              "invoice-reconciliation": false,
+              "report-export": true,
+            };
+
+            export function isFeatureEnabled(
+              flag: FeatureFlag,
+              env: Record<string, string | undefined> = process.env,
+            ): boolean {
+              const key = \`FEATURE_\${flag.toUpperCase().replaceAll("-", "_")}\`;
+              const override = env[key];
+              if (override === undefined) return DEFAULT_FLAGS[flag];
+              return override === "1" || override.toLowerCase() === "true";
+            }
+          `),
+          "src/pagination.ts": dedent(`
+            export function hasNextPage<T>(items: T[], pageSize: number): boolean {
+              if (pageSize <= 0) {
+                throw new Error("pageSize must be positive");
+              }
+              return items.length === pageSize;
             }
           `),
           "src/rate-limit.ts": dedent(`
@@ -1546,6 +1686,41 @@ const cases: EvalCase[] = [
               return next <= maxAttempts;
             }
           `),
+          "src/reconciliation.ts": dedent(`
+            import { isFeatureEnabled } from "./feature-flags.ts";
+
+            export function shouldRunReconciliation(
+              env: Record<string, string | undefined> = process.env,
+            ): boolean {
+              return isFeatureEnabled("invoice-reconciliation", env);
+            }
+          `),
+          "src/report-summary.ts": dedent(`
+            export type Customer = {
+              id: string;
+              name: string;
+            };
+
+            export type ReportRow = {
+              customerId: string;
+              cents: number;
+            };
+
+            export type SummaryRow = ReportRow & {
+              customerName: string;
+            };
+
+            export function summarizeReports(
+              rows: ReportRow[],
+              customers: Customer[],
+            ): SummaryRow[] {
+              const customerNames = new Map(customers.map((customer) => [customer.id, customer.name]));
+              return rows.map((row) => ({
+                ...row,
+                customerName: customerNames.get(row.customerId) ?? "Unknown",
+              }));
+            }
+          `),
           "src/session-expiry.ts": dedent(`
             export type Session = {
               id: string;
@@ -1559,6 +1734,28 @@ const cases: EvalCase[] = [
               return nowMs - session.lastSeenAtMs > session.maxIdleMs + CLOCK_SKEW_MS;
             }
           `),
+          "src/usage-poller.ts": dedent(`
+            export type UsageFetcher = (accountId: string) => Promise<void>;
+
+            export type PollerHandle = {
+              stop(): void;
+            };
+
+            export function startUsagePoller(
+              accountId: string,
+              fetchUsage: UsageFetcher,
+              intervalMs: number,
+            ): PollerHandle {
+              const timer = setInterval(() => {
+                void fetchUsage(accountId);
+              }, intervalMs);
+              return {
+                stop() {
+                  clearInterval(timer);
+                },
+              };
+            }
+          `),
         },
         {
           "src/export-path.ts": dedent(`
@@ -1570,6 +1767,17 @@ const cases: EvalCase[] = [
             export function exportPath(reportName: string): string {
               const cleaned = reportName.trim().replaceAll(" ", "-");
               return join(EXPORT_ROOT, \`\${cleaned}.csv\`);
+            }
+          `),
+          "migrations/003_add_account_plan.sql": dedent(`
+            ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL;
+          `),
+          "src/pagination.ts": dedent(`
+            export function hasNextPage<T>(items: T[], pageSize: number): boolean {
+              if (pageSize <= 0) {
+                throw new Error("pageSize must be positive");
+              }
+              return items.length > pageSize;
             }
           `),
           "src/rate-limit.ts": dedent(`
@@ -1599,6 +1807,41 @@ const cases: EvalCase[] = [
               return next <= maxAttempts;
             }
           `),
+          "src/reconciliation.ts": dedent(`
+            export function shouldRunReconciliation(
+              env: Record<string, string | undefined> = process.env,
+            ): boolean {
+              return env.ENABLE_RECONCILIATION === "true";
+            }
+          `),
+          "src/report-summary.ts": dedent(`
+            export type Customer = {
+              id: string;
+              name: string;
+            };
+
+            export type ReportRow = {
+              customerId: string;
+              cents: number;
+            };
+
+            export type SummaryRow = ReportRow & {
+              customerName: string;
+            };
+
+            export function summarizeReports(
+              rows: ReportRow[],
+              customers: Customer[],
+            ): SummaryRow[] {
+              return rows.map((row) => {
+                const customer = customers.find((item) => item.id === row.customerId);
+                return {
+                  ...row,
+                  customerName: customer?.name ?? "Unknown",
+                };
+              });
+            }
+          `),
           "src/session-expiry.ts": dedent(`
             export type Session = {
               id: string;
@@ -1610,6 +1853,29 @@ const cases: EvalCase[] = [
 
             export function isSessionExpired(session: Session, nowMs: number): boolean {
               return nowMs - session.lastSeenAtMs > session.maxIdleMs + CLOCK_SKEW_MS;
+            }
+          `),
+          "src/usage-poller.ts": dedent(`
+            export type UsageFetcher = (accountId: string) => Promise<void>;
+
+            const activePollers = new Map<string, ReturnType<typeof setInterval>>();
+
+            export function stopUsagePoller(accountId: string): void {
+              const timer = activePollers.get(accountId);
+              if (!timer) return;
+              clearInterval(timer);
+              activePollers.delete(accountId);
+            }
+
+            export function startUsagePoller(
+              accountId: string,
+              fetchUsage: UsageFetcher,
+              intervalMs: number,
+            ): void {
+              const timer = setInterval(() => {
+                void fetchUsage(accountId);
+              }, intervalMs);
+              activePollers.set(accountId, timer);
             }
           `),
         },

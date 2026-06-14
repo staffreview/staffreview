@@ -19,15 +19,14 @@ standards.
 | `/staff-docs` | Mines GitHub PR review history, or provided PR URL(s), for recurring lessons and writes the best ones into `.staffreview/docs/`. |
 | `/staff-loop` | Runs the same pipelined find → verify → post review flow, then resolves the diff in sub-agents round after round until it converges. |
 
-Five more are **building blocks**, not run directly: `/staff-review-find` (one
-find agent — reviews an assigned slice of the areas/docs and returns findings),
-`/staff-review-verify` (one verify agent — re-checks a batch of findings),
-`/staff-section-find` and `/staff-section-verify` (the same pair for whole-file
-section review), and `/staff-docs-scout` (one scout agent — reads an assigned
-slice of PR refs and returns candidate lessons). `/staff-review` and `/staff-loop`
-fan out to the review pair, `/staff-section` to the section pair, and `/staff-docs`
-to the scouts, so the orchestrators never have to spawn a top-level skill as a
-sub-agent.
+Three more are **building blocks**, not run directly: `/staff-review-find` (one
+find agent — reviews an assigned slice of a diff's areas/docs, or whole files in
+its section mode, and returns findings), `/staff-review-verify` (one verify agent
+— re-checks a batch of findings), and `/staff-docs-scout` (one scout agent —
+reads an assigned slice of PR refs and returns candidate lessons). `/staff-review`
+and `/staff-loop` fan out to the review pair, `/staff-section` reuses that same
+pair in a whole-file mode, and `/staff-docs` fans out to the scouts, so the
+orchestrators never have to spawn a top-level skill as a sub-agent.
 
 ## /staff-review
 
@@ -60,10 +59,10 @@ slot turns into a verify slot instead of waiting for a second wave.
 
 Reviews the **existing code** in your workspace — whole files, **not** a
 `base..head` diff — a bounded **section** at a time. It fans the same
-find → verify → post pipeline `/staff-review` uses (via the `/staff-section-find`
-and `/staff-section-verify` building blocks) across the section's files, hosting
-the inline comments on a single stable whole-tree diff so they show up in the UI
-and feed `/staff-resolve`.
+find → verify → post pipeline `/staff-review` uses — reusing the same
+`/staff-review-find` and `/staff-review-verify` building blocks in their
+whole-file mode — across the section's files, hosting the inline comments on a
+single stable whole-tree diff so they show up in the UI and feed `/staff-resolve`.
 
 The novel part is **rotation**: each run records what it covered in
 `.staffreview/section-cache.json` (per-machine, gitignored), so the next run picks

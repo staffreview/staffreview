@@ -290,9 +290,11 @@ async function renderReport(results: VersionRunResult[]): Promise<string> {
         color-scheme: light dark;
         --bg: #f7f8fa;
         --panel: #ffffff;
+        --panel-sunken: #f1f3f7;
         --text: #16181d;
         --muted: #626975;
         --border: #d9dee7;
+        --hover: rgba(16, 24, 40, 0.05);
         --pass-bg: #e6f6ec;
         --pass-text: #136c33;
         --partial-bg: #fff4d8;
@@ -305,9 +307,11 @@ async function renderReport(results: VersionRunResult[]): Promise<string> {
         :root {
           --bg: #111318;
           --panel: #191c22;
+          --panel-sunken: #14161b;
           --text: #f2f4f8;
           --muted: #a6adbb;
           --border: #303642;
+          --hover: rgba(255, 255, 255, 0.06);
           --pass-bg: #12351f;
           --pass-text: #8ee3a3;
           --partial-bg: #3a2b09;
@@ -397,20 +401,54 @@ async function renderReport(results: VersionRunResult[]): Promise<string> {
         padding: 16px 18px;
       }
       .result-card.sample-card {
+        background: var(--panel-sunken);
         margin: 10px 0;
         padding: 12px 14px;
       }
       .case-details {
         border-top: 1px solid var(--border);
         margin-top: 12px;
-        padding-top: 12px;
+        padding-top: 8px;
+      }
+      .case-details:first-of-type {
+        margin-top: 16px;
       }
       summary {
         align-items: center;
+        border-radius: 6px;
         cursor: pointer;
         display: flex;
-        gap: 10px;
-        justify-content: space-between;
+        gap: 8px;
+        list-style: none;
+        margin: 0 -6px;
+        padding: 4px 6px;
+        user-select: none;
+      }
+      /* Hide the native disclosure triangle in favour of the chevron below. */
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary:hover {
+        background: var(--hover);
+      }
+      /* Rotating chevron: points right when collapsed, down when open. */
+      summary::before {
+        color: var(--muted);
+        content: "›";
+        flex: 0 0 auto;
+        font-size: 18px;
+        line-height: 1;
+        text-align: center;
+        transition: transform 0.15s ease;
+        width: 12px;
+      }
+      details[open] > summary::before {
+        transform: rotate(90deg);
+      }
+      /* Push the score pill to the right edge without justify-content, so the
+         chevron and title stay tucked together on the left. */
+      summary > .pill {
+        margin-left: auto;
       }
       .result-summary {
         font-size: 18px;

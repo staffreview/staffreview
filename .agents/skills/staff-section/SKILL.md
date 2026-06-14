@@ -6,9 +6,9 @@ description: Review rotating sections of existing source files and post confirme
 # Staff Section
 
 Orchestrate a section-by-section review of existing code, not a diff. Pick the
-next due group of whole files, delegate discovery to `staff-section-find`, verify
-with `staff-section-verify`, then post confirmed comments on the stable
-whole-tree diff.
+next due group of whole files, delegate discovery to `staff-review-find` (in its
+`files` mode), verify with `staff-review-verify`, then post confirmed comments on
+the stable whole-tree diff.
 
 ## Load
 

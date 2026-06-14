@@ -78,7 +78,7 @@ order-dependent.
    **background** (`run_in_background`) so each reports back independently — each
    with:
    > Read `.agents/skills/staff-review-find/SKILL.md` and follow it exactly.
-   > slug=`<slug>`; review areas=`<this agent's area numbers>`; docs
+   > mode=`diff`; slug=`<slug>`; review areas=`<this agent's area numbers>`; docs
    > lessons=`<this agent's filenames, or "none">`. Return the findings JSON —
    > nothing else.
 
@@ -89,8 +89,8 @@ order-dependent.
    (background) seeded with *only that agent's* findings (if it returned `[]`,
    stop it and skip the verify):
    > Read `.agents/skills/staff-review-verify/SKILL.md` and follow it exactly.
-   > slug=`<slug>`; candidate findings=`<this find agent's JSON>`. Return the
-   > verdicts JSON — nothing else.
+   > mode=`diff`; slug=`<slug>`; candidate findings=`<this find agent's JSON>`.
+   > Return the verdicts JSON — nothing else.
 
    Keep only the **confirmed** findings; when a verdict carries a
    `correctedAnchor`, replace that finding's `file`/`line`/`endLine`/`side` with

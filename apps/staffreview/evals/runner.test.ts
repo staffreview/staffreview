@@ -4,6 +4,7 @@ import {
   aggregateScore,
   averageChecks,
   createTaskLimiter,
+  runVersionEval,
   stdev,
   type VersionRunResult,
 } from "./runner.ts";
@@ -11,7 +12,7 @@ import {
 function suiteResult(score: SuiteScoreResult): VersionRunResult {
   return {
     codex: [],
-    model: "default",
+    model: "gpt-5-test",
     score,
     skipped: [],
     suite: "/tmp/suite",
@@ -70,6 +71,10 @@ test("createTaskLimiter releases its slot even when a task throws", async () => 
   await expect(limiter(async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
   // If the slot leaked, this follow-up task would deadlock.
   expect(await limiter(async () => "ok")).toBe("ok");
+});
+
+test("runVersionEval requires an explicit model", async () => {
+  await expect(runVersionEval("current")).rejects.toThrow(/explicit model/);
 });
 
 test("aggregateScore averages case scores and totals across runs", () => {

@@ -125,7 +125,7 @@ staff --port 4400           # serve the UI on a specific port
 | `/staff-loop` | Reviews (find → verify → post) then resolves the diff in subagents, round after round, until it converges. |
 | `/staff-section` | Reviews the existing codebase, not a diff, a rotating section at a time while tracking progress in `.staffreview/section-cache.json`. |
 
-Five more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to; `/staff-section-find` and `/staff-section-verify`, which `/staff-section` fans out to for whole-file review; plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
+Three more skills are **building blocks** the orchestrators fan out to — `/staff-review-find` (one find agent) and `/staff-review-verify` (one verify agent), which `/staff-review` and `/staff-loop` fan out to, and which `/staff-section` reuses in a whole-file mode for codebase review; plus `/staff-docs-scout` (one scout agent), which `/staff-docs` fans out to — so the orchestrators run the work themselves instead of nesting a top-level skill inside a subagent.
 
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it to your team’s standards.
 

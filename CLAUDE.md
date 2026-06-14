@@ -66,7 +66,7 @@ A **diff is a slug**: `base..head`, where each side is a git ref, `WT` (working 
 
 ## The skills system
 
-The automated review is driven by thirteen Markdown skills. **Canonical source lives in `.agents/skills/<name>/SKILL.md`**; `apps/staffreview/skills/*.md` are symlinks to those, and `cli.ts` imports them as text (`import … with { type: "text" }`) so they're baked into the binary. `staff install` writes them out to a consuming repo's `.agents/skills/` and symlinks them into `.claude/skills/` (Claude Code picks them up as slash commands), then creates `.staffreview/` and gitignores the per-machine bits.
+The automated review is driven by eleven Markdown skills. **Canonical source lives in `.agents/skills/<name>/SKILL.md`**; `apps/staffreview/skills/*.md` are symlinks to those, and `cli.ts` imports them as text (`import … with { type: "text" }`) so they're baked into the binary. `staff install` writes them out to a consuming repo's `.agents/skills/` and symlinks them into `.claude/skills/` (Claude Code picks them up as slash commands), then creates `.staffreview/` and gitignores the per-machine bits.
 
 **To change skill behavior, edit `.agents/skills/<name>/SKILL.md`** (the
 `skills/*.md` symlinks and the `SKILLS` map in `apps/staffreview/src/install.ts`
@@ -74,10 +74,10 @@ follow automatically). Orchestrators (`staff-review`, `staff-loop`, `staff-docs`
 fan out to building-block skills (`staff-review-find`, `staff-review-verify`,
 `staff-docs-scout`); `staff-section` reviews whole files of the existing codebase
 a rotating section at a time (tracking progress in
-`.staffreview/section-cache.json`) and fans out to its own
-`staff-section-find`/`staff-section-verify` pair; `staff-copy` imports open GitHub
-PR review threads locally; `staff-comment` is the thin CLI wrapper they all post
-through.
+`.staffreview/section-cache.json`) and reuses the same
+`staff-review-find`/`staff-review-verify` workers in their whole-file (`files`)
+mode rather than its own pair; `staff-copy` imports open GitHub PR review threads
+locally; `staff-comment` is the thin CLI wrapper they all post through.
 
 ## `.staffreview/` layout
 

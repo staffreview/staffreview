@@ -61,7 +61,7 @@ export type VersionRunResult = {
 export type ModelTarget = {
   id: string;
   label: string;
-  model?: string;
+  model: string;
 };
 
 type TaskLimiter = <T>(task: () => Promise<T>) => Promise<T>;
@@ -146,7 +146,17 @@ function renderTemplate(template: string, values: Record<string, string>): strin
   );
 }
 
+function requireExplicitModel(model: string | undefined): string {
+  if (!model) {
+    throw new Error(
+      "Eval runs require an explicit model id; default Codex config is not supported",
+    );
+  }
+  return model;
+}
+
 function defaultCodexShellCommand(repo: string, prompt: string, options: CodexOptions): string {
+  const model = requireExplicitModel(options.model);
   const resolveCodex = options.codexCommand
     ? `CODEX_EVAL_BIN=${shellQuote(options.codexCommand)}`
     : [
@@ -156,12 +166,11 @@ function defaultCodexShellCommand(repo: string, prompt: string, options: CodexOp
         '  CODEX_EVAL_BIN="$(command -v codex)";',
         "fi",
       ].join(" ");
-  const model = options.model ? ` --model ${shellQuote(options.model)}` : "";
   return [
     `cd ${shellQuote(repo)}`,
     resolveCodex,
     'test -n "$CODEX_EVAL_BIN"',
-    `PATH=${shellQuote(join(repo, ".eval-bin"))}:$PATH "$CODEX_EVAL_BIN" --ask-for-approval never exec --sandbox workspace-write --skip-git-repo-check${model} ${shellQuote(prompt)}`,
+    `PATH=${shellQuote(join(repo, ".eval-bin"))}:$PATH "$CODEX_EVAL_BIN" --ask-for-approval never exec --sandbox workspace-write --skip-git-repo-check --model ${shellQuote(model)} ${shellQuote(prompt)}`,
   ].join(" && ");
 }
 
@@ -205,13 +214,14 @@ async function runCodexForCase(
   const promptFile = join(repo, "CODEX_PROMPT.md");
   const prompt = await readFile(promptFile, "utf8");
   const pathPrefix = join(repo, ".eval-bin");
+  const model = requireExplicitModel(options.model);
   const command = options.commandTemplate
     ? renderTemplate(options.commandTemplate, {
         repo,
         prompt,
         promptFile,
         pathPrefix,
-        model: options.model ?? "",
+        model,
       })
     : defaultCodexShellCommand(repo, prompt, options);
 
@@ -277,7 +287,7 @@ async function runResolvedVersionEval(
   const score = await scoreSuite(suite.repo, scoreOptions);
   const result: VersionRunResult = {
     version: staffTarget.label,
-    model: options.modelLabel ?? options.model ?? "default",
+    model: options.modelLabel ?? requireExplicitModel(options.model),
     repeatCount: options.repeatCount,
     repeatIndex: options.repeatIndex,
     suite: suite.repo,
@@ -398,6 +408,7 @@ export async function runVersionEval(
   version: string,
   options: CodexOptions & { out?: string } = {},
 ): Promise<VersionRunResult> {
+  requireExplicitModel(options.model);
   const staffTarget = await resolveStaffTarget(version);
   const repeatCount = normalizeRuns(options.runs);
   const codexLimiter = createTaskLimiter(
@@ -432,7 +443,13 @@ export async function runVersionComparison(
 ): Promise<VersionRunResult[]> {
   const root = options.out ?? join(EVAL_RUNS_DIR, `${stamp()}-compare`);
   await mkdir(root, { recursive: true });
-  const models = options.models ?? [{ id: "default", label: "default" }];
+  const models = options.models ?? [
+    {
+      id: requireExplicitModel(options.model),
+      label: options.modelLabel ?? requireExplicitModel(options.model),
+      model: requireExplicitModel(options.model),
+    },
+  ];
   const repeatCount = normalizeRuns(options.runs);
   const targets = new Map<string, StaffTarget>();
   for (const version of versions) {

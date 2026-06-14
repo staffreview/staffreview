@@ -51,13 +51,16 @@ test("resolveJudgeEnabled falls back to STAFF_EVAL_JUDGE env", () => {
   expect(resolveJudgeEnabled({})).toBe(true);
 });
 
-test("modelsFromCsv maps 'default' to the default target and others verbatim", () => {
-  expect(modelsFromCsv("default")).toEqual([{ id: "default", label: "default" }]);
-  expect(modelsFromCsv("gpt-5, default ,o3")).toEqual([
+test("modelsFromCsv maps explicit models verbatim", () => {
+  expect(modelsFromCsv("gpt-5, o3")).toEqual([
     { id: "gpt-5", label: "gpt-5", model: "gpt-5" },
-    { id: "default", label: "default" },
     { id: "o3", label: "o3", model: "o3" },
   ]);
+});
+
+test("modelsFromCsv rejects default Codex config", () => {
+  expect(() => modelsFromCsv("default")).toThrow(/default.*not supported/);
+  expect(() => modelsFromCsv("gpt-5, default")).toThrow(/default.*not supported/);
 });
 
 test("skillsFromCsv normalizes, dedupes, and validates known skills", () => {

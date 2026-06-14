@@ -20,8 +20,6 @@ const INSTALLED_SKILLS = [
   "staff-review-find",
   "staff-review-verify",
   "staff-section",
-  "staff-section-find",
-  "staff-section-verify",
 ];
 
 function run(cmd: string, args: string[], cwd: string): Promise<void> {
@@ -47,7 +45,9 @@ test("staff install writes section skills, symlinks, and cache gitignore entry",
     const installed = await readdir(join(repo, ".agents", "skills"));
     expect(installed.sort()).toEqual(INSTALLED_SKILLS);
 
-    for (const name of ["staff-section", "staff-section-find", "staff-section-verify"]) {
+    // /staff-section reuses the shared review workers (in their `files` mode)
+    // rather than its own find/verify skills.
+    for (const name of ["staff-section", "staff-review-find", "staff-review-verify"]) {
       const skill = await readFile(join(repo, ".agents", "skills", name, "SKILL.md"), "utf8");
       expect(skill).toContain(`name: ${name}`);
 

@@ -110,6 +110,7 @@ in its assignment:
 
 > You are running in `<repo dir>`. Read `.agents/skills/staff-review-find/SKILL.md`
 > and follow it exactly. Your parameters:
+> - **mode:** `diff`
 > - **slug:** `<slug>`
 > - **review areas:** `<this agent's area numbers, e.g. "1, 2, 3, 4, 5">`
 > - **docs lessons:** `<this agent's filenames, or "none">`
@@ -141,6 +142,7 @@ on — nothing to verify.
 
 > You are running in `<repo dir>`. Read `.agents/skills/staff-review-verify/SKILL.md`
 > and follow it exactly. Your parameters:
+> - **mode:** `diff`
 > - **slug:** `<slug>`
 > - **candidate findings:** `<this find agent's JSON array>`
 >

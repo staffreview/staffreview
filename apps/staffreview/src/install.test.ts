@@ -17,6 +17,7 @@ import {
   installGlobal,
   installProject,
   parseGlobalHarnessIds,
+  SKILL_REFERENCES,
   SKILLS,
 } from "./install.ts";
 
@@ -59,6 +60,37 @@ test("installProject writes project skills, claude symlinks, store dirs, and git
   expect(logs.some((line) => line.includes(`Installed ${Object.keys(SKILLS).length} skills`))).toBe(
     true,
   );
+});
+
+test("installProject writes each skill's reference files next to its SKILL.md", async () => {
+  await installProject(tmp, () => {});
+
+  // Every reference a thin SKILL.md points at must actually land on disk —
+  // otherwise the installed skill is a dangling pointer (the bug behind #6).
+  for (const [name, references] of Object.entries(SKILL_REFERENCES)) {
+    for (const ref of references) {
+      const written = await readFile(join(tmp, ".agents", "skills", name, ref.path), "utf8");
+      expect(written).toBe(ref.body);
+    }
+  }
+  // Spot-check the review find guide specifically, since it drives the eval.
+  expect(
+    await Bun.file(
+      join(tmp, ".agents", "skills", "staff-review-find", "references", "find-guide.md"),
+    ).exists(),
+  ).toBe(true);
+});
+
+test("installGlobal writes each skill's reference files next to its SKILL.md", async () => {
+  const codexHarness = GLOBAL_HARNESSES.find((h) => h.id === "codex")!;
+  const codexRoot = globalHarnessSkillsRoot(codexHarness, tmp);
+  await mkdir(codexRoot, { recursive: true });
+
+  await installGlobal(["codex"], { homeDir: tmp, log: () => {} });
+
+  for (const ref of SKILL_REFERENCES["staff-review-find"] ?? []) {
+    expect(await readFile(join(codexRoot, "staff-review-find", ref.path), "utf8")).toBe(ref.body);
+  }
 });
 
 test("installProject does not duplicate existing gitignore entries", async () => {

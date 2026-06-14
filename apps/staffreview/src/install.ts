@@ -1,6 +1,45 @@
 import { mkdir, rm, stat, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
+// Reference guides: each thin SKILL.md points at a `references/<file>.md` that
+// holds the actual brief. They live beside the canonical SKILL.md under
+// `.agents/skills/<name>/references/`; the build inlines them as text (just like
+// the SKILL.md symlinks above) so `staff install` can write them next to the
+// SKILL.md. Without this the installed skill is a dangling pointer — the
+// orchestrators tell their sub-agents to read a reference file that isn't there.
+import refCommentCli from "../../../.agents/skills/staff-comment/references/cli.md" with {
+  type: "text",
+};
+import refCopyWorkflow from "../../../.agents/skills/staff-copy/references/copy-workflow.md" with {
+  type: "text",
+};
+import refDocsWorkflow from "../../../.agents/skills/staff-docs/references/workflow.md" with {
+  type: "text",
+};
+import refDocsScoutGuide from "../../../.agents/skills/staff-docs-scout/references/scout-guide.md" with {
+  type: "text",
+};
+import refDocumentFormat from "../../../.agents/skills/staff-document/references/document-format.md" with {
+  type: "text",
+};
+import refLoopWorkflow from "../../../.agents/skills/staff-loop/references/loop-workflow.md" with {
+  type: "text",
+};
+import refResolveWorkflow from "../../../.agents/skills/staff-resolve/references/resolve-workflow.md" with {
+  type: "text",
+};
+import refReviewWorkflow from "../../../.agents/skills/staff-review/references/review-workflow.md" with {
+  type: "text",
+};
+import refReviewFindGuide from "../../../.agents/skills/staff-review-find/references/find-guide.md" with {
+  type: "text",
+};
+import refReviewVerifyGuide from "../../../.agents/skills/staff-review-verify/references/verify-guide.md" with {
+  type: "text",
+};
+import refSectionWorkflow from "../../../.agents/skills/staff-section/references/section-workflow.md" with {
+  type: "text",
+};
 import skillComment from "../skills/staff-comment.md" with { type: "text" };
 import skillCopy from "../skills/staff-copy.md" with { type: "text" };
 import skillDocs from "../skills/staff-docs.md" with { type: "text" };
@@ -12,8 +51,6 @@ import skillReview from "../skills/staff-review.md" with { type: "text" };
 import skillReviewFind from "../skills/staff-review-find.md" with { type: "text" };
 import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "text" };
 import skillSection from "../skills/staff-section.md" with { type: "text" };
-import skillSectionFind from "../skills/staff-section-find.md" with { type: "text" };
-import skillSectionVerify from "../skills/staff-section-verify.md" with { type: "text" };
 import * as store from "./store.ts";
 
 export const SKILLS: Record<string, string> = {
@@ -21,8 +58,6 @@ export const SKILLS: Record<string, string> = {
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
   "staff-section": skillSection,
-  "staff-section-find": skillSectionFind,
-  "staff-section-verify": skillSectionVerify,
   "staff-comment": skillComment,
   "staff-copy": skillCopy,
   "staff-document": skillDocument,
@@ -31,6 +66,33 @@ export const SKILLS: Record<string, string> = {
   "staff-docs": skillDocs,
   "staff-docs-scout": skillDocsScout,
 };
+
+/**
+ * Per-skill reference files, keyed by skill name. Each entry is the repo-relative
+ * `references/<file>.md` path (written verbatim under the skill's canonical dir)
+ * and its embedded body. A skill with no references is simply absent here.
+ */
+export const SKILL_REFERENCES: Record<string, Array<{ path: string; body: string }>> = {
+  "staff-review": [{ path: "references/review-workflow.md", body: refReviewWorkflow }],
+  "staff-review-find": [{ path: "references/find-guide.md", body: refReviewFindGuide }],
+  "staff-review-verify": [{ path: "references/verify-guide.md", body: refReviewVerifyGuide }],
+  "staff-section": [{ path: "references/section-workflow.md", body: refSectionWorkflow }],
+  "staff-comment": [{ path: "references/cli.md", body: refCommentCli }],
+  "staff-copy": [{ path: "references/copy-workflow.md", body: refCopyWorkflow }],
+  "staff-document": [{ path: "references/document-format.md", body: refDocumentFormat }],
+  "staff-resolve": [{ path: "references/resolve-workflow.md", body: refResolveWorkflow }],
+  "staff-loop": [{ path: "references/loop-workflow.md", body: refLoopWorkflow }],
+  "staff-docs": [{ path: "references/workflow.md", body: refDocsWorkflow }],
+  "staff-docs-scout": [{ path: "references/scout-guide.md", body: refDocsScoutGuide }],
+};
+
+async function writeSkillReferences(skillDir: string, name: string): Promise<void> {
+  for (const ref of SKILL_REFERENCES[name] ?? []) {
+    const refPath = join(skillDir, ref.path);
+    await mkdir(dirname(refPath), { recursive: true });
+    await Bun.write(refPath, ref.body);
+  }
+}
 
 export type InstallScope = "project" | "global";
 export type GlobalHarnessId = "codex" | "claude" | "cursor" | "opencode" | "pi" | "amp" | "agents";
@@ -198,6 +260,7 @@ export async function installProject(
     const canonicalDir = join(agentsRoot, name);
     await mkdir(canonicalDir, { recursive: true });
     await Bun.write(join(canonicalDir, "SKILL.md"), body);
+    await writeSkillReferences(canonicalDir, name);
 
     const link = join(claudeRoot, name);
     // Replace whatever's there (a prior real dir or a stale symlink) with a
@@ -279,6 +342,7 @@ export async function installGlobal(
       await rm(skillDir, { recursive: true, force: true });
       await mkdir(skillDir, { recursive: true });
       await Bun.write(join(skillDir, "SKILL.md"), body);
+      await writeSkillReferences(skillDir, name);
     }
   }
 

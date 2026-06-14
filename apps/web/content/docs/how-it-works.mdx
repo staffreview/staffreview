@@ -36,12 +36,13 @@ up changes over a WebSocket and re-renders live as the agent posts.
 
 ## The skills
 
-`staff install` writes thirteen skills to `.agents/skills/` (symlinked into
+`staff install` writes eleven skills to `.agents/skills/` (symlinked into
 `.claude/skills/` so Claude Code picks them up as slash commands) — eight you run
 directly (`/staff-review`, `/staff-section`, `/staff-resolve`, `/staff-comment`,
-`/staff-document`, `/staff-copy`, `/staff-docs`, `/staff-loop`) plus five building
+`/staff-document`, `/staff-copy`, `/staff-docs`, `/staff-loop`) plus three building
 blocks the orchestrators fan out to (`/staff-review-find`, `/staff-review-verify`,
-`/staff-section-find`, `/staff-section-verify`, `/staff-docs-scout`).
+`/staff-docs-scout`). `/staff-section` reuses the review find/verify pair in a
+whole-file mode rather than its own.
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it
 to your team’s standards. See the [Skills reference](/docs/skills) for what each
 one does.

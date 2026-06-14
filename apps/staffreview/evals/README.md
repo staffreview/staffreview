@@ -17,7 +17,7 @@ That opens Clack prompts in this order:
 
 1. Select the skills to eval. All are selected by default; press `a` to toggle all.
 2. Select the Staff Review versions to eval.
-3. Select the Codex models to eval.
+3. Select the explicit Codex models to eval.
 4. Select how many times to run each version/model. The default is 1.
 
 The runner builds the selected skill x version x model matrix, prepares each
@@ -39,7 +39,10 @@ behavior, or `--no-judge`/`STAFF_EVAL_JUDGE=0` for debugging the old
 deterministic scorer.
 
 By default the runner invokes Codex through `zsh -lc` and prefers
-`~/.bun/bin/codex` before falling back to `codex` on `PATH`.
+`~/.bun/bin/codex` before falling back to `codex` on `PATH`. Target eval runs
+must pass an explicit model id; the runner does not offer or accept the Codex
+default config as a model target because that can vary between machines and
+over time.
 
 Codex work runs in parallel. By default, concurrency is the largest selected
 slice count across skills, versions, models, and run count. Override it with
@@ -67,16 +70,17 @@ bun apps/staffreview/evals/cli.ts score review-quality
 Non-interactive runs can still pass explicit values:
 
 ```bash
-bun run eval -- --skills /staff-review --versions current,v1.4.0 --models default,gpt-5.4-mini
-bun run eval -- --skills /staff-review --versions current,v1.4.0,v1.3.0 --concurrency 2
+bun run eval -- --skills /staff-review --versions current,v1.4.0 --models gpt-5.4-mini,gpt-5.3-codex-spark
+bun run eval -- --skills /staff-review --versions current,v1.4.0,v1.3.0 --model gpt-5.4-mini --concurrency 2
 bun run eval -- --skills /staff-review --versions current,v1.4.0 --models gpt-5.4-mini --runs 3
 ```
 
 ## Cases
 
 - `review-quality`: `/staff-review` should find P1, P2, and P3 regressions
-  across security, multi-tenant correctness, API contract behavior, test
-  coverage, and stale documentation while avoiding noisy comments.
+  across all 10 review areas from the skill taxonomy: correctness, edge cases,
+  resources, security, data/migrations, interfaces, tests, consistency,
+  maintainability, and performance while avoiding noisy comments.
 - `resolve-seeded-comments`: `/staff-resolve` should fix a seeded failing
   invoice bug, reply in-thread, resolve it as fixed, and pass tests.
 - `document-request`: `/staff-resolve` should honor `documentRequested`, write a

@@ -29,7 +29,6 @@ import {
 import { relativeFromCwd } from "./util.ts";
 
 const DEFAULT_INTERACTIVE_VERSIONS = ["current"];
-const DEFAULT_INTERACTIVE_MODELS = ["default"];
 const CUSTOM_MODEL = "__custom__";
 
 type ParsedArgs = {
@@ -196,8 +195,9 @@ export function skillsFromCsv(value: string): string[] {
   return unique;
 }
 
-type ModelOption = ModelTarget & {
+type ModelOption = Omit<ModelTarget, "model"> & {
   hint?: string;
+  model?: string;
 };
 
 async function cachedModelOptions(): Promise<ModelOption[]> {
@@ -208,6 +208,7 @@ async function cachedModelOptions(): Promise<ModelOption[]> {
   const models = Array.isArray(cache?.models) ? cache.models : [];
   return models
     .filter((model) => typeof model?.slug === "string")
+    .filter((model) => model.slug !== "default")
     .map((model) => ({
       id: model.slug,
       label: typeof model.display_name === "string" ? model.display_name : model.slug,
@@ -218,16 +219,17 @@ async function cachedModelOptions(): Promise<ModelOption[]> {
 
 async function modelOptions(): Promise<ModelOption[]> {
   return [
-    { id: "default", label: "Default Codex config", hint: "no --model override" },
     ...(await cachedModelOptions()),
     { id: CUSTOM_MODEL, label: "Custom model", hint: "enter one or more model ids" },
   ];
 }
 
 export function modelsFromCsv(value: string): ModelTarget[] {
-  return valuesFromCsv(value, "--models").map((model) =>
-    model === "default" ? { id: "default", label: "default" } : { id: model, label: model, model },
-  );
+  const models = valuesFromCsv(value, "--models");
+  if (models.includes("default")) {
+    throw new Error("Eval models must be explicit; 'default' is not supported");
+  }
+  return models.map((model) => ({ id: model, label: model, model }));
 }
 
 function isInteractiveTerminal(): boolean {
@@ -273,6 +275,7 @@ async function promptVersion(): Promise<string[]> {
 
 async function promptModels(): Promise<ModelTarget[]> {
   const options = await modelOptions();
+  const firstExplicitModel = options.find((option) => option.id !== CUSTOM_MODEL);
   const selected = await multiselect<string>({
     message: "Select Codex models to eval",
     options: options.map((option) => ({
@@ -280,7 +283,7 @@ async function promptModels(): Promise<ModelTarget[]> {
       label: option.label,
       hint: option.hint,
     })),
-    initialValues: DEFAULT_INTERACTIVE_MODELS,
+    initialValues: [firstExplicitModel?.id ?? CUSTOM_MODEL],
     required: true,
   });
   if (isCancel(selected)) exitCancelled();
@@ -290,16 +293,19 @@ async function promptModels(): Promise<ModelTarget[]> {
     .filter((id) => id !== CUSTOM_MODEL)
     .map((id) => options.find((option) => option.id === id))
     .filter((option): option is ModelOption => option !== undefined)
-    .map((option) =>
-      option.id === "default"
-        ? { id: "default", label: "default" }
-        : { id: option.id, label: option.label, model: option.model ?? option.id },
-    );
+    .map((option) => ({ id: option.id, label: option.label, model: option.model ?? option.id }));
 
   if (orderedSelected.includes(CUSTOM_MODEL)) {
     const value = await text({
       message: "Custom model id(s)",
       placeholder: "gpt-5.4-mini,gpt-5.3-codex-spark",
+      validate(input) {
+        try {
+          modelsFromCsv(input);
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      },
     });
     if (isCancel(value)) exitCancelled();
     models.push(...modelsFromCsv(value));
@@ -371,7 +377,7 @@ async function resolveRunModels(
   if (modelFlag) return modelsFromCsv(modelFlag);
 
   if (interactive) return promptModels();
-  return [{ id: "default", label: "default" }];
+  throw new Error("Pass --model <id> or --models <ids>; evals do not use default Codex config");
 }
 
 async function resolveRunCount(
