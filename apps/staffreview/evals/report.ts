@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { VersionRunResult } from "./runner.ts";
+import { commonAncestor, formatNumber, relativeFromCwd } from "./util.ts";
 
 type ReportComment = {
   id: string;
@@ -31,28 +32,6 @@ function html(value: string | number): string {
 
 function percent(score: number, possible: number): number {
   return possible === 0 ? 0 : Math.round((score / possible) * 100);
-}
-
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-}
-
-function commonAncestor(paths: string[]): string {
-  if (paths.length === 0) return process.cwd();
-  let candidate = resolve(paths[0]!);
-  for (;;) {
-    if (paths.every((path) => path === candidate || path.startsWith(`${candidate}${sep}`))) {
-      return candidate;
-    }
-    const parent = dirname(candidate);
-    if (parent === candidate) return parent;
-    candidate = parent;
-  }
-}
-
-function displayPath(path: string): string {
-  const relativePath = relative(process.cwd(), path);
-  return relativePath && !relativePath.startsWith("..") ? relativePath : path;
 }
 
 function localHref(path: string): string {
@@ -148,7 +127,7 @@ function renderSummaryRows(results: VersionRunResult[]): string {
         <td>${html(formatNumber(stats.stdev))}</td>
         <td>${html(codexFailures(result))}</td>
         <td>${html(result.skipped.length)}</td>
-        <td><a href="${localHref(result.suite)}">${html(displayPath(result.suite))}</a></td>
+        <td><a href="${localHref(result.suite)}">${html(relativeFromCwd(result.suite))}</a></td>
       </tr>`;
     })
     .join("\n");

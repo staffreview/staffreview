@@ -12,6 +12,7 @@ import {
   type SuiteScoreResult,
   scoreSuite,
 } from "./cases.ts";
+import { commonAncestor, formatNumber, shellQuote, TIMEOUT_KILL_GRACE_MS } from "./util.ts";
 
 type CodexOptions = {
   codexCommand?: string;
@@ -85,7 +86,7 @@ function normalizeRuns(value: number | undefined): number {
   return value;
 }
 
-function createTaskLimiter(limit: number): TaskLimiter {
+export function createTaskLimiter(limit: number): TaskLimiter {
   let active = 0;
   const queue: Array<() => void> = [];
 
@@ -111,10 +112,6 @@ function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "");
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function versionPathPart(version: string): string {
   return version.replace(/^v/, "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -127,30 +124,14 @@ function repeatPathPart(index: number): string {
   return `run-${index}`;
 }
 
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-}
-
 function formatPercent(score: number, possible: number): string {
   return possible === 0 ? "0%" : `${Math.round((score / possible) * 100)}%`;
 }
 
-function commonAncestor(paths: string[]): string {
-  if (paths.length === 0) return process.cwd();
-  let candidate = resolve(paths[0]!);
-  for (;;) {
-    if (paths.every((path) => path === candidate || path.startsWith(`${candidate}${sep}`))) {
-      return candidate;
-    }
-    const parent = dirname(candidate);
-    if (parent === candidate) return parent;
-    candidate = parent;
-  }
-}
-
 function suiteRoot(results: VersionRunResult[]): string {
   if (results.length === 1) return dirname(resolve(results[0]!.suite));
-  return commonAncestor(results.map((result) => resolve(result.suite)));
+  // commonAncestor resolves each path internally, so no pre-resolve is needed.
+  return commonAncestor(results.map((result) => result.suite));
 }
 
 function suiteLabel(suite: string, root: string): string {
@@ -194,15 +175,23 @@ async function runShell(
     stderr: "pipe",
   });
 
+  // Bound the run with a hard timeout: SIGTERM first, then escalate to SIGKILL
+  // after a short grace period so a subprocess that traps/ignores SIGTERM
+  // (e.g. one that spawned its own children) can't hang the whole eval matrix.
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = setTimeout(() => {
     proc.kill("SIGTERM");
+    killTimer = setTimeout(() => proc.kill("SIGKILL"), TIMEOUT_KILL_GRACE_MS);
   }, options.timeoutMs);
 
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
-  ]).finally(() => clearTimeout(timeout));
+  ]).finally(() => {
+    clearTimeout(timeout);
+    if (killTimer) clearTimeout(killTimer);
+  });
 
   return { exitCode, stdout, stderr };
 }
@@ -304,7 +293,7 @@ function mean(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function stdev(values: number[]): number {
+export function stdev(values: number[]): number {
   if (values.length <= 1) return 0;
   const avg = mean(values);
   const variance = mean(values.map((value) => (value - avg) ** 2));
@@ -325,7 +314,7 @@ function uniqueSkipped(results: VersionRunResult[]): SkippedCase[] {
   return skipped;
 }
 
-function averageChecks(results: VersionRunResult[], caseId: string) {
+export function averageChecks(results: VersionRunResult[], caseId: string) {
   const byName = new Map<string, Array<{ earned: number; possible: number }>>();
   for (const result of results) {
     const caseResult = result.score.cases.find((item) => item.caseId === caseId);
@@ -350,7 +339,7 @@ function averageChecks(results: VersionRunResult[], caseId: string) {
   });
 }
 
-function aggregateScore(results: VersionRunResult[]): SuiteScoreResult {
+export function aggregateScore(results: VersionRunResult[]): SuiteScoreResult {
   const caseIds = [
     ...new Set(results.flatMap((result) => result.score.cases.map((item) => item.caseId))),
   ];
@@ -497,7 +486,7 @@ export async function runVersionComparison(
           [...new Set(jobs.map((job) => job.aggregateOut))].map((aggregateOut) =>
             aggregateResults(
               aggregateOut,
-              sampleResults.filter((result) => result.suite.startsWith(`${aggregateOut}/`)),
+              sampleResults.filter((result) => result.suite.startsWith(`${aggregateOut}${sep}`)),
             ),
           ),
         );

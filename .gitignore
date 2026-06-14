@@ -44,3 +44,7 @@ playwright/.cache/
 
 # Staff Review eval scratch repos
 apps/staffreview/evals/.runs/
+report.html
+.staffreview/diffs/
+.staffreview/attachments/
+.staffreview/active.json

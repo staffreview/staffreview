@@ -10,7 +10,6 @@ import {
   listEvalSkills,
   prepareCase,
   prepareSuite,
-  relativeFromCwd,
   type ScoreOptions,
   type ScoreResult,
   STAFFREVIEW_ROOT,
@@ -27,6 +26,7 @@ import {
   runVersionEval,
   type VersionRunResult,
 } from "./runner.ts";
+import { relativeFromCwd } from "./util.ts";
 
 const DEFAULT_INTERACTIVE_VERSIONS = ["current"];
 const DEFAULT_INTERACTIVE_MODELS = ["default"];
@@ -37,7 +37,7 @@ type ParsedArgs = {
   flags: Record<string, string | boolean>;
 };
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -125,13 +125,10 @@ function resolveConcurrency(flags: Record<string, string | boolean>): number | u
 }
 
 function resolveRunsFlag(flags: Record<string, string | boolean>): number | undefined {
-  return positiveInteger(
-    flagNumber(flags, "runs") ?? flagNumber(flags, "run-count") ?? envNumber("STAFF_EVAL_RUNS"),
-    "--runs",
-  );
+  return positiveInteger(flagNumber(flags, "runs") ?? envNumber("STAFF_EVAL_RUNS"), "--runs");
 }
 
-function resolveJudgeEnabled(flags: Record<string, string | boolean>): boolean {
+export function resolveJudgeEnabled(flags: Record<string, string | boolean>): boolean {
   const noJudge = flags["no-judge"];
   if (noJudge === true) return false;
   if (typeof noJudge === "string" && parseBooleanish(noJudge, "--no-judge")) return false;
@@ -158,11 +155,6 @@ function resolveScoreOptions(
     judgeModel: flagString(flags, "judge-model") ?? process.env.STAFF_EVAL_JUDGE_MODEL,
     judgeTimeoutMs: judgeTimeoutMinutes ? judgeTimeoutMinutes * 60 * 1000 : undefined,
   };
-}
-
-function versionsFromCsv(value: string): string[] {
-  const values = valuesFromCsv(value, "--versions");
-  return values;
 }
 
 function valuesFromCsv(value: string, flag: string): string[] {
@@ -192,7 +184,7 @@ function normalizeSkill(value: string): string {
   return value.startsWith("/") ? value : `/${value}`;
 }
 
-function skillsFromCsv(value: string): string[] {
+export function skillsFromCsv(value: string): string[] {
   const skills = valuesFromCsv(value, "--skills").map(normalizeSkill);
   if (skills.includes("all")) return allEvalSkills();
   const unique = [...new Set(skills)];
@@ -232,7 +224,7 @@ async function modelOptions(): Promise<ModelOption[]> {
   ];
 }
 
-function modelsFromCsv(value: string): ModelTarget[] {
+export function modelsFromCsv(value: string): ModelTarget[] {
   return valuesFromCsv(value, "--models").map((model) =>
     model === "default" ? { id: "default", label: "default" } : { id: model, label: model, model },
   );
@@ -353,12 +345,12 @@ async function resolveRunVersions(
   interactive: boolean,
 ): Promise<string[]> {
   const versionsFlag = flagString(flags, "versions");
-  if (versionsFlag) return versionsFromCsv(versionsFlag);
+  if (versionsFlag) return valuesFromCsv(versionsFlag, "--versions");
 
   const versionFlag = flagString(flags, "version");
   if (versionFlag) return [versionFlag];
 
-  if (positional[1]) return versionsFromCsv(positional[1]);
+  if (positional[1]) return valuesFromCsv(positional[1], "--versions");
 
   if (command === "compare") {
     return (await versionOptions()).map((option) => option.value);
@@ -546,8 +538,13 @@ async function main(argv: string[]): Promise<void> {
   usage();
 }
 
-main(Bun.argv.slice(2)).catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`error: ${message}`);
-  process.exit(1);
-});
+// Only dispatch the CLI when run as the entrypoint (`bun evals/cli.ts`).
+// Guarding on `import.meta.main` lets tests import the pure parsing/resolution
+// helpers above without invoking `main` against the test runner's argv.
+if (import.meta.main) {
+  main(Bun.argv.slice(2)).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`error: ${message}`);
+    process.exit(1);
+  });
+}

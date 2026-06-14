@@ -1,9 +1,10 @@
 import { chmod, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installProject, SKILLS } from "../src/install.ts";
 import * as store from "../src/store.ts";
 import type { Comment, CommentPriority, Diff } from "../src/types.ts";
+import { shellQuote, TIMEOUT_KILL_GRACE_MS } from "./util.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const STAFFREVIEW_ROOT = resolve(__dirname, "..");
@@ -415,10 +416,6 @@ async function appendFile(root: string, path: string, body: string): Promise<voi
   await writeFile(fullPath, `${current}${body}`);
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 async function installEvalWrapper(repo: string, staffTarget: StaffTarget): Promise<void> {
   const binDir = join(repo, ".eval-bin");
   await mkdir(binDir, { recursive: true });
@@ -678,15 +675,23 @@ async function runJudgeShell(
     stdout: "pipe",
   });
   let timedOut = false;
+  // Escalate to SIGKILL after a grace period: a judge subprocess that traps or
+  // ignores SIGTERM would otherwise keep `proc.exited` (and the eval) pending
+  // forever, defeating the timeout.
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const timeout = setTimeout(() => {
     timedOut = true;
     proc.kill("SIGTERM");
+    killTimer = setTimeout(() => proc.kill("SIGKILL"), TIMEOUT_KILL_GRACE_MS);
   }, timeoutMs);
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
-  ]).finally(() => clearTimeout(timeout));
+  ]).finally(() => {
+    clearTimeout(timeout);
+    if (killTimer) clearTimeout(killTimer);
+  });
   return { exitCode, stderr, stdout, timedOut };
 }
 
@@ -736,7 +741,7 @@ async function runJudgePrompt(
   return result.stdout;
 }
 
-function parseJudgeJson(stdout: string): unknown {
+export function parseJudgeJson(stdout: string): unknown {
   const trimmed = stdout.trim();
   if (!trimmed) throw new Error("Eval judge returned empty output");
   try {
@@ -911,7 +916,11 @@ function commentLineDistance(comment: Comment, line: number): number | undefined
 }
 
 function anchorScore(comment: Comment, expected: ExpectedFinding): number {
-  if (expected.file == null) return comment.file ? 0 : 5;
+  // A null expected file means the location is broad: the judge prompt tells the
+  // evaluator such a finding "may be top-level or attached to any relevant file",
+  // so once it has matched, award anchor credit regardless of where the comment
+  // is anchored rather than penalizing a file-anchored comment.
+  if (expected.file == null) return 5;
   if (comment.file !== expected.file) return 0;
   if (expected.line == null) return 3;
   const distance = commentLineDistance(comment, expected.line);
@@ -926,7 +935,7 @@ function expectedLocation(expected: ExpectedFinding): string {
 
 function commentLocation(comment: Comment): string {
   if (!comment.file) return "top-level";
-  const file = comment.file ?? "top-level";
+  const file = comment.file;
   if (comment.line == null) return `${file}:?`;
   if (comment.endLine && comment.endLine !== comment.line) {
     return `${file}:${comment.line}-${comment.endLine}`;
@@ -1241,6 +1250,15 @@ async function scoreResolveLike(
   if (!ctx.metadata.slug) throw new Error("Missing slug in eval metadata");
   const diff = await loadDiffBySlug(ctx.repo, ctx.metadata.slug);
   const threadIds = ctx.metadata.seededThreadIds ?? [];
+  // The seeded-thread checks below all become vacuously perfect when there is
+  // nothing seeded (`[].every` is true, `0 === 0` resolves full credit). A
+  // resolve-like case with no seeded threads is a harness bug, not a passing
+  // run, so fail loudly instead of silently awarding a perfect score.
+  if (threadIds.length === 0) {
+    throw new Error(
+      `Resolve-like case ${ctx.metadata.caseId} has no seededThreadIds; the scorer requires at least one seeded thread`,
+    );
+  }
   const roots = rootComments(diff);
   const open = await openThreads(ctx.repo, ctx.metadata.slug);
   const checks: ScoreCheck[] = [
@@ -2083,9 +2101,4 @@ export async function ensureRepoExists(repo: string): Promise<void> {
   if (!info?.isDirectory()) {
     throw new Error(`Repo does not exist: ${repo}`);
   }
-}
-
-export function relativeFromCwd(path: string): string {
-  const rel = relative(process.cwd(), path);
-  return rel.startsWith("..") ? path : rel || ".";
 }
