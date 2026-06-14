@@ -9,6 +9,7 @@
     "build:binary": "bun run --cwd apps/staffreview build:binary",
     "check": "biome check .",
     "check:fix": "biome check --write .",
+    "eval": "bun run --cwd apps/staffreview eval",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
