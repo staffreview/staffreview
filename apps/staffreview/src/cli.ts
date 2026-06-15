@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { cancel, intro, isCancel, multiselect, outro, select } from "@clack/prompts";
+import packageJson from "../package.json" with { type: "json" };
 import { parseBooleanSetting } from "./boolean-setting.ts";
 import * as git from "./git.ts";
 import {
@@ -23,7 +24,7 @@ import {
   type ResolutionStatus,
 } from "./types.ts";
 
-const VERSION = "1.4.0";
+const VERSION = packageJson.version;
 const BOOLEAN_FLAGS = new Set([
   "global",
   "help",
