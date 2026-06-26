@@ -41,10 +41,11 @@ up changes over a WebSocket and re-renders live as the agent posts.
 as slash commands). All groups start selected, and pressing `a` toggles all
 on/off. If a selected group requires another top-level group, that required group
 is checked and locked until you unselect the parent. For example, `/staff-loop`
-requires `/staff-resolve`, which requires `/staff-comment` and
-`/staff-document`. Internal workers such as `/staff-review-find`,
-`/staff-review-verify`, and `/staff-docs-scout` are shown as locked rows; they
-check when a selected parent needs them and uncheck when no selected parent does.
+requires both `/staff-review` and `/staff-resolve`. In turn, `/staff-resolve`
+requires `/staff-comment` and `/staff-document`. Internal workers such as
+`/staff-review-find`, `/staff-review-verify`, and `/staff-docs-scout` are shown
+as locked rows; they check when a selected parent needs them and uncheck when no
+selected parent does.
 With every group selected, that is eight top-level skills plus three building
 blocks.
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it

@@ -118,8 +118,9 @@ selected groups to `.agents/skills/` (symlinked into `.claude/skills/` so Claude
 Code picks them up as slash commands). If a selected group requires another
 top-level group, that required group is checked and locked until you unselect
 the parent — for example, `/staff-review` requires `/staff-comment`, and
-`/staff-loop` requires `/staff-resolve`, which requires `/staff-comment` and
-`/staff-document`. Internal workers such as `/staff-review-find` and
+`/staff-loop` requires both `/staff-review` and `/staff-resolve`. In turn,
+`/staff-resolve` requires `/staff-comment` and `/staff-document`. Internal
+workers such as `/staff-review-find` and
 `/staff-review-verify` are shown as locked rows; they check when a selected
 parent needs them and uncheck when no selected parent does. With every group
 selected, that is eight top-level skills plus three building blocks:

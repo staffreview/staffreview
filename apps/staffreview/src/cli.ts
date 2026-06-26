@@ -274,8 +274,7 @@ async function promptDependencyAwareSkillGroups(): Promise<TopLevelSkillGroupId[
     toggleInvert(): void;
   };
   promptInternals.toggleAll = () => {
-    const explicitGroups = explicitTopLevelGroupIds(prompt.value ?? []);
-    prompt.value = explicitGroups.length === allGroupIds.length ? [] : [...allGroupIds];
+    prompt.value = toggleAllTopLevelSkillGroupSelection(prompt.value ?? []);
     syncLockedSkillGroupOptions(prompt.options, explicitTopLevelGroupIds(prompt.value));
     normalizeSkillGroupCursor(prompt);
   };
@@ -295,6 +294,16 @@ async function promptDependencyAwareSkillGroups(): Promise<TopLevelSkillGroupId[
   const selected = await prompt.prompt();
   if (isCancel(selected)) return selected;
   return explicitTopLevelGroupIds(selected ?? []);
+}
+
+export function toggleAllTopLevelSkillGroupSelection(
+  values: readonly StaffSkillName[],
+): TopLevelSkillGroupId[] {
+  const explicitGroups = explicitTopLevelGroupIds(values);
+  const effectiveGroups = new Set(topLevelSkillGroupClosure(explicitGroups));
+  const allGroupIds = TOP_LEVEL_SKILL_GROUPS.map((group) => group.id);
+  const allSelected = allGroupIds.every((id) => effectiveGroups.has(id));
+  return allSelected ? [] : [...allGroupIds];
 }
 
 function skillPromptOptions(): SkillPromptOption[] {

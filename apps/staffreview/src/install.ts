@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, symlink } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 // Reference guides: each thin SKILL.md points at a `references/<file>.md` that
@@ -134,7 +134,7 @@ export const TOP_LEVEL_SKILL_GROUPS = [
     label: "/staff-loop",
     description: "Review and resolve repeatedly until a working-tree diff converges.",
     skill: "staff-loop",
-    requires: ["staff-resolve"],
+    requires: ["staff-resolve", "staff-review"],
     workers: ["staff-review-find", "staff-review-verify"],
   },
   {
@@ -280,6 +280,74 @@ async function writeSkillReferences(skillDir: string, name: string): Promise<voi
     await mkdir(dirname(refPath), { recursive: true });
     await Bun.write(refPath, ref.body);
   }
+}
+
+type SkillRemovalResult = "missing" | "preserved" | "removed";
+
+function generatedSkillFiles(name: StaffSkillName): Map<string, string> {
+  const files = new Map<string, string>([["SKILL.md", SKILLS[name]]]);
+  for (const ref of SKILL_REFERENCES[name] ?? []) {
+    files.set(ref.path, ref.body);
+  }
+  return files;
+}
+
+function normalizedRelativePath(root: string, path: string): string {
+  return relative(root, path).replaceAll("\\", "/");
+}
+
+async function skillDirectoryHasLocalChanges(
+  root: string,
+  dir: string,
+  generatedFiles: Map<string, string>,
+): Promise<boolean> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (await skillDirectoryHasLocalChanges(root, path, generatedFiles)) return true;
+      continue;
+    }
+    if (!entry.isFile()) return true;
+
+    const generatedBody = generatedFiles.get(normalizedRelativePath(root, path));
+    if (generatedBody === undefined) return true;
+    if ((await readFile(path, "utf8")) !== generatedBody) return true;
+  }
+  return false;
+}
+
+async function removeSkillInstallIfUnmodified(
+  skillPath: string,
+  name: StaffSkillName,
+  options: { generatedSymlinkTarget?: string } = {},
+): Promise<SkillRemovalResult> {
+  let entry: Awaited<ReturnType<typeof lstat>>;
+  try {
+    entry = await lstat(skillPath);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return "missing";
+    throw error;
+  }
+
+  if (entry.isSymbolicLink()) {
+    if (
+      options.generatedSymlinkTarget &&
+      (await readlink(skillPath)) === options.generatedSymlinkTarget
+    ) {
+      await rm(skillPath, { recursive: true, force: true });
+      return "removed";
+    }
+    return "preserved";
+  }
+
+  if (!entry.isDirectory()) return "preserved";
+  if (await skillDirectoryHasLocalChanges(skillPath, skillPath, generatedSkillFiles(name))) {
+    return "preserved";
+  }
+
+  await rm(skillPath, { recursive: true, force: true });
+  return "removed";
 }
 
 export type InstallScope = "project" | "global";
@@ -453,8 +521,18 @@ export async function installProject(
 
   for (const name of STAFF_SKILL_NAMES) {
     if (selectedSkills.has(name)) continue;
-    await rm(join(agentsRoot, name), { recursive: true, force: true });
-    await rm(join(claudeRoot, name), { recursive: true, force: true });
+    const canonicalResult = await removeSkillInstallIfUnmodified(join(agentsRoot, name), name);
+    if (canonicalResult === "preserved") {
+      log(`  preserved modified ${join(".agents", "skills", name)}/`);
+      continue;
+    }
+
+    const claudeResult = await removeSkillInstallIfUnmodified(join(claudeRoot, name), name, {
+      generatedSymlinkTarget: join("..", "..", ".agents", "skills", name),
+    });
+    if (claudeResult === "preserved") {
+      log(`  preserved modified ${join(".claude", "skills", name)}/`);
+    }
   }
 
   let count = 0;
@@ -546,7 +624,10 @@ export async function installGlobal(
     const selectedSkills = new Set(skillNames);
     for (const name of STAFF_SKILL_NAMES) {
       if (selectedSkills.has(name)) continue;
-      await rm(join(root, name), { recursive: true, force: true });
+      const result = await removeSkillInstallIfUnmodified(join(root, name), name);
+      if (result === "preserved") {
+        log(`  preserved modified ${formatHomePath(join(root, name), homeDir)}/`);
+      }
     }
     for (const name of skillNames) {
       const skillDir = join(root, name);
