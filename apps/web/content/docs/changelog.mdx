@@ -5,6 +5,24 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.6.0 — 2026-06-26
+
+### Added
+- **`staff install` can now install selected skill groups.** Interactive installs
+  show a dependency-aware multi-select so you can choose which top-level
+  `/staff-*` groups to install. Required groups and internal worker skills are
+  locked in automatically, and both project-local and global installs honor the
+  selected skill set.
+
+### Fixed
+- **Comment changes now refresh live without manual reloads.** The server watches
+  `.staffreview/diffs/` directly, normalizes atomic-save temp file events back
+  to their canonical diff JSON, and disables stale JSON API caching so comment
+  add/edit/delete/resolve updates repaint the open UI reliably.
+- **Partial skill installs preserve local customizations.** When unselected
+  generated skills are pruned, locally edited skill directories are preserved
+  instead of being deleted.
+
 ## 1.5.1 — 2026-06-14
 
 ### Fixed
