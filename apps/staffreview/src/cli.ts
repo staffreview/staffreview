@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { styleText } from "node:util";
+import { settings as clackSettings, MultiSelectPrompt, wrapTextWithPrefix } from "@clack/core";
 import { cancel, intro, isCancel, multiselect, outro, select } from "@clack/prompts";
 import packageJson from "../package.json" with { type: "json" };
 import { parseBooleanSetting } from "./boolean-setting.ts";
@@ -11,6 +13,17 @@ import {
   installGlobal,
   installProject,
   parseGlobalHarnessIds,
+  requiredTopLevelSkillGroups,
+  STAFF_SKILL_NAMES,
+  type StaffSkillName,
+  skillsForTopLevelGroups,
+  TOP_LEVEL_SKILL_GROUPS,
+  type TopLevelSkillGroup,
+  type TopLevelSkillGroupId,
+  topLevelGroupsForWorkerSkill,
+  topLevelSkillGroupClosure,
+  topLevelSkillGroupDependencies,
+  workerSkillsForTopLevelGroups,
 } from "./install.ts";
 import { shouldOpenBrowser as decideOpenBrowser } from "./open-browser-config.ts";
 import { PORT_RANGE_START, resolvePort } from "./port.ts";
@@ -218,6 +231,290 @@ async function promptGlobalHarnesses(): Promise<GlobalHarnessId[] | undefined> {
   return harnesses;
 }
 
+async function promptTopLevelSkillGroups(): Promise<StaffSkillName[]> {
+  const selected = await promptDependencyAwareSkillGroups();
+  if (isCancel(selected)) {
+    exitInstallCancelled();
+  }
+  const orderedSelected = TOP_LEVEL_SKILL_GROUPS.filter((group) => selected.includes(group.id)).map(
+    (group) => group.id,
+  );
+  return skillsForTopLevelGroups(orderedSelected);
+}
+
+interface SkillPromptOption {
+  value: StaffSkillName;
+  label: string;
+  hint: string;
+  kind: "top-level" | "worker";
+  disabled?: boolean;
+}
+
+async function promptDependencyAwareSkillGroups(): Promise<TopLevelSkillGroupId[] | symbol> {
+  const options = skillPromptOptions();
+  const allGroupIds = TOP_LEVEL_SKILL_GROUPS.map((group) => group.id);
+  syncLockedSkillGroupOptions(options, allGroupIds);
+
+  const prompt = new MultiSelectPrompt<SkillPromptOption>({
+    options,
+    initialValues: allGroupIds,
+    validate(value) {
+      if (explicitTopLevelGroupIds(value ?? []).length === 0) {
+        return "Choose at least one skill group, or press a to reselect all.";
+      }
+    },
+    render() {
+      syncLockedSkillGroupOptions(this.options, explicitTopLevelGroupIds(this.value ?? []));
+      normalizeSkillGroupCursor(this);
+      return renderSkillGroupPrompt(this);
+    },
+  });
+  const promptInternals = prompt as unknown as {
+    toggleAll(): void;
+    toggleInvert(): void;
+  };
+  promptInternals.toggleAll = () => {
+    prompt.value = toggleAllTopLevelSkillGroupSelection(prompt.value ?? []);
+    syncLockedSkillGroupOptions(prompt.options, explicitTopLevelGroupIds(prompt.value));
+    normalizeSkillGroupCursor(prompt);
+  };
+  promptInternals.toggleInvert = () => {
+    const explicitGroups = explicitTopLevelGroupIds(prompt.value ?? []);
+    const explicit = new Set(explicitGroups);
+    const locked = new Set(requiredTopLevelSkillGroups(explicitGroups));
+    prompt.value = allGroupIds.filter((id) => !locked.has(id) && !explicit.has(id));
+    syncLockedSkillGroupOptions(prompt.options, explicitTopLevelGroupIds(prompt.value));
+    normalizeSkillGroupCursor(prompt);
+  };
+  prompt.on("key", () => {
+    syncLockedSkillGroupOptions(prompt.options, explicitTopLevelGroupIds(prompt.value ?? []));
+    normalizeSkillGroupCursor(prompt);
+  });
+
+  const selected = await prompt.prompt();
+  if (isCancel(selected)) return selected;
+  return explicitTopLevelGroupIds(selected ?? []);
+}
+
+export function toggleAllTopLevelSkillGroupSelection(
+  values: readonly StaffSkillName[],
+): TopLevelSkillGroupId[] {
+  const explicitGroups = explicitTopLevelGroupIds(values);
+  const effectiveGroups = new Set(topLevelSkillGroupClosure(explicitGroups));
+  const allGroupIds = TOP_LEVEL_SKILL_GROUPS.map((group) => group.id);
+  const allSelected = allGroupIds.every((id) => effectiveGroups.has(id));
+  return allSelected ? [] : [...allGroupIds];
+}
+
+function skillPromptOptions(): SkillPromptOption[] {
+  const topLevelIds = new Set<StaffSkillName>(TOP_LEVEL_SKILL_GROUPS.map((group) => group.id));
+  return STAFF_SKILL_NAMES.map((skill) => {
+    const group = TOP_LEVEL_SKILL_GROUPS.find((candidate) => candidate.id === skill);
+    if (group) {
+      return {
+        value: group.id,
+        label: group.label,
+        hint: skillGroupPromptHint(group),
+        kind: "top-level",
+      };
+    }
+    return {
+      value: skill,
+      label: `/${skill}`,
+      hint: workerSkillPromptHint(skill),
+      kind: "worker",
+      disabled: true,
+    };
+  }).filter((option) => option.kind === "top-level" || !topLevelIds.has(option.value));
+}
+
+function explicitTopLevelGroupIds(values: readonly StaffSkillName[]): TopLevelSkillGroupId[] {
+  const selected = new Set(values);
+  return TOP_LEVEL_SKILL_GROUPS.map((group) => group.id).filter((id) => selected.has(id));
+}
+
+function syncLockedSkillGroupOptions(
+  options: SkillPromptOption[],
+  explicitGroupIds: readonly TopLevelSkillGroupId[],
+): void {
+  const locked = new Set(requiredTopLevelSkillGroups(explicitGroupIds));
+  for (const option of options) {
+    option.disabled = option.kind === "worker" || locked.has(option.value as TopLevelSkillGroupId);
+  }
+}
+
+function normalizeSkillGroupCursor(
+  prompt: Pick<MultiSelectPrompt<SkillPromptOption>, "cursor" | "options">,
+): void {
+  if (!prompt.options.some((option) => !option.disabled)) return;
+  while (prompt.options[prompt.cursor]?.disabled) {
+    prompt.cursor = (prompt.cursor + 1) % prompt.options.length;
+  }
+}
+
+function renderSkillGroupPrompt(
+  prompt: Omit<MultiSelectPrompt<SkillPromptOption>, "prompt">,
+): string {
+  const withGuide = clackSettings.withGuide;
+  const explicitGroupIds = explicitTopLevelGroupIds(prompt.value ?? []);
+  const lockedGroupIds = new Set(requiredTopLevelSkillGroups(explicitGroupIds));
+  const selected = new Set<StaffSkillName>([
+    ...topLevelSkillGroupClosure(explicitGroupIds),
+    ...workerSkillsForTopLevelGroups(explicitGroupIds),
+  ]);
+  const submittedOptions = prompt.options.filter((option) => selected.has(option.value));
+  const submitted =
+    submittedOptions.length > 0
+      ? submittedOptions.map((option) => option.label.trim()).join(", ")
+      : "no skill groups";
+  const message = "Select Staff Review skill groups to install. Press a to toggle all.";
+  const header = `${withGuide ? `${styleText("gray", CLACK_BAR)}\n` : ""}${clackSymbol(prompt.state)}  ${message}\n`;
+
+  switch (prompt.state) {
+    case "submit":
+      return `${header}${wrapTextWithPrefix(
+        undefined,
+        styleText("dim", submitted),
+        withGuide ? `${styleText("gray", CLACK_BAR)}  ` : "",
+      )}`;
+    case "cancel":
+      return `${header}${wrapTextWithPrefix(
+        undefined,
+        styleText(["strikethrough", "dim"], submitted),
+        withGuide ? `${styleText("gray", CLACK_BAR)}  ` : "",
+      )}${withGuide ? `\n${styleText("gray", CLACK_BAR)}` : ""}`;
+    default: {
+      const activeColor = prompt.state === "error" ? "yellow" : "cyanBright";
+      const rowPrefix = withGuide ? `${styleText(activeColor, CLACK_BAR)}  ` : "";
+      const rows = prompt.options.map((option, index) => {
+        const locked =
+          option.kind === "worker" || lockedGroupIds.has(option.value as TopLevelSkillGroupId);
+        return wrapTextWithPrefix(
+          undefined,
+          renderSkillGroupPromptOption({
+            option,
+            active: index === prompt.cursor && !locked,
+            selected: selected.has(option.value),
+            locked,
+            explicitGroupIds,
+          }),
+          rowPrefix,
+        );
+      });
+      const error =
+        prompt.state === "error" && prompt.error
+          ? `\n${withGuide ? `${styleText("yellow", CLACK_BAR_END)}  ` : ""}${styleText(
+              "yellow",
+              prompt.error,
+            )}`
+          : "";
+      return `${header}${rows.join("\n")}\n${withGuide ? styleText(activeColor, CLACK_BAR_END) : ""}${error}`;
+    }
+  }
+}
+
+const CLACK_BAR = "│";
+const CLACK_BAR_END = "└";
+const CLACK_STEP_ACTIVE = "◆";
+const CLACK_STEP_CANCEL = "■";
+const CLACK_STEP_ERROR = "▲";
+const CLACK_STEP_SUBMIT = "◇";
+const CLACK_CHECKBOX_ACTIVE = "◻";
+const CLACK_CHECKBOX_SELECTED = "◼";
+const CLACK_CHECKBOX_INACTIVE = "◻";
+
+function clackSymbol(state: "initial" | "active" | "cancel" | "submit" | "error"): string {
+  switch (state) {
+    case "submit":
+      return styleText("green", CLACK_STEP_SUBMIT);
+    case "cancel":
+      return styleText("red", CLACK_STEP_CANCEL);
+    case "error":
+      return styleText("yellow", CLACK_STEP_ERROR);
+    default:
+      return styleText("cyanBright", CLACK_STEP_ACTIVE);
+  }
+}
+
+function renderSkillGroupPromptOption({
+  option,
+  active,
+  selected,
+  locked,
+  explicitGroupIds,
+}: {
+  option: SkillPromptOption;
+  active: boolean;
+  selected: boolean;
+  locked: boolean;
+  explicitGroupIds: readonly TopLevelSkillGroupId[];
+}): string {
+  const hint = option.hint
+    ? ` (${option.hint}${locked ? ` ${lockedByHint(option, explicitGroupIds)}` : ""})`
+    : "";
+  if (locked) {
+    const connector = option.kind === "worker" ? styleText("gray", "└ ") : "";
+    return `${styleText("gray", selected ? CLACK_CHECKBOX_SELECTED : CLACK_CHECKBOX_INACTIVE)} ${connector}${styleText("gray", option.label)}${styleText("dim", hint)}`;
+  }
+  if (active && selected) {
+    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${styleText(["bold", "cyanBright"], option.label)}${styleText("dim", hint)}`;
+  }
+  if (active) {
+    return `${styleText("cyanBright", CLACK_CHECKBOX_ACTIVE)} ${styleText(["bold", "cyanBright"], option.label)}${styleText("dim", hint)}`;
+  }
+  if (selected) {
+    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${styleText("white", option.label)}${styleText("dim", hint)}`;
+  }
+  return `${styleText("dim", CLACK_CHECKBOX_INACTIVE)} ${styleText("white", option.label)}${styleText("dim", hint)}`;
+}
+
+function lockedByHint(
+  option: SkillPromptOption,
+  explicitGroupIds: readonly TopLevelSkillGroupId[],
+): string {
+  const parents =
+    option.kind === "worker"
+      ? selectedWorkerParents(option.value, explicitGroupIds)
+      : explicitGroupIds.filter(
+          (id) =>
+            id !== option.value &&
+            topLevelSkillGroupDependencies(id).includes(option.value as TopLevelSkillGroupId),
+        );
+  if (parents.length === 0) return "Required by selected groups.";
+  return `${option.kind === "worker" ? "Included by" : "Required by"} ${parents.map((id) => `/${id}`).join(", ")}.`;
+}
+
+function skillGroupPromptHint(group: TopLevelSkillGroup): string {
+  const parts = [group.description];
+  const dependencies = topLevelSkillGroupDependencies(group.id);
+  if (dependencies.length > 0) {
+    parts.push(`Requires ${dependencies.map((id) => `/${id}`).join(", ")}.`);
+  }
+  if ((group.workers?.length ?? 0) > 0) {
+    parts.push(`Includes workers ${group.workers!.map((name) => `/${name}`).join(", ")}.`);
+  }
+  return parts.join(" ");
+}
+
+function workerSkillPromptHint(skill: StaffSkillName): string {
+  const parentGroups = topLevelGroupsForWorkerSkill(skill);
+  const descriptions: Partial<Record<StaffSkillName, string>> = {
+    "staff-review-find": "Find candidate issues in assigned review slices.",
+    "staff-review-verify": "Verify candidate findings before comments are posted.",
+    "staff-docs-scout": "Scout PR review history for reusable lessons.",
+  };
+  const description = descriptions[skill] ?? "Internal worker skill.";
+  return `${description} Worker for ${parentGroups.map((id) => `/${id}`).join(", ")}.`;
+}
+
+function selectedWorkerParents(
+  worker: StaffSkillName,
+  explicitGroupIds: readonly TopLevelSkillGroupId[],
+): TopLevelSkillGroupId[] {
+  const effectiveGroups = new Set(topLevelSkillGroupClosure(explicitGroupIds));
+  return topLevelGroupsForWorkerSkill(worker).filter((id) => effectiveGroups.has(id));
+}
+
 function parseTarget(spec: string | undefined): DiffTarget {
   if (!spec) return { kind: "ref", ref: "HEAD" };
   const lower = spec.toLowerCase();
@@ -294,13 +591,19 @@ USAGE
 
   staff install [--scope project|global] [--harness <ids|all>]
                                  Set up Staff Review skills. In an interactive
-                                 terminal, prompts for project vs global install.
-                                 Project install writes the thirteen /staff-* skills to
-                                 .agents/skills/ (symlinked into .claude/skills/),
+                                 terminal, prompts for project vs global install
+                                 and which top-level skill groups to include.
+                                 All skill groups start selected; press a to
+                                 toggle all on/off.
+                                 Project install writes selected /staff-* skills
+                                 plus required top-level groups and internal
+                                 worker skills to .agents/skills/
+                                 (symlinked into .claude/skills/),
                                  creates the .staffreview/ store, and gitignores
                                  per-machine state including section-cache.json.
-                                 Global install writes the skills to selected installed
-                                 harness skill directories. Supported ids:
+                                 Global install writes selected skills to
+                                 selected installed harness skill directories.
+                                 Supported harness ids:
                                  ${supportedGlobalHarnessIds()}, or all installed.
                                  Use --project or --global as shorthand
                                  for --scope.
@@ -461,9 +764,14 @@ async function main(argv: string[]) {
           scope = "project";
         }
       }
+      if (interactive && !usedPrompt) {
+        intro("Staff Review install");
+        usedPrompt = true;
+      }
+      const skillNames = interactive ? await promptTopLevelSkillGroups() : undefined;
 
       if (scope === "project") {
-        await installProject(cwd);
+        await installProject(cwd, console.log, { skillNames });
         if (usedPrompt) outro("Project install complete.");
         return;
       }
@@ -485,7 +793,7 @@ async function main(argv: string[]) {
         if (!harnesses) return;
       }
 
-      await installGlobal(harnesses);
+      await installGlobal(harnesses, { skillNames });
       if (usedPrompt) outro("Global install complete.");
       return;
     }

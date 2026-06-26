@@ -26,6 +26,7 @@
     "build:all": "bun scripts/build.ts darwin-arm64 && bun scripts/build.ts darwin-x64 && bun scripts/build.ts linux-x64 && bun scripts/build.ts linux-arm64"
   },
   "dependencies": {
+    "@clack/core": "1.4.1",
     "@clack/prompts": "^1.5.1",
     "@codemirror/merge": "^6.12.1",
     "@radix-ui/react-dialog": "^1.1.4",

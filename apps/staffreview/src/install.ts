@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, symlink } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 // Reference guides: each thin SKILL.md points at a `references/<file>.md` that
@@ -53,7 +53,23 @@ import skillReviewVerify from "../skills/staff-review-verify.md" with { type: "t
 import skillSection from "../skills/staff-section.md" with { type: "text" };
 import * as store from "./store.ts";
 
-export const SKILLS: Record<string, string> = {
+export const STAFF_SKILL_NAMES = [
+  "staff-review",
+  "staff-review-find",
+  "staff-review-verify",
+  "staff-section",
+  "staff-comment",
+  "staff-copy",
+  "staff-document",
+  "staff-resolve",
+  "staff-loop",
+  "staff-docs",
+  "staff-docs-scout",
+] as const;
+
+export type StaffSkillName = (typeof STAFF_SKILL_NAMES)[number];
+
+export const SKILLS: Record<StaffSkillName, string> = {
   "staff-review": skillReview,
   "staff-review-find": skillReviewFind,
   "staff-review-verify": skillReviewVerify,
@@ -67,12 +83,184 @@ export const SKILLS: Record<string, string> = {
   "staff-docs-scout": skillDocsScout,
 };
 
+export const TOP_LEVEL_SKILL_GROUP_IDS = [
+  "staff-review",
+  "staff-section",
+  "staff-resolve",
+  "staff-loop",
+  "staff-copy",
+  "staff-document",
+  "staff-docs",
+  "staff-comment",
+] as const satisfies readonly StaffSkillName[];
+
+export type TopLevelSkillGroupId = (typeof TOP_LEVEL_SKILL_GROUP_IDS)[number];
+
+export interface TopLevelSkillGroup {
+  id: TopLevelSkillGroupId;
+  label: string;
+  description: string;
+  skill: StaffSkillName;
+  requires?: readonly TopLevelSkillGroupId[];
+  workers?: readonly StaffSkillName[];
+}
+
+export const TOP_LEVEL_SKILL_GROUPS = [
+  {
+    id: "staff-review",
+    label: "/staff-review",
+    description: "Review active diffs with find/verify agents and post confirmed comments.",
+    skill: "staff-review",
+    requires: ["staff-comment"],
+    workers: ["staff-review-find", "staff-review-verify"],
+  },
+  {
+    id: "staff-section",
+    label: "/staff-section",
+    description: "Review existing code section by section using the standard review workers.",
+    skill: "staff-section",
+    requires: ["staff-comment"],
+    workers: ["staff-review-find", "staff-review-verify"],
+  },
+  {
+    id: "staff-resolve",
+    label: "/staff-resolve",
+    description: "Fix, document, or skip open Staff Review threads.",
+    skill: "staff-resolve",
+    requires: ["staff-comment", "staff-document"],
+  },
+  {
+    id: "staff-loop",
+    label: "/staff-loop",
+    description: "Review and resolve repeatedly until a working-tree diff converges.",
+    skill: "staff-loop",
+    requires: ["staff-resolve", "staff-review"],
+    workers: ["staff-review-find", "staff-review-verify"],
+  },
+  {
+    id: "staff-copy",
+    label: "/staff-copy",
+    description: "Copy unresolved GitHub PR review threads into local Staff Review diffs.",
+    skill: "staff-copy",
+  },
+  {
+    id: "staff-document",
+    label: "/staff-document",
+    description: "Save a review comment as a reusable .staffreview/docs lesson.",
+    skill: "staff-document",
+  },
+  {
+    id: "staff-docs",
+    label: "/staff-docs",
+    description: "Mine GitHub PR review history for reusable lessons.",
+    skill: "staff-docs",
+    requires: ["staff-comment", "staff-document"],
+    workers: ["staff-docs-scout"],
+  },
+  {
+    id: "staff-comment",
+    label: "/staff-comment",
+    description: "Add, edit, delete, list, and resolve Staff Review comments.",
+    skill: "staff-comment",
+  },
+] as const satisfies readonly TopLevelSkillGroup[];
+
+function topLevelGroupById(id: TopLevelSkillGroupId): TopLevelSkillGroup {
+  const group = TOP_LEVEL_SKILL_GROUPS.find((g) => g.id === id);
+  if (!group) throw new Error(`unknown top-level skill group: ${id}`);
+  return group;
+}
+
+export function topLevelSkillGroupDependencies(
+  groupId: TopLevelSkillGroupId,
+): TopLevelSkillGroupId[] {
+  const dependencies: TopLevelSkillGroupId[] = [];
+  const seen = new Set<TopLevelSkillGroupId>();
+  const visit = (id: TopLevelSkillGroupId) => {
+    for (const dependency of topLevelGroupById(id).requires ?? []) {
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      dependencies.push(dependency);
+      visit(dependency);
+    }
+  };
+  visit(groupId);
+  return dependencies;
+}
+
+export function requiredTopLevelSkillGroups(
+  groupIds: readonly TopLevelSkillGroupId[],
+): TopLevelSkillGroupId[] {
+  const required: TopLevelSkillGroupId[] = [];
+  const seen = new Set<TopLevelSkillGroupId>();
+  for (const groupId of groupIds) {
+    for (const dependency of topLevelSkillGroupDependencies(groupId)) {
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      required.push(dependency);
+    }
+  }
+  return required;
+}
+
+export function topLevelSkillGroupClosure(
+  groupIds: readonly TopLevelSkillGroupId[],
+): TopLevelSkillGroupId[] {
+  const selected: TopLevelSkillGroupId[] = [];
+  const seen = new Set<TopLevelSkillGroupId>();
+  const add = (id: TopLevelSkillGroupId) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    selected.push(id);
+  };
+  for (const id of groupIds) {
+    add(id);
+    for (const dependency of topLevelSkillGroupDependencies(id)) {
+      add(dependency);
+    }
+  }
+  return selected;
+}
+
+export function workerSkillsForTopLevelGroups(
+  groupIds: readonly TopLevelSkillGroupId[],
+): StaffSkillName[] {
+  const selectedWorkers = new Set<StaffSkillName>();
+  const selectedGroups = new Set(topLevelSkillGroupClosure(groupIds));
+  for (const group of TOP_LEVEL_SKILL_GROUPS) {
+    if (!selectedGroups.has(group.id)) continue;
+    for (const worker of group.workers ?? []) selectedWorkers.add(worker);
+  }
+  return STAFF_SKILL_NAMES.filter((skill) => selectedWorkers.has(skill));
+}
+
+export function topLevelGroupsForWorkerSkill(skill: StaffSkillName): TopLevelSkillGroupId[] {
+  return TOP_LEVEL_SKILL_GROUPS.filter((group) => group.workers?.includes(skill)).map(
+    (group) => group.id,
+  );
+}
+
+export function skillsForTopLevelGroups(
+  groupIds: readonly TopLevelSkillGroupId[],
+): StaffSkillName[] {
+  const selectedSkills = new Set<StaffSkillName>();
+  const selectedGroups = new Set(topLevelSkillGroupClosure(groupIds));
+  for (const group of TOP_LEVEL_SKILL_GROUPS) {
+    if (!selectedGroups.has(group.id)) continue;
+    selectedSkills.add(group.skill);
+    for (const worker of workerSkillsForTopLevelGroups([group.id])) selectedSkills.add(worker);
+  }
+  return STAFF_SKILL_NAMES.filter((skill) => selectedSkills.has(skill));
+}
+
 /**
  * Per-skill reference files, keyed by skill name. Each entry is the repo-relative
  * `references/<file>.md` path (written verbatim under the skill's canonical dir)
  * and its embedded body. A skill with no references is simply absent here.
  */
-export const SKILL_REFERENCES: Record<string, Array<{ path: string; body: string }>> = {
+export const SKILL_REFERENCES: Partial<
+  Record<StaffSkillName, Array<{ path: string; body: string }>>
+> = {
   "staff-review": [{ path: "references/review-workflow.md", body: refReviewWorkflow }],
   "staff-review-find": [{ path: "references/find-guide.md", body: refReviewFindGuide }],
   "staff-review-verify": [{ path: "references/verify-guide.md", body: refReviewVerifyGuide }],
@@ -92,6 +280,74 @@ async function writeSkillReferences(skillDir: string, name: string): Promise<voi
     await mkdir(dirname(refPath), { recursive: true });
     await Bun.write(refPath, ref.body);
   }
+}
+
+type SkillRemovalResult = "missing" | "preserved" | "removed";
+
+function generatedSkillFiles(name: StaffSkillName): Map<string, string> {
+  const files = new Map<string, string>([["SKILL.md", SKILLS[name]]]);
+  for (const ref of SKILL_REFERENCES[name] ?? []) {
+    files.set(ref.path, ref.body);
+  }
+  return files;
+}
+
+function normalizedRelativePath(root: string, path: string): string {
+  return relative(root, path).replaceAll("\\", "/");
+}
+
+async function skillDirectoryHasLocalChanges(
+  root: string,
+  dir: string,
+  generatedFiles: Map<string, string>,
+): Promise<boolean> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (await skillDirectoryHasLocalChanges(root, path, generatedFiles)) return true;
+      continue;
+    }
+    if (!entry.isFile()) return true;
+
+    const generatedBody = generatedFiles.get(normalizedRelativePath(root, path));
+    if (generatedBody === undefined) return true;
+    if ((await readFile(path, "utf8")) !== generatedBody) return true;
+  }
+  return false;
+}
+
+async function removeSkillInstallIfUnmodified(
+  skillPath: string,
+  name: StaffSkillName,
+  options: { generatedSymlinkTarget?: string } = {},
+): Promise<SkillRemovalResult> {
+  let entry: Awaited<ReturnType<typeof lstat>>;
+  try {
+    entry = await lstat(skillPath);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return "missing";
+    throw error;
+  }
+
+  if (entry.isSymbolicLink()) {
+    if (
+      options.generatedSymlinkTarget &&
+      (await readlink(skillPath)) === options.generatedSymlinkTarget
+    ) {
+      await rm(skillPath, { recursive: true, force: true });
+      return "removed";
+    }
+    return "preserved";
+  }
+
+  if (!entry.isDirectory()) return "preserved";
+  if (await skillDirectoryHasLocalChanges(skillPath, skillPath, generatedSkillFiles(name))) {
+    return "preserved";
+  }
+
+  await rm(skillPath, { recursive: true, force: true });
+  return "removed";
 }
 
 export type InstallScope = "project" | "global";
@@ -248,18 +504,42 @@ export function parseGlobalHarnessIds(
 export async function installProject(
   cwd: string,
   log: (line: string) => void = console.log,
+  options: { skillNames?: readonly StaffSkillName[] } = {},
 ): Promise<{ skillCount: number; gitignoreAdded: string[] }> {
+  const skillNames = options.skillNames ?? STAFF_SKILL_NAMES;
+  if (skillNames.length === 0) {
+    throw new Error("choose at least one skill to install");
+  }
+
   // Skills: canonical copies under .agents/skills/<name>/SKILL.md, symlinked
   // into .claude/skills/<name> so both Claude Code and other agents resolve
   // them.
   const agentsRoot = join(cwd, ".agents", "skills");
   const claudeRoot = join(cwd, ".claude", "skills");
   await mkdir(claudeRoot, { recursive: true });
+  const selectedSkills = new Set(skillNames);
+
+  for (const name of STAFF_SKILL_NAMES) {
+    if (selectedSkills.has(name)) continue;
+    const canonicalResult = await removeSkillInstallIfUnmodified(join(agentsRoot, name), name);
+    if (canonicalResult === "preserved") {
+      log(`  preserved modified ${join(".agents", "skills", name)}/`);
+      continue;
+    }
+
+    const claudeResult = await removeSkillInstallIfUnmodified(join(claudeRoot, name), name, {
+      generatedSymlinkTarget: join("..", "..", ".agents", "skills", name),
+    });
+    if (claudeResult === "preserved") {
+      log(`  preserved modified ${join(".claude", "skills", name)}/`);
+    }
+  }
+
   let count = 0;
-  for (const [name, body] of Object.entries(SKILLS)) {
+  for (const name of skillNames) {
     const canonicalDir = join(agentsRoot, name);
     await mkdir(canonicalDir, { recursive: true });
-    await Bun.write(join(canonicalDir, "SKILL.md"), body);
+    await Bun.write(join(canonicalDir, "SKILL.md"), SKILLS[name]);
     await writeSkillReferences(canonicalDir, name);
 
     const link = join(claudeRoot, name);
@@ -305,14 +585,22 @@ export async function installProject(
 
 export async function installGlobal(
   harnessIds: GlobalHarnessId[],
-  options: { homeDir?: string; log?: (line: string) => void } = {},
+  options: {
+    homeDir?: string;
+    log?: (line: string) => void;
+    skillNames?: readonly StaffSkillName[];
+  } = {},
 ): Promise<{ skillCount: number; targets: { harness: GlobalHarness; root: string }[] }> {
   const homeDir = options.homeDir ?? homedir();
   const log = options.log ?? console.log;
+  const skillNames = options.skillNames ?? STAFF_SKILL_NAMES;
   const selected = GLOBAL_HARNESSES.filter((h) => harnessIds.includes(h.id));
 
   if (selected.length === 0) {
     throw new Error("choose at least one global harness");
+  }
+  if (skillNames.length === 0) {
+    throw new Error("choose at least one skill to install");
   }
 
   // A global install only ever targets harnesses the user already has — we
@@ -333,7 +621,15 @@ export async function installGlobal(
   for (const harness of selected) {
     const root = globalHarnessSkillsRoot(harness, homeDir);
     log(`  ${harness.label}: ${formatHomePath(root, homeDir)}`);
-    for (const [name, body] of Object.entries(SKILLS)) {
+    const selectedSkills = new Set(skillNames);
+    for (const name of STAFF_SKILL_NAMES) {
+      if (selectedSkills.has(name)) continue;
+      const result = await removeSkillInstallIfUnmodified(join(root, name), name);
+      if (result === "preserved") {
+        log(`  preserved modified ${formatHomePath(join(root, name), homeDir)}/`);
+      }
+    }
+    for (const name of skillNames) {
       const skillDir = join(root, name);
       // Mirror installProject (install.ts:199): clear any prior entry so a
       // pre-existing file or broken symlink colliding with the skill name
@@ -341,12 +637,12 @@ export async function installGlobal(
       // mid-run. A real skill directory is recreated below either way.
       await rm(skillDir, { recursive: true, force: true });
       await mkdir(skillDir, { recursive: true });
-      await Bun.write(join(skillDir, "SKILL.md"), body);
+      await Bun.write(join(skillDir, "SKILL.md"), SKILLS[name]);
       await writeSkillReferences(skillDir, name);
     }
   }
 
-  const skillCount = Object.keys(SKILLS).length;
+  const skillCount = skillNames.length;
   const installCount = skillCount * selected.length;
   log(`\nInstalled ${installCount} skill copies across ${selected.length} harness(es).`);
   return {
