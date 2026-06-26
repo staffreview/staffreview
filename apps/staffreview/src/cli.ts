@@ -457,15 +457,15 @@ function renderSkillGroupPromptOption({
     return `${styleText("gray", selected ? CLACK_CHECKBOX_SELECTED : CLACK_CHECKBOX_INACTIVE)} ${connector}${styleText("gray", option.label)}${styleText("dim", hint)}`;
   }
   if (active && selected) {
-    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${option.label}${styleText("dim", hint)}`;
+    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${styleText(["bold", "cyanBright"], option.label)}${styleText("dim", hint)}`;
   }
   if (active) {
     return `${styleText("cyanBright", CLACK_CHECKBOX_ACTIVE)} ${styleText(["bold", "cyanBright"], option.label)}${styleText("dim", hint)}`;
   }
   if (selected) {
-    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${styleText("gray", option.label)}${styleText("dim", hint)}`;
+    return `${styleText("green", CLACK_CHECKBOX_SELECTED)} ${styleText("white", option.label)}${styleText("dim", hint)}`;
   }
-  return `${styleText("dim", CLACK_CHECKBOX_INACTIVE)} ${styleText("gray", option.label)}${styleText("dim", hint)}`;
+  return `${styleText("dim", CLACK_CHECKBOX_INACTIVE)} ${styleText("white", option.label)}${styleText("dim", hint)}`;
 }
 
 function lockedByHint(
