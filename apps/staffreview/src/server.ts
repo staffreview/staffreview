@@ -126,6 +126,12 @@ export function diffFileForWatchEvent(filename: string | Buffer | null | undefin
   return null;
 }
 
+function formatPathSummary(paths: string[], limit = 3): string {
+  const shown = paths.slice(0, limit);
+  const suffix = paths.length > shown.length ? `, +${paths.length - shown.length} more` : "";
+  return `${paths.length} path${paths.length === 1 ? "" : "s"} (${shown.join(", ")}${suffix})`;
+}
+
 function err(message: string, status = 400): Response {
   return json({ error: message }, { status });
 }
@@ -162,6 +168,9 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
     if (perFileTimers.has(key)) return;
     const t = setTimeout(() => {
       perFileTimers.delete(key);
+      console.log(
+        `[live] diff store changed${filename ? `: ${filename}` : " (filename unavailable)"}`,
+      );
       broadcast(filename ? { type: "diff:changed", file: filename } : { type: "diff:changed" });
     }, 75);
     perFileTimers.set(key, t);
@@ -186,6 +195,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
     });
     watch(store.staffDir(cwd), (_e, filename) => {
       if (filename?.toString() === "active.json") {
+        console.log("[live] active diff pointer changed");
         broadcast({ type: "active:changed" });
       }
     });
@@ -232,7 +242,10 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
     } catch {
       // If check-ignore is unavailable, fall back to broadcasting.
     }
-    if (changed.length > 0) broadcast({ type: "repo:changed" });
+    if (changed.length > 0) {
+      console.log(`[live] working tree changed: ${formatPathSummary(changed)}`);
+      broadcast({ type: "repo:changed" });
+    }
   };
 
   try {
@@ -257,6 +270,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
       if (indexTimer) return;
       indexTimer = setTimeout(() => {
         indexTimer = null;
+        console.log("[live] git index changed");
         broadcast({ type: "repo:changed" });
       }, 150);
     });
