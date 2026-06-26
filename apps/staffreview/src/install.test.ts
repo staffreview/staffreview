@@ -17,8 +17,16 @@ import {
   installGlobal,
   installProject,
   parseGlobalHarnessIds,
+  requiredTopLevelSkillGroups,
   SKILL_REFERENCES,
   SKILLS,
+  STAFF_SKILL_NAMES,
+  skillsForTopLevelGroups,
+  TOP_LEVEL_SKILL_GROUPS,
+  topLevelGroupsForWorkerSkill,
+  topLevelSkillGroupClosure,
+  topLevelSkillGroupDependencies,
+  workerSkillsForTopLevelGroups,
 } from "./install.ts";
 
 let tmp: string;
@@ -81,6 +89,100 @@ test("installProject writes each skill's reference files next to its SKILL.md", 
   ).toBe(true);
 });
 
+test("top-level skill group dependencies expand transitively", () => {
+  expect(topLevelSkillGroupDependencies("staff-loop")).toEqual([
+    "staff-resolve",
+    "staff-comment",
+    "staff-document",
+  ]);
+  expect(requiredTopLevelSkillGroups(["staff-loop", "staff-review"])).toEqual([
+    "staff-resolve",
+    "staff-comment",
+    "staff-document",
+  ]);
+  expect(topLevelSkillGroupClosure(["staff-loop"])).toEqual([
+    "staff-loop",
+    "staff-resolve",
+    "staff-comment",
+    "staff-document",
+  ]);
+  expect(topLevelSkillGroupClosure(["staff-copy"])).toEqual(["staff-copy"]);
+});
+
+test("skillsForTopLevelGroups expands top-level groups into ordered unique dependencies", () => {
+  expect(TOP_LEVEL_SKILL_GROUPS.map((group) => group.id)).toEqual([
+    "staff-review",
+    "staff-section",
+    "staff-resolve",
+    "staff-loop",
+    "staff-copy",
+    "staff-document",
+    "staff-docs",
+    "staff-comment",
+  ]);
+  expect(skillsForTopLevelGroups(["staff-loop", "staff-review"])).toEqual([
+    "staff-review",
+    "staff-review-find",
+    "staff-review-verify",
+    "staff-comment",
+    "staff-document",
+    "staff-resolve",
+    "staff-loop",
+  ]);
+  expect(skillsForTopLevelGroups(TOP_LEVEL_SKILL_GROUPS.map((group) => group.id))).toEqual([
+    ...STAFF_SKILL_NAMES,
+  ]);
+});
+
+test("worker skills are selected only while a selected parent group needs them", () => {
+  expect(topLevelGroupsForWorkerSkill("staff-review-find")).toEqual([
+    "staff-review",
+    "staff-section",
+    "staff-loop",
+  ]);
+  expect(workerSkillsForTopLevelGroups(["staff-review"])).toEqual([
+    "staff-review-find",
+    "staff-review-verify",
+  ]);
+  expect(workerSkillsForTopLevelGroups(["staff-section"])).toEqual([
+    "staff-review-find",
+    "staff-review-verify",
+  ]);
+  expect(workerSkillsForTopLevelGroups(["staff-copy"])).toEqual([]);
+  expect(workerSkillsForTopLevelGroups(["staff-docs"])).toEqual(["staff-docs-scout"]);
+});
+
+test("installProject installs selected skill groups and removes unselected staff skills", async () => {
+  const agentsRoot = join(tmp, ".agents", "skills");
+  const claudeRoot = join(tmp, ".claude", "skills");
+  await mkdir(join(agentsRoot, "staff-docs"), { recursive: true });
+  await Bun.write(join(agentsRoot, "staff-docs", "SKILL.md"), "stale");
+  await mkdir(claudeRoot, { recursive: true });
+  await mkdir(join(claudeRoot, "staff-docs"), { recursive: true });
+
+  const skillNames = skillsForTopLevelGroups(["staff-review"]);
+  const result = await installProject(tmp, () => {}, { skillNames });
+
+  expect(result.skillCount).toBe(4);
+  expect(await readFile(join(agentsRoot, "staff-review", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-review"],
+  );
+  expect(await readFile(join(agentsRoot, "staff-review-find", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-review-find"],
+  );
+  expect(await readFile(join(agentsRoot, "staff-review-verify", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-review-verify"],
+  );
+  expect(await readFile(join(agentsRoot, "staff-comment", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-comment"],
+  );
+  expect(await Bun.file(join(agentsRoot, "staff-docs", "SKILL.md")).exists()).toBe(false);
+  expect(await Bun.file(join(claudeRoot, "staff-docs", "SKILL.md")).exists()).toBe(false);
+  expect(
+    await Bun.file(join(agentsRoot, "staff-review-find", "references", "find-guide.md")).exists(),
+  ).toBe(true);
+});
+
 test("installGlobal writes each skill's reference files next to its SKILL.md", async () => {
   const codexHarness = GLOBAL_HARNESSES.find((h) => h.id === "codex")!;
   const codexRoot = globalHarnessSkillsRoot(codexHarness, tmp);
@@ -91,6 +193,30 @@ test("installGlobal writes each skill's reference files next to its SKILL.md", a
   for (const ref of SKILL_REFERENCES["staff-review-find"] ?? []) {
     expect(await readFile(join(codexRoot, "staff-review-find", ref.path), "utf8")).toBe(ref.body);
   }
+});
+
+test("installGlobal installs selected skill groups only", async () => {
+  const codexHarness = GLOBAL_HARNESSES.find((h) => h.id === "codex")!;
+  const codexRoot = globalHarnessSkillsRoot(codexHarness, tmp);
+  await mkdir(codexRoot, { recursive: true });
+
+  const skillNames = skillsForTopLevelGroups(["staff-docs"]);
+  const result = await installGlobal(["codex"], { homeDir: tmp, log: () => {}, skillNames });
+
+  expect(result.skillCount).toBe(4);
+  expect(await readFile(join(codexRoot, "staff-docs", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-docs"],
+  );
+  expect(await readFile(join(codexRoot, "staff-docs-scout", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-docs-scout"],
+  );
+  expect(await readFile(join(codexRoot, "staff-document", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-document"],
+  );
+  expect(await readFile(join(codexRoot, "staff-comment", "SKILL.md"), "utf8")).toBe(
+    SKILLS["staff-comment"],
+  );
+  expect(await Bun.file(join(codexRoot, "staff-review", "SKILL.md")).exists()).toBe(false);
 });
 
 test("installProject does not duplicate existing gitignore entries", async () => {

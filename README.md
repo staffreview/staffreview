@@ -11,7 +11,7 @@ Staff Review opens a GitHub‑style review of *any* diff in your browser and let
 <!-- Add a screenshot or GIF of the review UI here — it sells the tool better than words. -->
 
 ```bash
-staff install            # set up the repo (writes the /staff-* skills)
+staff install            # set up the repo (choose /staff-* skill groups)
 staff main..WT           # open “main vs. working tree” in your browser
 # then, in your agent:  /staff-review main..WT   →   /staff-resolve
 ```
@@ -73,8 +73,8 @@ Prefer not to build? Run straight from source: `bun run apps/staffreview/src/cli
 From inside the git repo you want to review:
 
 ```bash
-# 1. One-time setup: writes the thirteen /staff-* skills, creates the
-#    .staffreview/ store, and gitignores per-machine state including
+# 1. One-time setup: choose skill groups to install (all selected by default),
+#    create the .staffreview/ store, and gitignore per-machine state including
 #    .staffreview/section-cache.json.
 staff install
 
@@ -112,7 +112,17 @@ staff --port 4400           # serve the UI on a specific port
 - **Resolve** a thread as *Fixed* or *Skipped*, or flag it with **Document** so `/staff-resolve` captures it as a reusable lesson.
 - The diff and the comment sidebar scroll independently, with light/dark themes, split/unified view, and syntax highlighting in the gear menu.
 
-**The skills** are how agents review. `staff install` writes thirteen of them to `.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up as slash commands) — eight you run directly plus five building blocks:
+**The skills** are how agents review. `staff install` lets you choose top-level
+skill groups (all selected by default; press `a` to toggle all). It writes the
+selected groups to `.agents/skills/` (symlinked into `.claude/skills/` so Claude
+Code picks them up as slash commands). If a selected group requires another
+top-level group, that required group is checked and locked until you unselect
+the parent — for example, `/staff-review` requires `/staff-comment`, and
+`/staff-loop` requires `/staff-resolve`, which requires `/staff-comment` and
+`/staff-document`. Internal workers such as `/staff-review-find` and
+`/staff-review-verify` are shown as locked rows; they check when a selected
+parent needs them and uncheck when no selected parent does. With every group
+selected, that is eight top-level skills plus three building blocks:
 
 | Skill | What it does |
 | --- | --- |
@@ -163,7 +173,7 @@ staff comment add|edit|delete|list|resolve|unresolve
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                        Persist browser auto-open, line wrapping, or intra-line word-diff highlighting.
-staff install                          Write the thirteen skills + initialize the .staffreview/ store.
+staff install                          Choose skill groups + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
 

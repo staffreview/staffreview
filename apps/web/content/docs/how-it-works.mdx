@@ -36,13 +36,17 @@ up changes over a WebSocket and re-renders live as the agent posts.
 
 ## The skills
 
-`staff install` writes eleven skills to `.agents/skills/` (symlinked into
-`.claude/skills/` so Claude Code picks them up as slash commands) — eight you run
-directly (`/staff-review`, `/staff-section`, `/staff-resolve`, `/staff-comment`,
-`/staff-document`, `/staff-copy`, `/staff-docs`, `/staff-loop`) plus three building
-blocks the orchestrators fan out to (`/staff-review-find`, `/staff-review-verify`,
-`/staff-docs-scout`). `/staff-section` reuses the review find/verify pair in a
-whole-file mode rather than its own.
+`staff install` lets you choose top-level skill groups to write to
+`.agents/skills/` (symlinked into `.claude/skills/` so Claude Code picks them up
+as slash commands). All groups start selected, and pressing `a` toggles all
+on/off. If a selected group requires another top-level group, that required group
+is checked and locked until you unselect the parent. For example, `/staff-loop`
+requires `/staff-resolve`, which requires `/staff-comment` and
+`/staff-document`. Internal workers such as `/staff-review-find`,
+`/staff-review-verify`, and `/staff-docs-scout` are shown as locked rows; they
+check when a selected parent needs them and uncheck when no selected parent does.
+With every group selected, that is eight top-level skills plus three building
+blocks.
 They’re just Markdown — open `.agents/skills/staff-review/SKILL.md` and tune it
 to your team’s standards. See the [Skills reference](/docs/skills) for what each
 one does.
