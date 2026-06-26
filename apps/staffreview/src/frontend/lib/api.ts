@@ -20,6 +20,7 @@ export type GlobalSettings = {
 
 async function jfetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
+    cache: "no-store",
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
   });
