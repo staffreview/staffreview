@@ -103,8 +103,27 @@ function broadcast(msg: unknown) {
 function json(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      ...(init?.headers ?? {}),
+    },
   });
+}
+
+export function diffFileForWatchEvent(filename: string | Buffer | null | undefined): string | null {
+  if (!filename) return null;
+  const normalized = filename.toString().replace(/\\/g, "/");
+  const name = normalized.split("/").pop() ?? "";
+  if (name.endsWith(".json")) return name;
+
+  const marker = ".json.";
+  const markerIndex = name.indexOf(marker);
+  if (markerIndex >= 0 && name.endsWith(".tmp")) {
+    return name.slice(0, markerIndex + ".json".length);
+  }
+
+  return null;
 }
 
 function err(message: string, status = 400): Response {
@@ -138,25 +157,35 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   // become at most one broadcast per ~75ms per file, without a single shared
   // timer that the storm could keep resetting indefinitely.
   const perFileTimers = new Map<string, Timer>();
-  const scheduleFile = (filename: string) => {
-    if (perFileTimers.has(filename)) return;
+  const scheduleFile = (filename?: string) => {
+    const key = filename ?? "*";
+    if (perFileTimers.has(key)) return;
     const t = setTimeout(() => {
-      perFileTimers.delete(filename);
-      broadcast({ type: "diff:changed", file: filename });
+      perFileTimers.delete(key);
+      broadcast(filename ? { type: "diff:changed", file: filename } : { type: "diff:changed" });
     }, 75);
-    perFileTimers.set(filename, t);
+    perFileTimers.set(key, t);
+  };
+
+  const handleDiffFileWatchEvent = (filename: string | Buffer | null | undefined) => {
+    // Only broadcast canonical diff files. saveDiff writes a uniquely-named
+    // `<slug>.json.<uuid>.tmp` then renames it into place; some watcher paths
+    // report only the temp-file side of that atomic replace, so normalize temp
+    // names back to `<slug>.json` instead of dropping them.
+    const diffFile = diffFileForWatchEvent(filename);
+    if (diffFile) scheduleFile(diffFile);
+    else if (!filename) scheduleFile();
   };
 
   try {
-    watch(store.diffsDir(cwd), { recursive: true }, (_event, filename) => {
-      // Only react to the canonical diff files. saveDiff writes a uniquely-
-      // named `<slug>.json.<uuid>.tmp` then renames it into place; forwarding
-      // those temp names would fire a spurious diff:changed per save (the UUID
-      // defeats the per-file dedupe) and trigger a redundant client refetch.
-      if (filename?.endsWith(".json")) scheduleFile(filename);
+    // Diff JSON files live directly inside `.staffreview/diffs`, so a
+    // non-recursive watch is enough and avoids relying on platform-specific
+    // recursive fs.watch behavior.
+    watch(store.diffsDir(cwd), (_event, filename) => {
+      handleDiffFileWatchEvent(filename);
     });
-    watch(store.activePointerPath(cwd).replace(/\/active\.json$/, ""), (_e, filename) => {
-      if (filename === "active.json") {
+    watch(store.staffDir(cwd), (_e, filename) => {
+      if (filename?.toString() === "active.json") {
         broadcast({ type: "active:changed" });
       }
     });
