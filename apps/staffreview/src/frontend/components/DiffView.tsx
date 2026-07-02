@@ -14,8 +14,18 @@ import {
   Plus,
   UnfoldVertical,
 } from "lucide-react";
-import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Comment, FileDiff } from "../../types.ts";
+import { contentSignature } from "../lib/content-signature.ts";
 import {
   ensureShikiLanguage,
   ensureShikiTheme,
@@ -25,10 +35,12 @@ import {
   shikiThemeFor,
   tokenizeLine,
 } from "../lib/highlight.ts";
+import { writeLruEntry } from "../lib/localstorage-lru.ts";
 import { cn } from "../lib/utils.ts";
 import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
 import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
+import { Checkbox } from "./ui/checkbox.tsx";
 
 type ComposingTarget = { line: number; side: "old" | "new"; endLine?: number };
 /**
@@ -49,15 +61,6 @@ function statusIcon(s: FileDiff["status"]) {
 
 function diffLineCount(value: string): number {
   return value === "" ? 0 : value.replace(/\n$/, "").split("\n").length;
-}
-
-function contentSignature(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${value.length}:${hash >>> 0}`;
 }
 
 export function fileChangeStats(
@@ -137,46 +140,25 @@ function loadCollapseOverrides(slug: string): Record<string, boolean> {
   }
 }
 
-// Bounded-growth guard, run on each write: drop the orphaned v1 key, then keep
-// only the most-recently-written slugs. Recency is the localStorage key
-// enumeration order, which is insertion order per the Web Storage spec:
-// `setItem` on an *existing* key updates the value in place and does NOT move
-// the key. `setCollapseOverride` therefore `removeItem`s before `setItem` so the
-// slug it touches is genuinely re-appended, making enumeration order a true
-// most-recently-written ordering and the front of `keys` the actual oldest.
-// We additionally always protect `keep` (the slug written this pass) from
-// eviction.
-export function pruneCollapseOverrides(keep: string) {
-  try {
-    localStorage.removeItem(COLLAPSE_OVERRIDES_V1_KEY);
-    const keepKey = collapseOverridesKey(keep);
-    const prefix = `${COLLAPSE_OVERRIDES_KEY_PREFIX}:`;
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith(prefix)) keys.push(k);
-    }
-    if (keys.length <= MAX_COLLAPSE_OVERRIDE_SLUGS) return;
-    // Evict the oldest (front of enumeration order), never the active slug.
-    const evictable = keys.filter((k) => k !== keepKey);
-    const toEvict = evictable.slice(0, keys.length - MAX_COLLAPSE_OVERRIDE_SLUGS);
-    for (const k of toEvict) localStorage.removeItem(k);
-  } catch {}
-}
+// Scan prefix for the per-slug override entry family (see collapseOverridesKey).
+const COLLAPSE_OVERRIDES_SCAN_PREFIX = `${COLLAPSE_OVERRIDES_KEY_PREFIX}:`;
 
 export function setCollapseOverride(slug: string, path: string, collapsed: boolean) {
+  const key = collapseOverridesKey(slug);
+  const map = loadCollapseOverrides(slug);
+  map[path] = collapsed;
   try {
-    const key = collapseOverridesKey(slug);
-    const map = loadCollapseOverrides(slug);
-    map[path] = collapsed;
-    // removeItem before setItem so an existing slug is genuinely re-appended to
-    // localStorage's enumeration order (a bare setItem on an existing key keeps
-    // its original slot). This makes pruneCollapseOverrides' eviction true
-    // most-recently-written, not FIFO-by-first-write.
-    localStorage.removeItem(key);
-    localStorage.setItem(key, JSON.stringify(map));
-    pruneCollapseOverrides(slug);
+    localStorage.removeItem(COLLAPSE_OVERRIDES_V1_KEY); // drop the orphaned v1 key on each write
   } catch {}
+  // writeLruEntry removeItem's before setItem so an existing slug is genuinely
+  // re-appended to enumeration order (a bare setItem keeps its original slot),
+  // then prunes down to the cap — true most-recently-written, not FIFO.
+  writeLruEntry(
+    COLLAPSE_OVERRIDES_SCAN_PREFIX,
+    MAX_COLLAPSE_OVERRIDE_SLUGS,
+    key,
+    JSON.stringify(map),
+  );
 }
 
 // ── Auto-collapse heuristics for large diffs ────────────────────────────────
@@ -657,7 +639,9 @@ export function DiffFile({
   wrapLines,
   expandedByDefault,
   autoCollapsed,
+  reviewed,
   onChange,
+  onReviewedChange,
 }: {
   file: FileDiff;
   slug: string;
@@ -668,15 +652,18 @@ export function DiffFile({
   wrapLines: boolean;
   expandedByDefault: boolean;
   autoCollapsed: boolean;
+  reviewed: boolean;
   onChange?: () => void;
+  onReviewedChange?: (file: FileDiff, reviewed: boolean) => void;
 }) {
   const [composingLines, setComposingLines] = useState<ComposingTarget[]>([]);
   const [pathCopied, setPathCopied] = useState(false);
+  const reviewedId = useId();
   // Whole-card collapse (the header chevron) — independent of the
   // "expand unchanged context" setting below. Defaults to expanded; a
   // per-file toggle is remembered as an override.
-  const [collapsed, setCollapsed] = useState<boolean>(
-    () => loadCollapseOverrides(slug)[file.path] ?? autoCollapsed,
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    reviewed ? true : (loadCollapseOverrides(slug)[file.path] ?? autoCollapsed),
   );
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -684,6 +671,11 @@ export function DiffFile({
       setCollapseOverride(slug, file.path, next);
       return next;
     });
+  };
+  const handleReviewedChange = (next: boolean) => {
+    onReviewedChange?.(file, next);
+    setCollapsed(next);
+    if (!next) setCollapseOverride(slug, file.path, false);
   };
 
   // Listen for "expand-file" events fired by the sidebar when the user
@@ -712,11 +704,50 @@ export function DiffFile({
   // drops it from `activeCommentedPaths`, flipping `autoCollapsed` to true; or
   // freeing per-diff budget in file A pushes file B over the cap. Re-collapsing
   // is left to explicit user action (the chevron), which writes an override.
+  //
+  // A reviewed file must stay collapsed regardless, so short-circuit on
+  // `reviewed` first. Marking a file reviewed force-collapses it WITHOUT writing
+  // an override (only *unchecking* writes one), so a reviewed card usually has
+  // nothing in `loadCollapseOverrides` guarding it here. Because
+  // `computeAutoCollapsed` couples files via a shared per-diff budget, a runtime
+  // change elsewhere (a file removed, a comment added) can free budget and flip
+  // a reviewed file's `autoCollapsed` false → without this guard the effect
+  // would spuriously force-expand the reviewed card (and `prevReviewedRef`
+  // wouldn't re-run to re-collapse it, since its `reviewed` dep is unchanged),
+  // breaking the reviewed⇒collapsed invariant. Treat `reviewed` as
+  // authoritative, exactly as `prevReviewedRef` does.
   useEffect(() => {
+    if (reviewed) return; // reviewed files stay collapsed; never force-expand
     if (autoCollapsed) return; // never auto-collapse, only force-expand
     if (file.path in loadCollapseOverrides(slug)) return; // explicit user choice wins
     setCollapsed((prev) => (prev ? false : prev));
-  }, [autoCollapsed, file.path, slug]);
+  }, [reviewed, autoCollapsed, file.path, slug]);
+
+  // Keep the card's collapse state in sync with the `reviewed` prop in BOTH
+  // directions. Marking a file reviewed force-collapses it. The reverse matters
+  // too: when a reviewed file's content changes in the working tree its
+  // signature stops matching, `reviewedPaths` drops it, and `reviewed` flips
+  // false via the prop (not `handleReviewedChange`) — without this the card
+  // would uncheck/un-dim but stay collapsed, hiding the changes that now need
+  // re-review. On that reviewed→false transition we re-expand, unless the user
+  // has an explicit *collapsed* override (`true`), which always wins. We must
+  // check the override's VALUE, not just its presence: overrides map path →
+  // collapsed?, so a `false` (expanded) override — e.g. the user expanded via
+  // the chevron, then checked Reviewed (which force-collapses but keeps the
+  // override) — must NOT block re-expansion, or the card would stay collapsed
+  // against the override's own `false` value.
+  const prevReviewedRef = useRef(reviewed);
+  useEffect(() => {
+    const wasReviewed = prevReviewedRef.current;
+    prevReviewedRef.current = reviewed;
+    if (reviewed) {
+      setCollapsed(true);
+      return;
+    }
+    if (wasReviewed && loadCollapseOverrides(slug)[file.path] !== true) {
+      setCollapsed(false);
+    }
+  }, [reviewed, file.path, slug]);
 
   const shouldRenderTextDiff = !collapsed && !file.isSymlink && !file.isBinary;
   const diffRef = useRef<HTMLDivElement>(null);
@@ -1692,7 +1723,11 @@ export function DiffFile({
 
   return (
     <div
-      className="rounded-lg border border-border bg-card overflow-hidden"
+      className={cn(
+        "rounded-lg border border-border bg-card overflow-hidden transition-opacity",
+        reviewed && "opacity-70",
+      )}
+      data-reviewed={reviewed ? "true" : "false"}
       data-testid={`file-card-${file.path}`}
     >
       <div
@@ -1717,7 +1752,10 @@ export function DiffFile({
           )}
         </Button>
         {statusIcon(file.status)}
-        <span className="min-w-0 truncate font-mono text-sm" title={file.path}>
+        <span
+          className={cn("min-w-0 truncate font-mono text-sm", reviewed && "text-muted-foreground")}
+          title={file.path}
+        >
           {file.path}
         </span>
         <Button
@@ -1762,7 +1800,10 @@ export function DiffFile({
           </Badge>
         )}
         <div className="flex-1" />
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div
+          className="flex shrink-0 items-center gap-2.5"
+          data-testid={`file-actions-${file.path}`}
+        >
           {hasChangeStats && (
             <span
               className="flex items-center gap-1 font-mono text-xs"
@@ -1780,6 +1821,25 @@ export function DiffFile({
           <Badge variant="outline" className="capitalize">
             {file.status}
           </Badge>
+          <label
+            htmlFor={reviewedId}
+            className={cn(
+              "flex h-7 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-md border border-transparent px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+              reviewed &&
+                "border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success",
+            )}
+            title={reviewed ? "Mark file as not reviewed" : "Mark file as reviewed"}
+            data-reviewed={reviewed ? "true" : "false"}
+          >
+            <Checkbox
+              id={reviewedId}
+              checked={reviewed}
+              onCheckedChange={(checked) => handleReviewedChange(checked === true)}
+              className="size-3.5 rounded-[3px]"
+              data-testid={`reviewed-${file.path}`}
+            />
+            <span>Reviewed</span>
+          </label>
         </div>
       </div>
 
@@ -1893,6 +1953,7 @@ export const DiffView = memo(function DiffView({
   files,
   slug,
   comments,
+  reviewedPaths,
   splitView,
   themeMode,
   syntaxTheme,
@@ -1900,10 +1961,12 @@ export const DiffView = memo(function DiffView({
   wrapLines = true,
   expandedByDefault = true,
   onChange,
+  onReviewedChange,
 }: {
   files: FileDiff[];
   slug: string;
   comments: Comment[];
+  reviewedPaths: Set<string>;
   splitView: boolean;
   themeMode: "light" | "dark";
   syntaxTheme?: string;
@@ -1911,6 +1974,7 @@ export const DiffView = memo(function DiffView({
   wrapLines?: boolean;
   expandedByDefault?: boolean;
   onChange?: () => void;
+  onReviewedChange?: (file: FileDiff, reviewed: boolean) => void;
 }) {
   const resolvedSyntaxTheme = syntaxTheme ?? shikiThemeFor(themeMode);
   // Decide up front which files start collapsed so a large diff doesn't mount
@@ -1952,7 +2016,9 @@ export const DiffView = memo(function DiffView({
           wrapLines={wrapLines}
           expandedByDefault={expandedByDefault}
           autoCollapsed={autoCollapsed.has(f.path)}
+          reviewed={reviewedPaths.has(f.path)}
           onChange={onChange}
+          onReviewedChange={onReviewedChange}
         />
       ))}
     </div>
