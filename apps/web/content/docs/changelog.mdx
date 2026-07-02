@@ -5,6 +5,20 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.7.0 — 2026-07-02
+
+### Added
+- **Files can now be marked as reviewed.** Each file in the diff UI has a
+  Reviewed checkbox; reviewed files collapse and dim in the diff, and the right
+  sidebar file list shows their checked state so large reviews are easier to
+  track.
+
+### Changed
+- **Reviewed-file state is persisted per diff and invalidated on content
+  changes.** Staff Review signs reviewed marks against each file's diff content,
+  clears stale marks after text edits, and bounds the related localStorage data
+  with a shared LRU helper.
+
 ## 1.6.0 — 2026-06-26
 
 ### Added
