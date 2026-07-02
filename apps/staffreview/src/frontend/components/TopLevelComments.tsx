@@ -1,6 +1,7 @@
-import { MessageSquarePlus } from "lucide-react";
+import { CheckCircle2, MessageSquarePlus } from "lucide-react";
 import { memo, type ReactNode, useMemo, useState } from "react";
 import type { Comment, FileDiff } from "../../types.ts";
+import { cn } from "../lib/utils.ts";
 import { CommentThread, NewCommentEditor } from "./CommentThread.tsx";
 import { setLineHash } from "./DiffView.tsx";
 import { Badge } from "./ui/badge.tsx";
@@ -69,6 +70,7 @@ export const TopLevelComments = memo(function TopLevelComments({
   slug,
   comments,
   files,
+  reviewedPaths,
   onChange,
   headerLeft,
   composing,
@@ -77,6 +79,7 @@ export const TopLevelComments = memo(function TopLevelComments({
   slug: string;
   comments: Comment[];
   files: FileDiff[];
+  reviewedPaths: Set<string>;
   onChange?: () => void;
   headerLeft?: ReactNode;
   composing: boolean;
@@ -217,29 +220,47 @@ export const TopLevelComments = memo(function TopLevelComments({
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {files.map((f) => (
-                <li key={f.path}>
-                  <button
-                    type="button"
-                    onClick={() => scrollToFile(f.path)}
-                    title={f.path}
-                    data-testid={`sidebar-file-${f.path}`}
-                    className="flex w-full items-center px-2 py-1.5 text-left font-mono text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted"
-                  >
-                    {/* Left-truncate the whole path in one span (ellipsis on
-                     * the left via rtl, plaintext bdi to keep natural reading
-                     * order), matching the inline-comment header above. The
-                     * base filename stays visible and a long dir OR a long
-                     * filename can never overflow the sidebar. */}
-                    <span
-                      className="min-w-0 overflow-hidden whitespace-nowrap text-ellipsis text-foreground"
-                      style={{ direction: "rtl" }}
+              {files.map((f) => {
+                const reviewed = reviewedPaths.has(f.path);
+                return (
+                  <li key={f.path}>
+                    <button
+                      type="button"
+                      onClick={() => scrollToFile(f.path)}
+                      title={reviewed ? `${f.path} (reviewed)` : f.path}
+                      data-testid={`sidebar-file-${f.path}`}
+                      data-reviewed={reviewed ? "true" : "false"}
+                      className={cn(
+                        "flex w-full items-center gap-1.5 px-2 py-1.5 text-left font-mono text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted",
+                        reviewed && "opacity-70",
+                      )}
                     >
-                      <bdi style={{ unicodeBidi: "plaintext" }}>{f.path}</bdi>
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                        {reviewed && (
+                          <CheckCircle2
+                            className="h-3.5 w-3.5 text-success"
+                            aria-label="Reviewed"
+                          />
+                        )}
+                      </span>
+                      {/* Left-truncate the whole path in one span (ellipsis on
+                       * the left via rtl, plaintext bdi to keep natural reading
+                       * order), matching the inline-comment header above. The
+                       * base filename stays visible and a long dir OR a long
+                       * filename can never overflow the sidebar. */}
+                      <span
+                        className={cn(
+                          "min-w-0 overflow-hidden whitespace-nowrap text-ellipsis",
+                          reviewed ? "text-muted-foreground" : "text-foreground",
+                        )}
+                        style={{ direction: "rtl" }}
+                      >
+                        <bdi style={{ unicodeBidi: "plaintext" }}>{f.path}</bdi>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

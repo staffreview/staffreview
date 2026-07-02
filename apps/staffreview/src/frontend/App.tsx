@@ -28,6 +28,12 @@ import {
 } from "./default-settings.ts";
 import { api, type ColorScheme, openSocket, type WSEvent } from "./lib/api.ts";
 import { ensureShikiTheme } from "./lib/highlight.ts";
+import {
+  fileReviewSignature,
+  loadReviewedFileSignatures,
+  reviewedFilePaths,
+  saveReviewedFileSignatures,
+} from "./lib/reviewed-files.ts";
 import { baseName, cn, shortenSlug } from "./lib/utils.ts";
 import logoUrl from "./logo.png";
 
@@ -158,6 +164,7 @@ export function App() {
   const [head, setHead] = useState<DiffTarget>({ kind: "working-tree" });
   const [diff, setDiff] = useState<Diff | null>(null);
   const [files, setFiles] = useState<FileDiff[]>([]);
+  const [reviewedFileSignatures, setReviewedFileSignatures] = useState<Record<string, string>>({});
   const baseRef = useRef(base);
   const headRef = useRef(head);
   const infoRef = useRef<typeof info>(null);
@@ -523,6 +530,7 @@ export function App() {
       ]);
       setFiles((prev) => mergeFileDiffs(prev, filesResp.files));
       slugRef.current = diffResp.diff.slug;
+      setReviewedFileSignatures(loadReviewedFileSignatures(diffResp.diff.slug));
       setDiff(diffResp.diff);
     } catch (e) {
       setError((e as Error).message);
@@ -601,6 +609,31 @@ export function App() {
   }, [info]);
 
   const comments = diff?.comments ?? [];
+  const reviewedPaths = useMemo(
+    () => reviewedFilePaths(files, reviewedFileSignatures),
+    [files, reviewedFileSignatures],
+  );
+  const setFileReviewed = useCallback(
+    (file: FileDiff, reviewed: boolean) => {
+      const slug = slugRef.current;
+      if (!slug) return;
+
+      // Compute `next` from the current value before calling the setter so the
+      // updater stays pure. Persisting (localStorage write + prune) inside the
+      // updater would double-fire under StrictMode and could run on discarded
+      // concurrent renders — every other persisted setter here keeps the
+      // side effect outside the updater too.
+      const next = { ...reviewedFileSignatures };
+      if (reviewed) {
+        next[file.path] = fileReviewSignature(file);
+      } else {
+        delete next[file.path];
+      }
+      setReviewedFileSignatures(next);
+      saveReviewedFileSignatures(slug, next);
+    },
+    [reviewedFileSignatures],
+  );
   const sidebarHeaderLeft = useMemo(
     () => (
       <Button
@@ -769,12 +802,14 @@ export function App() {
               files={files}
               slug={diff.slug}
               comments={comments}
+              reviewedPaths={reviewedPaths}
               splitView={splitView}
               themeMode={effectiveTheme}
               syntaxTheme={effectiveTheme === "dark" ? syntaxThemeDark : syntaxThemeLight}
               structuredHighlighting={structuredHighlighting}
               wrapLines={wrapLines}
               expandedByDefault={filesExpandedByDefault}
+              onReviewedChange={setFileReviewed}
               onChange={refreshDiffOnly}
             />
           ) : null}
@@ -800,6 +835,7 @@ export function App() {
                 slug={diff.slug}
                 comments={comments}
                 files={files}
+                reviewedPaths={reviewedPaths}
                 onChange={refreshDiffOnly}
                 composing={composing}
                 onComposingChange={setComposing}

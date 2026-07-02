@@ -16,7 +16,6 @@ import {
   MAX_AUTO_EXPANDED_LINES,
   MAX_COLLAPSE_OVERRIDE_SLUGS,
   PER_FILE_COLLAPSE_LINES,
-  pruneCollapseOverrides,
   setCollapseOverride,
 } from "./DiffView.tsx";
 
@@ -399,13 +398,14 @@ test("computeActiveCommentedPaths ignores replies (only roots count)", () => {
   expect(paths.has("reply-only.ts")).toBe(false);
 });
 
-// ── pruneCollapseOverrides ──────────────────────────────────────────────────
+// ── setCollapseOverride LRU recency ─────────────────────────────────────────
 //
 // A minimal localStorage-shaped stub. A Map preserves insertion order, which is
-// exactly the enumeration order pruneCollapseOverrides treats as recency: the
-// oldest-inserted keys sort first and are the eviction candidates. `setItem` on
-// an existing key updates in place WITHOUT reordering — matching the Web Storage
-// spec — so the test never relies on a bare setItem re-appending.
+// exactly the enumeration order `writeLruEntry` (lib/localstorage-lru.ts) treats
+// as recency: the oldest-inserted keys sort first and are the eviction
+// candidates. `setItem` on an existing key updates in place WITHOUT reordering —
+// matching the Web Storage spec — so the test never relies on a bare setItem
+// re-appending.
 function makeLocalStorageStub() {
   const map = new Map<string, string>();
   return {
@@ -467,87 +467,14 @@ function seedSlugs(n: number): void {
 const present = (i: number) => expect(stub.getItem(slugKey(i))).not.toBeNull();
 const evicted = (i: number) => expect(stub.getItem(slugKey(i))).toBeNull();
 
-test("pruneCollapseOverrides evicts nothing at exactly the cap", () => {
-  const n = MAX_COLLAPSE_OVERRIDE_SLUGS;
-  seedSlugs(n);
-  pruneCollapseOverrides(slugName(n - 1));
-  expect(stub.length).toBe(MAX_COLLAPSE_OVERRIDE_SLUGS);
-  for (let i = 0; i < n; i++) present(i);
-});
-
-test("pruneCollapseOverrides removes the orphaned v1 key", () => {
-  stub.setItem(COLLAPSE_OVERRIDES_V1_KEY, "{}");
-  seedSlugs(3);
-  pruneCollapseOverrides(slugName(2));
-  expect(stub.getItem(COLLAPSE_OVERRIDES_V1_KEY)).toBeNull();
-});
-
-test("pruneCollapseOverrides evicts exactly the count of oldest keys above the cap", () => {
-  const over = 5;
-  const n = MAX_COLLAPSE_OVERRIDE_SLUGS + over;
-  seedSlugs(n);
-  // Keep the newest slug; the `over` oldest (front of enumeration) should go.
-  pruneCollapseOverrides(slugName(n - 1));
-  expect(stub.length).toBe(MAX_COLLAPSE_OVERRIDE_SLUGS);
-  // The first `over` slugs are the oldest and must be evicted.
-  for (let i = 0; i < over; i++) evicted(i);
-  // Everything from index `over` onward survives.
-  for (let i = over; i < n; i++) present(i);
-});
-
-test("pruneCollapseOverrides protects `keep` even when it sorts first (oldest)", () => {
-  const over = 3;
-  const n = MAX_COLLAPSE_OVERRIDE_SLUGS + over;
-  seedSlugs(n);
-  // `keep` is the very oldest entry — it would be the first evicted without
-  // the keepKey guard.
-  pruneCollapseOverrides(slugName(0));
-  expect(stub.length).toBe(MAX_COLLAPSE_OVERRIDE_SLUGS);
-  present(0); // kept survives despite sorting first
-  // Protecting the oldest means eviction starts at the next-oldest and takes
-  // `over` of them (indices 1..over).
-  for (let i = 1; i <= over; i++) evicted(i);
-  present(over + 1);
-});
-
-test("pruneCollapseOverrides ignores foreign localStorage keys", () => {
-  stub.setItem("unrelated:thing", "x");
-  seedSlugs(2);
-  pruneCollapseOverrides(slugName(1));
-  // Foreign key is neither counted toward the cap nor evicted.
-  expect(stub.getItem("unrelated:thing")).not.toBeNull();
-});
-
-// Re-touching an existing slug must re-append it to enumeration order so it
-// escapes eviction — the whole reason `setCollapseOverride` does
-// `removeItem(key)` before `setItem(key, …)` (DiffView.tsx:199). The other prune
-// tests seed via a bare `setItem`, which updates in place WITHOUT reordering, so
-// they'd stay green even if that `removeItem` were deleted (silently reverting to
-// FIFO-by-first-write eviction). This test mirrors that remove-then-set ordering
-// to lock the recency behavior in.
-test("pruneCollapseOverrides keeps a re-appended (re-touched) slug and evicts the now-oldest", () => {
-  const over = 1;
-  const n = MAX_COLLAPSE_OVERRIDE_SLUGS + over;
-  seedSlugs(n);
-  // Re-touch the oldest slug exactly the way `setCollapseOverride` does:
-  // removeItem then setItem, which moves it to the BACK of enumeration order.
-  stub.removeItem(slugKey(0));
-  stub.setItem(slugKey(0), "{}");
-  // Now slug-1 is the oldest. Prune with a different `keep` so neither slug-0
-  // nor slug-1 is protected by the keepKey guard — survival must come purely
-  // from re-append recency.
-  pruneCollapseOverrides(slugName(n - 1));
-  expect(stub.length).toBe(MAX_COLLAPSE_OVERRIDE_SLUGS);
-  present(0); // re-touched → re-appended → newest → survives
-  evicted(1); // now the oldest → evicted
-  for (let i = 2; i < n; i++) present(i);
-});
-
-// Bind the recency behavior to the real code path: `setCollapseOverride` must
-// `removeItem` before `setItem` so writing to an EXISTING slug re-appends it to
-// enumeration order. Deleting the `removeItem(key)` line at DiffView.tsx:199
-// leaves the bare in-place `setItem` (no reorder), so this test fails — exactly
-// the regression the prune tests can't catch.
+// Bind the recency behavior to the real code path: `setCollapseOverride` writes
+// through `writeLruEntry` (lib/localstorage-lru.ts), which `removeItem`s before
+// `setItem` so writing to an EXISTING slug re-appends it to enumeration order.
+// Deleting that `removeItem`-before-`setItem` in `writeLruEntry` leaves a bare
+// in-place `setItem` (no reorder), so this test fails — locking the recency
+// behavior in at the level production actually exercises. (The prune/eviction
+// core is unit-tested directly against `pruneLru`/`writeLruEntry` in
+// localstorage-lru.test.ts.)
 test("setCollapseOverride re-appends an existing slug to the back of enumeration order", () => {
   // Seed two slugs; slug-0 is the oldest (front of enumeration).
   stub.setItem(slugKey(0), "{}");
@@ -565,10 +492,23 @@ test("setCollapseOverride keeps a re-touched slug alive across its own prune", (
   const n = MAX_COLLAPSE_OVERRIDE_SLUGS; // at the cap
   seedSlugs(n); // slug-0 oldest … slug-(n-1) newest
   // Re-touch the oldest slug, then add one brand-new slug to push over the cap.
-  // setCollapseOverride runs pruneCollapseOverrides internally on each call.
+  // setCollapseOverride prunes via writeLruEntry (lib/localstorage-lru.ts) on
+  // each call.
   setCollapseOverride(slugName(0), "x.ts", true); // slug-0 → re-appended (newest)
   setCollapseOverride(slugName(n), "y.ts", true); // new slug → over cap → prune
   expect(stub.length).toBe(MAX_COLLAPSE_OVERRIDE_SLUGS);
   present(0); // re-touched → survives despite being seeded first
   evicted(1); // now the genuine oldest → evicted
+});
+
+// The v2 slug migration orphaned the pre-slug global key
+// (COLLAPSE_OVERRIDES_V1_KEY). setCollapseOverride drops it once, on the next
+// write, so an upgrader's stale `staff:file-collapse-overrides` entry doesn't
+// linger forever. writeLruEntry/pruneLru only scan the `:v2:` prefix, so nothing
+// else touches the v1 key — this removeItem is the sole cleanup. Deleting that
+// line silently strips the migration with every other test still green.
+test("setCollapseOverride removes the orphaned v1 key on write", () => {
+  stub.setItem(COLLAPSE_OVERRIDES_V1_KEY, "{}");
+  setCollapseOverride(slugName(0), "some/file.ts", true);
+  expect(stub.getItem(COLLAPSE_OVERRIDES_V1_KEY)).toBeNull();
 });

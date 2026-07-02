@@ -41,3 +41,38 @@ test("clicking the chevron collapses the file and persists across reload", async
     page.getByTestId("file-card-math.ts").locator("table tbody tr").first(),
   ).toBeVisible();
 });
+
+test("marking a file reviewed collapses, dims, and marks it in the sidebar", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("target-picker-head-button").click();
+  await page.getByRole("option", { name: /feature\/improve-math/ }).click();
+  await expect(page.getByText("math.ts", { exact: true }).first()).toBeVisible();
+
+  const mathCard = page.getByTestId("file-card-math.ts");
+  const reviewed = page.getByTestId("reviewed-math.ts");
+  await expect(mathCard.locator("table tbody tr").first()).toBeVisible();
+  await expect(reviewed).toHaveAttribute("aria-checked", "false");
+
+  await reviewed.click();
+  await expect(reviewed).toHaveAttribute("aria-checked", "true");
+  await expect(mathCard).toHaveAttribute("data-reviewed", "true");
+  await expect(page.getByTestId("collapse-math.ts")).toHaveAttribute("aria-expanded", "false");
+  await expect(mathCard.locator("table tbody tr")).toHaveCount(0);
+
+  await page.getByTestId("sidebar-tab-files").click();
+  const sidebarFile = page.getByTestId("sidebar-file-math.ts");
+  await expect(sidebarFile).toHaveAttribute("data-reviewed", "true");
+  await expect(sidebarFile).toContainText("math.ts");
+
+  await page.reload();
+  await page.getByTestId("target-picker-head-button").click();
+  await page.getByRole("option", { name: /feature\/improve-math/ }).click();
+  await expect(page.getByTestId("reviewed-math.ts")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("file-card-math.ts")).toHaveAttribute("data-reviewed", "true");
+  await expect(page.getByTestId("collapse-math.ts")).toHaveAttribute("aria-expanded", "false");
+
+  await page.getByTestId("reviewed-math.ts").click();
+  await expect(page.getByTestId("reviewed-math.ts")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("file-card-math.ts")).toHaveAttribute("data-reviewed", "false");
+  await expect(page.getByTestId("collapse-math.ts")).toHaveAttribute("aria-expanded", "true");
+});
