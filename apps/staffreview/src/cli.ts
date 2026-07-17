@@ -36,16 +36,19 @@ import {
   type DiffTarget,
   type ResolutionStatus,
 } from "./types.ts";
+import { normalizeAgents, normalizeIntervalSeconds, runWatch } from "./watch.ts";
 
 const VERSION = packageJson.version;
 const BOOLEAN_FLAGS = new Set([
   "global",
   "help",
   "h",
+  "all",
   "json",
   "no-open",
   "no-set-active",
   "open",
+  "once",
   "project",
   "version",
   "v",
@@ -589,6 +592,16 @@ USAGE
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
 
+  staff watch <pr> [--agents <n>] [--interval <seconds>] [--once]
+  staff watch --all [--agents <n>] [--interval <seconds>] [--once]
+                                 Watch GitHub PR commits and run /staff-review
+                                 whenever a watched PR gets a new commit.
+                                 Posts a reusable status comment and mirrors
+                                 findings to GitHub PR comments. <pr> is any ref
+                                 accepted by \`gh pr view\`; --all watches open,
+                                 non-draft PRs. Uses codex exec by default, or
+                                 --review-command / $STAFF_WATCH_REVIEW_COMMAND.
+
   staff install [--scope project|global] [--harness <ids|all>]
                                  Set up Staff Review skills. In an interactive
                                  terminal, prompts for project vs global install
@@ -652,6 +665,7 @@ async function main(argv: string[]) {
     "files",
     "comment",
     "settings",
+    "watch",
     "install",
     "version",
     "help",
@@ -1071,6 +1085,31 @@ async function main(argv: string[]) {
         return;
       }
       console.log(JSON.stringify(resolved, null, 2));
+      return;
+    }
+
+    case "watch": {
+      const prRef = positional[1];
+      const watchAll = booleanFlag(flags.all);
+      if (watchAll && prRef) {
+        throw new Error("use either `staff watch <pr>` or `staff watch --all`, not both");
+      }
+      const configuredSettings = settings.settingsWithDefaults(await settings.readSettings());
+      await runWatch({
+        cwd,
+        prRef,
+        all: watchAll,
+        once: booleanFlag(flags.once),
+        intervalSeconds: normalizeIntervalSeconds(
+          typeof flags.interval === "string" ? flags.interval : undefined,
+        ),
+        agents: normalizeAgents(
+          typeof flags.agents === "string" ? flags.agents : configuredSettings.reviewAgents,
+        ),
+        reviewCommand:
+          typeof flags["review-command"] === "string" ? flags["review-command"] : undefined,
+        log: console.log,
+      });
       return;
     }
 

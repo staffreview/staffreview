@@ -12,6 +12,7 @@ staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set openBrowser false   Stop opening the browser automatically.
+staff watch <pr> | --all               Poll GitHub PRs for new commits and review them.
 staff install                          Choose skill groups + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
@@ -81,3 +82,23 @@ Settings (theme, split/unified, font size, syntax theme, browser auto-open,
 line wrapping, intra-line word-diff highlighting, review-loop cap, the review
 agent count, the section review agent count, and the docs scout count) live in
 the gear menu and persist globally.
+
+## Watch
+
+```bash
+staff watch 123                        # review PR #123 now and on new commits
+staff watch https://github.com/owner/repo/pull/123 --agents 4
+staff watch --all --interval 120       # open, non-draft PRs every two minutes
+staff watch 123 --once                 # one polling pass, useful for automation
+```
+
+`staff watch` creates a local Staff Review diff for each PR commit, runs
+`/staff-review <slug> <agents>`, then mirrors new findings to GitHub PR review
+comments. It reuses one top-level PR status comment per PR, updating it when a
+review starts, completes, or fails.
+
+By default it invokes `codex exec` and passes the review prompt on stdin. To use
+another harness, pass `--review-command <cmd>` or set
+`STAFF_WATCH_REVIEW_COMMAND`; the command receives the prompt on stdin plus
+`STAFF_WATCH_PR_NUMBER`, `STAFF_WATCH_PR_URL`, `STAFF_WATCH_DIFF_SLUG`, and
+`STAFF_WATCH_AGENTS` in the environment.
