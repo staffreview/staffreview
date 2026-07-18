@@ -1,12 +1,24 @@
 import { createHash } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS } from "./review-config.ts";
+import type { WatchHarnessSettings } from "./settings.ts";
 import * as store from "./store.ts";
 import type { Comment, Diff } from "./types.ts";
 
 const STATUS_MARKER = "<!-- staff-watch-status -->";
 const COMMENT_MARKER_PREFIX = "<!-- staff-watch-comment:";
+const COMMENT_MARKER_PATTERN =
+  /^<!-- staff-watch-comment: [^\s#:/]+\/[^\s#:]+#\d+:[0-9a-fA-F]{40}:[0-9a-fA-F]{24} -->$/;
 const DEFAULT_INTERVAL_SECONDS = 60;
 const MAX_TIMEOUT_SECONDS = 2_147_483;
+const GITHUB_CREDENTIAL_ENV_KEYS = [
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "GITHUB_ENTERPRISE_TOKEN",
+];
 
 type LogFn = (message: string) => void;
 
@@ -45,6 +57,7 @@ export type WatchOptions = {
   intervalSeconds?: number;
   agents?: number;
   reviewCommand?: string;
+  watchHarness?: WatchHarnessSettings;
   log?: LogFn;
 };
 
@@ -89,11 +102,11 @@ function ghApiArgs(
 ): string[] {
   let hostname: string | undefined;
   try {
-    hostname = new URL(repo.url).hostname;
+    hostname = new URL(repo.url).host;
   } catch {
     hostname = undefined;
   }
-  const hostArgs = hostname && hostname !== "github.com" ? ["--hostname", hostname] : [];
+  const hostArgs = hostname ? ["--hostname", hostname] : [];
   return ["api", ...hostArgs, ...preArgs, path, ...args];
 }
 
@@ -189,7 +202,7 @@ function normalizedRepoKey(remoteUrl: string): string | undefined {
   try {
     const url = new URL(trimmed);
     const path = normalizedRepoPath(url.pathname);
-    return path ? `${url.hostname.toLowerCase()}/${path}` : undefined;
+    return path ? `${url.host.toLowerCase()}/${path}` : undefined;
   } catch {
     return undefined;
   }
@@ -353,11 +366,25 @@ async function currentMergeBase(
 
 async function createPrDiff(pr: PullRequest, cwd: string, repo: GithubRepo): Promise<Diff> {
   const { baseSha, headSha } = await ensurePrCommits(pr, cwd, repo);
-  return store.loadOrCreateDiff(
-    { kind: "commit", ref: baseSha, label: pr.baseRefName },
+  return store.loadOrCreateDiffWithSlug(
+    watchDiffSlug(repo, pr, baseSha, headSha),
+    { kind: "commit", ref: baseSha },
     { kind: "commit", ref: headSha, label: pr.headRefName },
     cwd,
   );
+}
+
+function safeSlugPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+}
+
+export function watchDiffSlug(
+  repo: GithubRepo,
+  pr: PullRequest,
+  baseSha: string,
+  headSha: string,
+): string {
+  return `watch-${safeSlugPart(repo.nameWithOwner)}-pr-${pr.number}-${baseSha}..${headSha}`;
 }
 
 export function buildReviewPrompt(pr: PullRequest, slug: string, agents: number): string {
@@ -378,8 +405,11 @@ function commandEnvironment(pr: PullRequest, slug: string, agents: number): Reco
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
   }
+  for (const key of GITHUB_CREDENTIAL_ENV_KEYS) delete env[key];
   return {
     ...env,
+    GH_CONFIG_DIR: mkdtempSync(join(tmpdir(), "staff-watch-gh-")),
+    GH_PROMPT_DISABLED: "1",
     STAFF_WATCH_PR_NUMBER: String(pr.number),
     STAFF_WATCH_PR_URL: pr.url,
     STAFF_WATCH_DIFF_SLUG: slug,
@@ -389,43 +419,76 @@ function commandEnvironment(pr: PullRequest, slug: string, agents: number): Reco
 
 async function runReviewCommand({
   command,
+  harness,
   cwd,
   prompt,
   env,
 }: {
   command?: string;
+  harness?: WatchHarnessSettings;
   cwd: string;
   prompt: string;
   env: Record<string, string>;
 }) {
   const configured = command?.trim() || process.env.STAFF_WATCH_REVIEW_COMMAND?.trim();
-  const proc = configured
-    ? Bun.spawn(shellCommand(configured), {
-        cwd,
-        env,
-        stdin: "pipe",
-        stdout: "inherit",
-        stderr: "inherit",
-      })
-    : Bun.spawn(["codex", "exec", "--cd", cwd, "-"], {
-        cwd,
-        env,
-        stdin: "pipe",
-        stdout: "inherit",
-        stderr: "inherit",
-      });
+  if (configured) {
+    const proc = Bun.spawn(shellCommand(configured), {
+      cwd,
+      env,
+      stdin: "pipe",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      throw new Error(reviewCommandFailureMessage(configured, exitCode));
+    }
+    return;
+  }
 
+  if (harness) {
+    const proc = Bun.spawn(watchHarnessCommand(harness, prompt), {
+      cwd,
+      env,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      throw new Error(watchHarnessFailureMessage(exitCode));
+    }
+    return;
+  }
+
+  const proc = Bun.spawn(["codex", "exec", "--cd", cwd, "-"], {
+    cwd,
+    env,
+    stdin: "pipe",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   proc.stdin.write(prompt);
   proc.stdin.end();
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    throw new Error(reviewCommandFailureMessage(configured, exitCode));
+    throw new Error(reviewCommandFailureMessage(undefined, exitCode));
   }
 }
 
 export function reviewCommandFailureMessage(command: string | undefined, exitCode: number): string {
   const label = command?.trim() ? "configured review command" : "codex exec --cd <repo> -";
   return `${label} failed with exit code ${exitCode}`;
+}
+
+export function watchHarnessCommand(harness: WatchHarnessSettings, prompt: string): string[] {
+  return [harness.command, ...harness.args, prompt];
+}
+
+export function watchHarnessFailureMessage(exitCode: number): string {
+  return `configured watch harness failed with exit code ${exitCode}`;
 }
 
 function shellCommand(command: string): string[] {
@@ -562,8 +625,13 @@ function extractCommentMarkers(body: string): string[] {
     if (start < 0) break;
     const end = body.indexOf("-->", start);
     if (end < 0) break;
-    markers.push(body.slice(start, end + 3));
-    index = end + 3;
+    const marker = body.slice(start, end + 3);
+    if (COMMENT_MARKER_PATTERN.test(marker)) {
+      markers.push(marker);
+      index = end + 3;
+    } else {
+      index = start + COMMENT_MARKER_PREFIX.length;
+    }
   }
   return markers;
 }
@@ -603,10 +671,16 @@ export function commentsToPublish({
   pr: PullRequest;
   headSha: string;
 }): Array<{ comment: Comment; marker: string }> {
-  return diff.comments
-    .filter((comment) => !comment.parentId && !comment.resolution && comment.priority)
-    .map((comment) => ({ comment, marker: commentMarker(repo, pr, headSha, comment) }))
-    .filter(({ marker }) => !existingMarkers.has(marker));
+  const seenMarkers = new Set(existingMarkers);
+  const comments: Array<{ comment: Comment; marker: string }> = [];
+  for (const comment of diff.comments) {
+    if (comment.parentId || comment.resolution || !comment.priority) continue;
+    const marker = commentMarker(repo, pr, headSha, comment);
+    if (seenMarkers.has(marker)) continue;
+    seenMarkers.add(marker);
+    comments.push({ comment, marker });
+  }
+  return comments;
 }
 
 async function postTopLevelComment(
@@ -701,9 +775,8 @@ async function publishComments({
   });
   let posted = 0;
   for (const { comment, marker } of comments) {
-    const latestMarkers = await existingPublishedMarkers(repo, pr, cwd, authorLogin);
-    if (latestMarkers.has(marker)) continue;
     await postInlineComment(repo, pr, headSha, comment, commentBody(comment, marker), cwd);
+    existingMarkers.add(marker);
     posted++;
   }
   return posted;
@@ -776,12 +849,124 @@ export function assertPrReviewedBaseCurrent(
   }
 }
 
+export type ReviewerSourceSnapshot = {
+  statusLines: string[];
+  stagedDiffHash: string;
+  worktreeDiffHash: string;
+  untrackedFileHashes: Record<string, string>;
+};
+
+function hashText(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function unquoteStatusPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) return trimmed;
+  try {
+    return JSON.parse(trimmed) as string;
+  } catch {
+    return trimmed.slice(1, -1);
+  }
+}
+
+function statusLinePaths(line: string): string[] {
+  if (line.length < 4) return [];
+  const pathText = line.slice(3);
+  return pathText.split(" -> ").map(unquoteStatusPath);
+}
+
+function isStaffreviewPath(path: string): boolean {
+  return path === ".staffreview" || path.startsWith(".staffreview/");
+}
+
+function nonStaffreviewStatusLines(status: string): string[] {
+  return status
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .filter((line) => statusLinePaths(line).some((path) => !isStaffreviewPath(path)));
+}
+
+async function untrackedFileHash(path: string, cwd: string): Promise<string> {
+  try {
+    const file = Bun.file(join(cwd, path));
+    if (!(await file.exists())) return "<missing>";
+    return createHash("sha256")
+      .update(new Uint8Array(await file.arrayBuffer()))
+      .digest("hex");
+  } catch {
+    return "<unreadable>";
+  }
+}
+
+async function reviewerSourceSnapshot(cwd: string): Promise<ReviewerSourceSnapshot> {
+  const [status, stagedDiff, worktreeDiff] = await Promise.all([
+    git(["status", "--porcelain=v1", "--untracked-files=all"], cwd, { allowFail: true }),
+    git(["diff", "--cached", "--binary", "--", ".", ":(exclude).staffreview/**"], cwd, {
+      allowFail: true,
+    }),
+    git(["diff", "--binary", "--", ".", ":(exclude).staffreview/**"], cwd, {
+      allowFail: true,
+    }),
+  ]);
+  const statusLines = nonStaffreviewStatusLines(status);
+  const untrackedPaths = statusLines
+    .filter((line) => line.startsWith("?? "))
+    .flatMap(statusLinePaths)
+    .filter((path) => !isStaffreviewPath(path))
+    .sort();
+  const untrackedFileHashes: Record<string, string> = {};
+  for (const path of untrackedPaths) {
+    untrackedFileHashes[path] = await untrackedFileHash(path, cwd);
+  }
+  return {
+    statusLines,
+    stagedDiffHash: hashText(stagedDiff),
+    worktreeDiffHash: hashText(worktreeDiff),
+    untrackedFileHashes,
+  };
+}
+
+export function reviewerSourceChanges(
+  before: ReviewerSourceSnapshot,
+  after: ReviewerSourceSnapshot,
+): string[] {
+  const unchanged =
+    before.stagedDiffHash === after.stagedDiffHash &&
+    before.worktreeDiffHash === after.worktreeDiffHash &&
+    JSON.stringify(before.statusLines) === JSON.stringify(after.statusLines) &&
+    JSON.stringify(before.untrackedFileHashes) === JSON.stringify(after.untrackedFileHashes);
+  if (unchanged) return [];
+
+  const paths = new Set<string>();
+  for (const line of [...before.statusLines, ...after.statusLines]) {
+    for (const path of statusLinePaths(line)) {
+      if (!isStaffreviewPath(path)) paths.add(path);
+    }
+  }
+  for (const path of Object.keys(before.untrackedFileHashes)) paths.add(path);
+  for (const path of Object.keys(after.untrackedFileHashes)) paths.add(path);
+  return [...paths].sort();
+}
+
+function assertReviewerDidNotChangeSource(
+  before: ReviewerSourceSnapshot,
+  after: ReviewerSourceSnapshot,
+): void {
+  const changed = reviewerSourceChanges(before, after);
+  if (changed.length === 0) return;
+  const detail = changed.length > 0 ? `: ${changed.join(", ")}` : "";
+  throw new Error(`reviewer modified files outside .staffreview${detail}`);
+}
+
 async function reviewPullRequest({
   repo,
   pr,
   cwd,
   agents,
   reviewCommand,
+  watchHarness,
   authorLogin,
   log,
 }: {
@@ -790,6 +975,7 @@ async function reviewPullRequest({
   cwd: string;
   agents: number;
   reviewCommand?: string;
+  watchHarness?: WatchHarnessSettings;
   authorLogin: string;
   log: LogFn;
 }): Promise<string> {
@@ -806,12 +992,16 @@ async function reviewPullRequest({
   log(`reviewing PR #${pr.number} at ${shortSha(headSha)} (${diff.slug})`);
 
   try {
+    const sourceBeforeReview = await reviewerSourceSnapshot(cwd);
     await runReviewCommand({
       command: reviewCommand,
+      harness: watchHarness,
       cwd,
       prompt: buildReviewPrompt(pr, diff.slug, agents),
       env: commandEnvironment(pr, diff.slug, agents),
     });
+    const sourceAfterReview = await reviewerSourceSnapshot(cwd);
+    assertReviewerDidNotChangeSource(sourceBeforeReview, sourceAfterReview);
     const updated = await store.loadDiff(diff.slug, cwd);
     if (!updated) throw new Error(`diff disappeared during review: ${diff.slug}`);
     const current = await currentPullRequestState(repo, pr, cwd);
@@ -901,6 +1091,7 @@ export async function runWatch(options: WatchOptions): Promise<void> {
           cwd: options.cwd,
           agents,
           reviewCommand: options.reviewCommand,
+          watchHarness: options.watchHarness,
           authorLogin,
           log,
         });

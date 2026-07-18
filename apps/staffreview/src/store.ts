@@ -109,6 +109,15 @@ export async function loadOrCreateDiff(
   cwd = process.cwd(),
 ): Promise<Diff> {
   const slug = slugForDiff(base, head);
+  return loadOrCreateDiffWithSlug(slug, base, head, cwd);
+}
+
+export async function loadOrCreateDiffWithSlug(
+  slug: string,
+  base: DiffTarget,
+  head: DiffTarget,
+  cwd = process.cwd(),
+): Promise<Diff> {
   const existing = await loadDiff(slug, cwd);
   if (existing) return existing;
   const now = new Date().toISOString();

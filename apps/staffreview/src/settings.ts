@@ -59,6 +59,13 @@ export { DEFAULT_WRAP_LINES };
 
 export type ColorScheme = "system" | "light" | "dark";
 
+export type WatchHarnessSettings = {
+  /** Harness binary to launch for `staff watch`, e.g. `claude` or `codex`. */
+  command: string;
+  /** Flags passed to the harness before Staff Review appends the review prompt. */
+  args: string[];
+};
+
 export type GlobalSettings = {
   splitView?: boolean;
   /** Font size (px) for the diff content. */
@@ -96,6 +103,9 @@ export type GlobalSettings = {
    * comments. A docs sweep can cover more ground than a single diff review, so
    * this defaults higher — {@link DEFAULT_DOCS_AGENTS}. */
   docsAgents?: number;
+  /** Optional TUI harness argv for `staff watch`; Staff Review appends the
+   * generated `/staff-review` prompt as the final argument. */
+  watchHarness?: WatchHarnessSettings;
 };
 
 export function settingsDir(): string {
@@ -182,7 +192,30 @@ export function settingsWithDefaults(settings: GlobalSettings): GlobalSettings {
     ...settings,
   };
   coerceNumericSettings(withDefaults);
+  coerceWatchHarness(withDefaults);
   return withDefaults;
+}
+
+export function normalizeWatchHarness(value: unknown): WatchHarnessSettings | undefined {
+  if (value === undefined || value === null) return undefined;
+
+  if (Array.isArray(value)) {
+    const [command, ...args] = value;
+    return normalizeWatchHarness({ command, args });
+  }
+
+  if (typeof value !== "object") return undefined;
+  const raw = value as { command?: unknown; args?: unknown };
+  if (typeof raw.command !== "string") return undefined;
+  const command = raw.command.trim();
+  if (!command) return undefined;
+  if (raw.args !== undefined && !Array.isArray(raw.args)) return undefined;
+  const args: string[] = [];
+  for (const arg of raw.args ?? []) {
+    if (typeof arg !== "string") return undefined;
+    args.push(arg);
+  }
+  return { command, args };
 }
 
 function coerceBooleanSettings(settings: GlobalSettings) {
@@ -221,6 +254,16 @@ function coerceNumericSettings(settings: GlobalSettings) {
   }
 }
 
+function coerceWatchHarness(settings: GlobalSettings) {
+  if (!("watchHarness" in settings)) return;
+  const harness = normalizeWatchHarness(settings.watchHarness);
+  if (harness) {
+    settings.watchHarness = harness;
+  } else {
+    delete settings.watchHarness;
+  }
+}
+
 export async function writeSettings(partial: GlobalSettings): Promise<GlobalSettings> {
   const current = await readSettings();
   const next = { ...current, ...partial };
@@ -233,6 +276,7 @@ export async function writeSettings(partial: GlobalSettings): Promise<GlobalSett
   // spellings like `"false"`/`"no"`/`"off"`/`"0"`, and normalize unrecognized
   // values to each setting's default instead of crashing the server.
   coerceBooleanSettings(next);
+  coerceWatchHarness(next);
   await mkdir(settingsDir(), { recursive: true });
   await Bun.write(settingsPath(), JSON.stringify(next, null, 2));
   return next;

@@ -62,6 +62,10 @@ function parseArgs(argv: string[]): {
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
+    if (a === "--") {
+      positional.push(...argv.slice(i + 1));
+      break;
+    }
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
@@ -181,6 +185,23 @@ export async function globalHarnessesFromSpec(
 
 function supportedGlobalHarnessIds(): string {
   return GLOBAL_HARNESSES.map((h) => h.id).join(",");
+}
+
+function formatWatchHarness(harness: settings.WatchHarnessSettings): string {
+  return [harness.command, ...harness.args].join(" ");
+}
+
+function formatSettingValue(value: unknown): string {
+  const harness = settings.normalizeWatchHarness(value);
+  if (harness) return formatWatchHarness(harness);
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function unexpectedWatchHarnessFlags(flags: Record<string, string | boolean>): string[] {
+  return Object.keys(flags)
+    .filter((flag) => flag !== "json" && flag !== "repo")
+    .sort();
 }
 
 function exitInstallCancelled(message = "Install cancelled."): never {
@@ -586,11 +607,16 @@ USAGE
                                  (intra-line word-diff highlighting,
                                  default ${settings.DEFAULT_STRUCTURED_HIGHLIGHTING}), or wrapLines
                                  (wrap long diff lines vs. scroll horizontally,
-                                 default ${settings.DEFAULT_WRAP_LINES}).
+                                 default ${settings.DEFAULT_WRAP_LINES}), or watchHarness
+                                 (the TUI harness argv used by staff watch).
   staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                  Persist whether serve opens a browser / shows
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
+  staff settings set watchHarness <binary> [-- <flags...>]
+                                 Persist the TUI harness binary and flags used
+                                 by staff watch. The generated review prompt is
+                                 appended as the final argument.
 
   staff watch <pr> [--agents <n>] [--interval <seconds>] [--once]
   staff watch --all [--agents <n>] [--interval <seconds>] [--once]
@@ -599,8 +625,10 @@ USAGE
                                  Posts a reusable status comment and mirrors
                                  findings to GitHub PR comments. <pr> is any ref
                                  accepted by \`gh pr view\`; --all watches open,
-                                 non-draft PRs. Uses codex exec by default, or
-                                 --review-command / $STAFF_WATCH_REVIEW_COMMAND.
+                                 non-draft PRs. Uses settings.watchHarness when
+                                 configured, otherwise codex exec by default.
+                                 --review-command / $STAFF_WATCH_REVIEW_COMMAND
+                                 are legacy stdin-command overrides.
 
   staff install [--scope project|global] [--harness <ids|all>]
                                  Set up Staff Review skills. In an interactive
@@ -1067,14 +1095,33 @@ async function main(argv: string[]) {
           console.error(`\x1b[33mnote:\x1b[0m setting not set: ${key}`);
           return;
         }
-        console.log(flags.json ? JSON.stringify(value) : String(value));
+        console.log(flags.json ? JSON.stringify(value) : formatSettingValue(value));
         return;
       }
       if (positional[1] === "set") {
         const key = positional[2];
+        if (key === "watchHarness") {
+          const unexpectedFlags = unexpectedWatchHarnessFlags(flags);
+          if (unexpectedFlags.length > 0) {
+            throw new Error(
+              `put watchHarness flags after --, e.g. staff settings set watchHarness claude -- ${unexpectedFlags
+                .map((flag) => `--${flag}`)
+                .join(" ")}`,
+            );
+          }
+          const [command, ...args] = positional.slice(3);
+          const value = settings.normalizeWatchHarness({ command, args });
+          if (!value) {
+            throw new Error("usage: staff settings set watchHarness <binary> [-- <flags...>]");
+          }
+          await settings.writeSettings({ watchHarness: value });
+          if (flags.json) console.log(JSON.stringify({ watchHarness: value }, null, 2));
+          else console.log(`watchHarness: ${formatWatchHarness(value)}`);
+          return;
+        }
         if (key !== "openBrowser" && key !== "structuredHighlighting" && key !== "wrapLines") {
           throw new Error(
-            "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>",
+            "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false> OR staff settings set watchHarness <binary> [-- <flags...>]",
           );
         }
         const value = parseBooleanSetting(positional[3], key);
@@ -1122,6 +1169,7 @@ async function main(argv: string[]) {
           typeof agents === "string" ? agents : configuredSettings.reviewAgents,
         ),
         reviewCommand: typeof reviewCommand === "string" ? reviewCommand : undefined,
+        watchHarness: configuredSettings.watchHarness,
         log: console.log,
       });
       return;

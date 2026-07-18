@@ -174,12 +174,14 @@ staff comment add|edit|delete|list|resolve|unresolve
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                        Persist browser auto-open, line wrapping, or intra-line word-diff highlighting.
+staff settings set watchHarness <binary> [-- <flags...>]
+                                       Configure the TUI harness used by staff watch.
 staff watch <pr> | --all               Poll GitHub PRs for new commits and review them.
 staff install                          Choose skill groups + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
 
-Settings (theme, split/unified, font size, syntax theme, browser auto-open, line wrapping, intra-line word-diff highlighting, review-loop cap, the `/staff-review` agent count, the `/staff-section` section agent count, and the `/staff-docs` scout count) live in the gear menu and persist globally.
+Settings (theme, split/unified, font size, syntax theme, browser auto-open, line wrapping, intra-line word-diff highlighting, review-loop cap, the `/staff-review` agent count, the `/staff-section` section agent count, the `/staff-docs` scout count, and the `staff watch` harness) persist globally.
 
 ---
 

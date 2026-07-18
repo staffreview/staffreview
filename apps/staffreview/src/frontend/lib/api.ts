@@ -16,6 +16,10 @@ export type GlobalSettings = {
   reviewAgents?: number;
   sectionAgents?: number;
   docsAgents?: number;
+  watchHarness?: {
+    command: string;
+    args: string[];
+  };
 };
 
 async function jfetch<T>(url: string, init?: RequestInit): Promise<T> {

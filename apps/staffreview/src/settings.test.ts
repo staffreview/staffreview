@@ -16,6 +16,7 @@ import {
   MAX_SECTION_AGENTS,
   MIN_DOCS_AGENTS,
   MIN_SECTION_AGENTS,
+  normalizeWatchHarness,
   settingsWithDefaults,
   writeSettings,
 } from "./settings.ts";
@@ -218,6 +219,55 @@ test("writeSettings falls back to display boolean defaults for invalid values", 
 
   expect(next.filesExpandedByDefault).toBe(DEFAULT_FILES_EXPANDED_BY_DEFAULT);
   expect(next.splitView).toBe(DEFAULT_SPLIT_VIEW);
+});
+
+test("normalizeWatchHarness accepts object and array argv shapes", () => {
+  expect(
+    normalizeWatchHarness({
+      command: " claude ",
+      args: ["--dangerously-skip-permissions", "--model", "sonnet"],
+    }),
+  ).toEqual({
+    command: "claude",
+    args: ["--dangerously-skip-permissions", "--model", "sonnet"],
+  });
+  expect(normalizeWatchHarness(["codex", "--model", "gpt-5-codex"])).toEqual({
+    command: "codex",
+    args: ["--model", "gpt-5-codex"],
+  });
+});
+
+test("normalizeWatchHarness rejects malformed harness settings", () => {
+  expect(normalizeWatchHarness(undefined)).toBeUndefined();
+  expect(normalizeWatchHarness({ command: " " })).toBeUndefined();
+  expect(normalizeWatchHarness({ command: "claude", args: "--flag" })).toBeUndefined();
+  expect(normalizeWatchHarness({ command: "claude", args: [1] })).toBeUndefined();
+});
+
+test("writeSettings normalizes watchHarness before persisting", async () => {
+  const next = await writeSettings({
+    watchHarness: {
+      command: " claude ",
+      args: ["--dangerously-skip-permissions"],
+    },
+  });
+  expect(next.watchHarness).toEqual({
+    command: "claude",
+    args: ["--dangerously-skip-permissions"],
+  });
+  const onDisk = JSON.parse(await Bun.file(join(tmp, "settings.json")).text());
+  expect(onDisk.watchHarness).toEqual(next.watchHarness);
+});
+
+test("settingsWithDefaults drops malformed watchHarness", () => {
+  expect(
+    settingsWithDefaults({
+      watchHarness: { command: "claude", args: [1] } as unknown as {
+        command: string;
+        args: string[];
+      },
+    }).watchHarness,
+  ).toBeUndefined();
 });
 
 test("settingsWithDefaults includes openBrowser, highlighting, wrap, and agent defaults", () => {

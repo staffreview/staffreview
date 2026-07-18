@@ -20,8 +20,12 @@ import {
   repoFetchTargetFromRemotes,
   repoFromPullRequestUrl,
   reviewCommandFailureMessage,
+  reviewerSourceChanges,
   statusBody,
   statusCommentToUpdate,
+  watchDiffSlug,
+  watchHarnessCommand,
+  watchHarnessFailureMessage,
 } from "./watch.ts";
 
 const pr: PullRequest = {
@@ -71,6 +75,24 @@ test("repoFetchTargetFromRemotes prefers a remote matching the resolved GitHub r
   ).toBe("https://github.com/acme/project.git");
 });
 
+test("repoFetchTargetFromRemotes keeps non-default ports when matching remotes", () => {
+  const repo = {
+    nameWithOwner: "org/repo",
+    url: "https://ghe.example.com:8443/org/repo",
+  };
+  expect(
+    repoFetchTargetFromRemotes(repo, [
+      { name: "wrong-host", url: "https://ghe.example.com/org/repo.git" },
+      { name: "enterprise", url: "https://ghe.example.com:8443/org/repo.git" },
+    ]),
+  ).toBe("enterprise");
+  expect(
+    repoFetchTargetFromRemotes(repo, [
+      { name: "wrong-host", url: "https://ghe.example.com/org/repo.git" },
+    ]),
+  ).toBe("https://ghe.example.com:8443/org/repo.git");
+});
+
 test("repoFromPullRequestUrl carries the PR URL repository when one is present", () => {
   const fallback = {
     nameWithOwner: "acme/project",
@@ -88,6 +110,50 @@ test("repoFromPullRequestUrl carries the PR URL repository when one is present",
   expect(repoFromPullRequestUrl("not-a-pr-url", fallback)).toEqual(fallback);
 });
 
+test("watchDiffSlug isolates PRs that share the same commits", () => {
+  const repo = {
+    nameWithOwner: "acme/project",
+    url: "https://github.com/acme/project",
+  };
+  const baseSha = "e".repeat(40);
+  const first = watchDiffSlug(repo, pr, baseSha, pr.headRefOid);
+  const second = watchDiffSlug(repo, { ...pr, number: 43 }, baseSha, pr.headRefOid);
+
+  expect(first).toContain(`${baseSha}..${pr.headRefOid}`);
+  expect(first).not.toBe(second);
+  expect(second).toContain("watch-acme_project-pr-43-");
+});
+
+test("reviewerSourceChanges reports non-staffreview source drift", () => {
+  const before = {
+    statusLines: [" M apps/staffreview/src/watch.ts"],
+    stagedDiffHash: "staged-before",
+    worktreeDiffHash: "worktree-before",
+    untrackedFileHashes: {},
+  };
+  expect(reviewerSourceChanges(before, { ...before })).toEqual([]);
+  expect(
+    reviewerSourceChanges(before, {
+      ...before,
+      worktreeDiffHash: "worktree-after",
+    }),
+  ).toEqual(["apps/staffreview/src/watch.ts"]);
+  expect(
+    reviewerSourceChanges(before, {
+      ...before,
+      statusLines: [...before.statusLines, " M .staffreview/diffs/example.json"],
+      worktreeDiffHash: "worktree-after",
+    }),
+  ).toEqual(["apps/staffreview/src/watch.ts"]);
+  expect(
+    reviewerSourceChanges(before, {
+      ...before,
+      statusLines: [...before.statusLines, "?? src/new-file.ts"],
+      untrackedFileHashes: { "src/new-file.ts": "hash" },
+    }),
+  ).toEqual(["apps/staffreview/src/watch.ts", "src/new-file.ts"]);
+});
+
 test("reviewCommandFailureMessage does not include configured command text", () => {
   const command = "secret-token=abc123 codex exec --profile prod -";
   const message = reviewCommandFailureMessage(command, 17);
@@ -96,6 +162,25 @@ test("reviewCommandFailureMessage does not include configured command text", () 
   expect(reviewCommandFailureMessage(undefined, 2)).toBe(
     "codex exec --cd <repo> - failed with exit code 2",
   );
+});
+
+test("watchHarnessCommand appends the review prompt after configured harness flags", () => {
+  expect(
+    watchHarnessCommand(
+      { command: "claude", args: ["--dangerously-skip-permissions", "--model", "sonnet"] },
+      "Run /staff-review slug 2.",
+    ),
+  ).toEqual([
+    "claude",
+    "--dangerously-skip-permissions",
+    "--model",
+    "sonnet",
+    "Run /staff-review slug 2.",
+  ]);
+});
+
+test("watchHarnessFailureMessage does not include configured harness args", () => {
+  expect(watchHarnessFailureMessage(9)).toBe("configured watch harness failed with exit code 9");
 });
 
 test("statusBody includes the stable status marker and current commit", () => {
@@ -196,6 +281,45 @@ test("commentsToPublish retries unpublished root comments until GitHub markers e
     headSha: pr.headRefOid,
   });
   expect(third).toHaveLength(0);
+});
+
+test("commentsToPublish deduplicates equivalent local findings in the same batch", () => {
+  const firstComment = {
+    id: "duplicate-root-1",
+    threadId: "duplicate-thread-1",
+    file: "src/a.ts",
+    line: 12,
+    side: "new" as const,
+    body: "same finding",
+    author: "agent",
+    priority: "P2" as const,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const diff: Diff = {
+    slug: "a..b",
+    base: { kind: "commit", ref: pr.baseRefOid },
+    head: { kind: "commit", ref: pr.headRefOid },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    comments: [
+      firstComment,
+      {
+        ...firstComment,
+        id: "duplicate-root-2",
+        threadId: "duplicate-thread-2",
+      },
+    ],
+  };
+
+  const publishable = commentsToPublish({
+    diff,
+    existingMarkers: new Set(),
+    repo: "acme/project",
+    pr,
+    headSha: pr.headRefOid,
+  });
+
+  expect(publishable.map(({ comment }) => comment.id)).toEqual(["duplicate-root-1"]);
 });
 
 test("commentsToPublish uses deterministic finding markers across local thread ids", () => {
@@ -315,13 +439,33 @@ test("statusCommentToUpdate ignores status markers from other authors", () => {
 });
 
 test("collectPublishedMarkers ignores finding markers from other authors", () => {
-  const trusted = "<!-- staff-watch-comment: acme/project#42:trusted -->";
-  const forged = "<!-- staff-watch-comment: acme/project#42:forged -->";
+  const trusted = `<!-- staff-watch-comment: acme/project#42:${"b".repeat(40)}:${"a".repeat(24)} -->`;
+  const forged = `<!-- staff-watch-comment: acme/project#42:${"b".repeat(40)}:${"f".repeat(24)} -->`;
+  const anonymous = `<!-- staff-watch-comment: acme/project#42:${"b".repeat(40)}:${"1".repeat(24)} -->`;
   const markers = collectPublishedMarkers(
     [
       { body: forged, user: { login: "contributor" } },
       { body: trusted, user: { login: "staff-bot" } },
-      { body: "<!-- staff-watch-comment: acme/project#42:anonymous -->" },
+      { body: anonymous },
+    ],
+    "staff-bot",
+  );
+
+  expect([...markers]).toEqual([trusted]);
+});
+
+test("collectPublishedMarkers skips malformed marker prefixes before valid markers", () => {
+  const trusted = `<!-- staff-watch-comment: acme/project#42:${"b".repeat(40)}:${"a".repeat(24)} -->`;
+  const markers = collectPublishedMarkers(
+    [
+      {
+        body: [
+          "quoted malformed prefix: <!-- staff-watch-comment: not a marker",
+          trusted,
+          "<!-- staff-watch-comment: malformed -->",
+        ].join("\n"),
+        user: { login: "staff-bot" },
+      },
     ],
     "staff-bot",
   );
@@ -338,6 +482,7 @@ test("staff watch CLI dispatches --all --once flags and review command environme
     const capture = join(tmp, "review-capture.txt");
     const commandLog = join(tmp, "commands.log");
     const config = join(tmp, "config");
+    const parentGhConfig = join(tmp, "parent-gh-config");
     mkdirSync(repo, { recursive: true });
     mkdirSync(bin, { recursive: true });
 
@@ -350,6 +495,14 @@ if [ "$1" = "rev-parse" ] && [ "$2" = "--is-inside-work-tree" ]; then echo true;
 if [ "$1" = "rev-parse" ] && [ "$2" = "--show-toplevel" ]; then pwd; exit 0; fi
 if [ "$1" = "rev-parse" ] && [ "$2" = "FETCH_HEAD" ]; then echo "${pr.headRefOid}"; exit 0; fi
 if [ "$1" = "rev-parse" ] && [ "$2" = "--verify" ]; then echo "${pr.baseRefOid}"; exit 0; fi
+if [ "$1" = "status" ]; then
+  if [ -f source-edit.ts ]; then echo "?? source-edit.ts"; fi
+  exit 0
+fi
+if [ "$1" = "diff" ]; then
+  if [ -f source-edit.ts ]; then echo "diff --git a/source-edit.ts b/source-edit.ts"; fi
+  exit 0
+fi
 if [ "$1" = "merge-base" ]; then echo "${mergeBaseOid}"; exit 0; fi
 if [ "$1" = "remote" ]; then exit 0; fi
 if [ "$1" = "fetch" ]; then exit 0; fi
@@ -374,18 +527,22 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     echo '{"number":7,"title":"Closed thing","url":"https://github.com/acme/project/pull/7","state":"CLOSED","isDraft":false,"baseRefName":"main","baseRefOid":"${pr.baseRefOid}","headRefName":"feature","headRefOid":"${pr.headRefOid}"}'
     exit 0
   fi
-  if [ "$3" = "https://ghe.example.com/org/repo/pull/9" ]; then
-    echo '{"number":9,"title":"Enterprise thing","url":"https://ghe.example.com/org/repo/pull/9","state":"OPEN","isDraft":false,"baseRefName":"main","baseRefOid":"${"d".repeat(40)}","headRefName":"feature","headRefOid":"${pr.headRefOid}"}'
+  if [ "$3" = "https://ghe.example.com:8443/org/repo/pull/9" ]; then
+    echo '{"number":9,"title":"Enterprise thing","url":"https://ghe.example.com:8443/org/repo/pull/9","state":"OPEN","isDraft":false,"baseRefName":"main","baseRefOid":"${"d".repeat(40)}","headRefName":"feature","headRefOid":"${pr.headRefOid}"}'
     exit 0
   fi
   echo '{"number":5,"title":"Cross repo thing","url":"https://github.com/other/repo/pull/5","state":"OPEN","isDraft":false,"baseRefName":"main","baseRefOid":"${"c".repeat(40)}","headRefName":"feature","headRefOid":"${pr.headRefOid}"}'
   exit 0
 fi
+if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "github.com" ]; then
+  shift 3
+  set -- api "$@"
+fi
 if [ "$1" = "api" ] && [ "$2" = "user" ]; then
   echo '{"login":"staff-bot"}'
   exit 0
 fi
-if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com" ] && [ "$4" = "user" ]; then
+if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com:8443" ] && [ "$4" = "user" ]; then
   echo '{"login":"staff-bot"}'
   exit 0
 fi
@@ -393,30 +550,36 @@ if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/pulls/42" ]; then
   echo '{"number":42,"title":"Add the thing","html_url":"https://github.com/acme/project/pull/42","state":"open","draft":false,"base":{"ref":"main","sha":"${pr.baseRefOid}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}'
   exit 0
 fi
+if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/pulls/43" ]; then
+  echo '{"number":43,"title":"Add another thing","html_url":"https://github.com/acme/project/pull/43","state":"open","draft":false,"base":{"ref":"main","sha":"${pr.baseRefOid}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}'
+  exit 0
+fi
 if [ "$1" = "api" ] && [ "$2" = "repos/other/repo/pulls/5" ]; then
   echo '{"number":5,"title":"Cross repo thing","html_url":"https://github.com/other/repo/pull/5","state":"open","draft":false,"base":{"ref":"main","sha":"${"c".repeat(40)}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}'
   exit 0
 fi
-if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com" ] && [ "$4" = "repos/org/repo/pulls/9" ]; then
-  echo '{"number":9,"title":"Enterprise thing","html_url":"https://ghe.example.com/org/repo/pull/9","state":"open","draft":false,"base":{"ref":"main","sha":"${"d".repeat(40)}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}'
+if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com:8443" ] && [ "$4" = "repos/org/repo/pulls/9" ]; then
+  echo '{"number":9,"title":"Enterprise thing","html_url":"https://ghe.example.com:8443/org/repo/pull/9","state":"open","draft":false,"base":{"ref":"main","sha":"${"d".repeat(40)}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}'
   exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "--paginate" ] && [ "$3" = "--slurp" ] && [ "$4" = "repos/acme/project/pulls?state=open&per_page=100" ]; then
-  echo '[[{"number":42,"title":"Add the thing","html_url":"https://github.com/acme/project/pull/42","state":"open","draft":false,"base":{"ref":"main","sha":"${pr.baseRefOid}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}]]'
+  echo '[[{"number":42,"title":"Add the thing","html_url":"https://github.com/acme/project/pull/42","state":"open","draft":false,"base":{"ref":"main","sha":"${pr.baseRefOid}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}],[{"number":43,"title":"Add another thing","html_url":"https://github.com/acme/project/pull/43","state":"open","draft":false,"base":{"ref":"main","sha":"${pr.baseRefOid}"},"head":{"ref":"feature","sha":"${pr.headRefOid}"}}]]'
   exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "--paginate" ] && [ "$3" = "--slurp" ]; then
   echo '[[]]'
   exit 0
 fi
-if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com" ] && [ "$4" = "--paginate" ] && [ "$5" = "--slurp" ]; then
+if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com:8443" ] && [ "$4" = "--paginate" ] && [ "$5" = "--slurp" ]; then
   echo '[[]]'
   exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/issues/42/comments" ]; then exit 0; fi
 if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/pulls/42/comments" ]; then exit 0; fi
+if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/issues/43/comments" ]; then exit 0; fi
+if [ "$1" = "api" ] && [ "$2" = "repos/acme/project/pulls/43/comments" ]; then exit 0; fi
 if [ "$1" = "api" ] && [ "$2" = "repos/other/repo/issues/5/comments" ]; then exit 0; fi
-if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com" ] && [ "$4" = "repos/org/repo/issues/9/comments" ]; then exit 0; fi
+if [ "$1" = "api" ] && [ "$2" = "--hostname" ] && [ "$3" = "ghe.example.com:8443" ] && [ "$4" = "repos/org/repo/issues/9/comments" ]; then exit 0; fi
 echo "unexpected gh command: $*" >&2
 exit 1
 `,
@@ -430,9 +593,10 @@ exit 1
 const input = await Bun.stdin.text();
 const capture = process.env.STAFF_WATCH_CAPTURE;
 const slug = process.env.STAFF_WATCH_DIFF_SLUG;
+const existingCapture = await Bun.file(capture).exists() ? await Bun.file(capture).text() : "";
 await Bun.write(
   capture,
-  [
+  existingCapture + [
     "PROMPT_START",
     input,
     "PROMPT_END",
@@ -440,23 +604,57 @@ await Bun.write(
     "URL=" + process.env.STAFF_WATCH_PR_URL,
     "SLUG=" + slug,
     "AGENTS=" + process.env.STAFF_WATCH_AGENTS,
+    "TOKENS=" + ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"].filter((key) => process.env[key]).join(","),
+    "GH_CONFIG_DIR=" + process.env.GH_CONFIG_DIR,
+    "GH_PROMPT_DISABLED=" + process.env.GH_PROMPT_DISABLED,
     "",
   ].join("\\n"),
 );
-if (process.env.STAFF_WATCH_PR_NUMBER === "42" && slug) {
+if (process.env.STAFF_WATCH_MUTATE_SOURCE === "1") {
+  await Bun.write(process.cwd() + "/source-edit.ts", "reviewer changed source\\n");
+}
+if ((process.env.STAFF_WATCH_PR_NUMBER === "42" || process.env.STAFF_WATCH_PR_NUMBER === "43") && slug) {
   const path = process.cwd() + "/.staffreview/diffs/" + slug + ".json";
   const diff = JSON.parse(await Bun.file(path).text());
+  const prNumber = process.env.STAFF_WATCH_PR_NUMBER;
   diff.comments.push({
-    id: "review-root",
-    threadId: "review-thread",
+    id: "review-root-" + prNumber,
+    threadId: "review-thread-" + prNumber,
     file: "src/feature.ts",
     line: 12,
     side: "new",
-    body: "mirrored finding",
+    body: "mirrored finding " + prNumber,
     author: "GPT-5",
     priority: "P2",
     createdAt: "2026-01-01T00:00:00.000Z",
   });
+  if (prNumber === "42") {
+    diff.comments.push(
+      {
+        id: "review-old-root",
+        threadId: "review-old-thread",
+        file: "src/feature.ts",
+        line: 8,
+        side: "old",
+        body: "mirrored old-side finding",
+        author: "GPT-5",
+        priority: "P3",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "review-range-root",
+        threadId: "review-range-thread",
+        file: "src/feature.ts",
+        line: 12,
+        endLine: 14,
+        side: "new",
+        body: "mirrored range finding",
+        author: "GPT-5",
+        priority: "P2",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+  }
   await Bun.write(path, JSON.stringify(diff, null, 2));
 }
 `,
@@ -471,11 +669,46 @@ const input = await Bun.stdin.text();
 const log = process.env.STAFF_WATCH_COMMAND_LOG;
 if (log) {
   const existing = await Bun.file(log).exists() ? await Bun.file(log).text() : "";
-  await Bun.write(log, existing + "codex:" + process.argv.slice(2).join(" ") + "\\n" + input + "\\n");
+  const tokens = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"].filter((key) => process.env[key]).join(",");
+  await Bun.write(log, existing + "codex:" + process.argv.slice(2).join(" ") + "\\nTOKENS=" + tokens + "\\nGH_CONFIG_DIR=" + process.env.GH_CONFIG_DIR + "\\nGH_PROMPT_DISABLED=" + process.env.GH_PROMPT_DISABLED + "\\n" + input + "\\n");
 }
 `,
     );
     chmodSync(fakeCodex, 0o755);
+
+    const fakeHarness = join(bin, "capture-harness");
+    await Bun.write(
+      fakeHarness,
+      `#!${process.execPath}
+const capture = process.env.STAFF_WATCH_CAPTURE;
+const log = process.env.STAFF_WATCH_COMMAND_LOG;
+const prompt = process.argv.at(-1) ?? "";
+const args = process.argv.slice(2, -1);
+if (log) {
+  const existing = await Bun.file(log).exists() ? await Bun.file(log).text() : "";
+  await Bun.write(log, existing + "harness:" + args.join(" ") + "\\n");
+}
+const existingCapture = await Bun.file(capture).exists() ? await Bun.file(capture).text() : "";
+await Bun.write(
+  capture,
+  existingCapture + [
+    "HARNESS_ARGS=" + args.join("|"),
+    "PROMPT_ARG_START",
+    prompt,
+    "PROMPT_ARG_END",
+    "PR=" + process.env.STAFF_WATCH_PR_NUMBER,
+    "URL=" + process.env.STAFF_WATCH_PR_URL,
+    "SLUG=" + process.env.STAFF_WATCH_DIFF_SLUG,
+    "AGENTS=" + process.env.STAFF_WATCH_AGENTS,
+    "TOKENS=" + ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"].filter((key) => process.env[key]).join(","),
+    "GH_CONFIG_DIR=" + process.env.GH_CONFIG_DIR,
+    "GH_PROMPT_DISABLED=" + process.env.GH_PROMPT_DISABLED,
+    "",
+  ].join("\\n"),
+);
+`,
+    );
+    chmodSync(fakeHarness, 0o755);
 
     const cliPath = fileURLToPath(new URL("./cli.ts", import.meta.url));
     const cliEnv = () => {
@@ -483,7 +716,7 @@ if (log) {
       delete env.STAFF_WATCH_REVIEW_COMMAND;
       return env;
     };
-    const runCli = async (args: string[]) => {
+    const runCli = async (args: string[], envOverride: Record<string, string> = {}) => {
       const proc = Bun.spawn([process.execPath, cliPath, ...args], {
         cwd: dirname(cliPath),
         env: {
@@ -492,6 +725,13 @@ if (log) {
           STAFF_CONFIG_DIR: config,
           STAFF_WATCH_CAPTURE: capture,
           STAFF_WATCH_COMMAND_LOG: commandLog,
+          GH_HOST: "ghe.example.com",
+          GH_TOKEN: "parent-gh-token",
+          GITHUB_TOKEN: "parent-github-token",
+          GH_ENTERPRISE_TOKEN: "parent-gh-enterprise-token",
+          GITHUB_ENTERPRISE_TOKEN: "parent-github-enterprise-token",
+          GH_CONFIG_DIR: parentGhConfig,
+          ...envOverride,
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -513,13 +753,17 @@ if (log) {
 
       expect(exitCode, `${stdout}\n${stderr}`).toBe(0);
     };
-    const runCliFailure = async (args: string[]) => {
+    const runCliFailure = async (args: string[], envOverride: Record<string, string> = {}) => {
       const proc = Bun.spawn([process.execPath, cliPath, ...args], {
         cwd: dirname(cliPath),
         env: {
           ...cliEnv(),
           PATH: `${bin}:${process.env.PATH ?? ""}`,
           STAFF_CONFIG_DIR: config,
+          STAFF_WATCH_CAPTURE: capture,
+          STAFF_WATCH_COMMAND_LOG: commandLog,
+          GH_CONFIG_DIR: parentGhConfig,
+          ...envOverride,
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -580,20 +824,92 @@ if (log) {
       repo,
     ]);
     const captured = await Bun.file(capture).text();
+    const pr42Slug = watchDiffSlug(
+      { nameWithOwner: "acme/project", url: "https://github.com/acme/project" },
+      pr,
+      mergeBaseOid,
+      pr.headRefOid,
+    );
+    const pr43Slug = watchDiffSlug(
+      { nameWithOwner: "acme/project", url: "https://github.com/acme/project" },
+      { ...pr, number: 43 },
+      mergeBaseOid,
+      pr.headRefOid,
+    );
     expect(captured).toContain("Run /staff-review");
-    expect(captured).toContain(`Run /staff-review ${mergeBaseOid}..${pr.headRefOid} 3.`);
+    expect(captured).toContain(`Run /staff-review ${pr42Slug} 3.`);
+    expect(captured).toContain(`Run /staff-review ${pr43Slug} 3.`);
     expect(captured).toContain("This is GitHub PR #42: Add the thing");
+    expect(captured).toContain("This is GitHub PR #43: Add another thing");
     expect(captured).toContain("PR=42");
+    expect(captured).toContain("PR=43");
     expect(captured).toContain("URL=https://github.com/acme/project/pull/42");
+    expect(captured).toContain("URL=https://github.com/acme/project/pull/43");
     expect(captured).toContain("AGENTS=3");
+    expect(captured).not.toContain("parent-gh-token");
+    expect(captured).not.toContain("parent-github-token");
+    expect(captured).not.toContain("parent-gh-enterprise-token");
+    expect(captured).not.toContain("parent-github-enterprise-token");
+    expect(captured).not.toContain("GH_TOKEN");
+    expect(captured).not.toContain("GITHUB_TOKEN");
+    expect(captured).not.toContain("GH_ENTERPRISE_TOKEN");
+    expect(captured).not.toContain("GITHUB_ENTERPRISE_TOKEN");
+    expect(captured).toContain("GH_PROMPT_DISABLED=1");
+    expect(captured).not.toContain(`GH_CONFIG_DIR=${parentGhConfig}`);
+    const watchedDiff42 = JSON.parse(
+      await Bun.file(join(repo, ".staffreview/diffs", `${pr42Slug}.json`)).text(),
+    ) as Diff;
+    const watchedDiff43 = JSON.parse(
+      await Bun.file(join(repo, ".staffreview/diffs", `${pr43Slug}.json`)).text(),
+    ) as Diff;
+    expect(watchedDiff42.base).toEqual({ kind: "commit", ref: mergeBaseOid });
+    expect(watchedDiff42.base.label).toBeUndefined();
+    expect(watchedDiff42.comments.map((comment) => comment.body)).toContain("mirrored finding 42");
+    expect(watchedDiff43.base).toEqual({ kind: "commit", ref: mergeBaseOid });
+    expect(watchedDiff43.comments.map((comment) => comment.body)).toEqual(["mirrored finding 43"]);
     const allCommands = await Bun.file(commandLog).text();
     expect(allCommands).toContain(`git:merge-base ${pr.baseRefOid} ${pr.headRefOid}`);
-    expect(allCommands).toContain("gh:api repos/acme/project/pulls/42/comments -X POST");
+    expect(allCommands).toContain(
+      "gh:api --hostname github.com --paginate --slurp repos/acme/project/pulls?state=open&per_page=100",
+    );
+    expect(allCommands).toContain(
+      "gh:api --hostname github.com repos/acme/project/pulls/42/comments -X POST",
+    );
+    expect(allCommands).toContain(
+      "gh:api --hostname github.com repos/acme/project/pulls/43/comments -X POST",
+    );
+    expect(allCommands).toContain(
+      "gh:api --hostname github.com repos/acme/project/issues/43/comments -X POST",
+    );
     expect(allCommands).toContain(`commit_id=${pr.headRefOid}`);
     expect(allCommands).toContain("path=src/feature.ts");
     expect(allCommands).toContain("line=12");
-    expect(allCommands).toContain("mirrored finding");
+    expect(allCommands).toContain("mirrored finding 42");
+    expect(allCommands).toContain("mirrored finding 43");
+    expect(allCommands).toContain("mirrored old-side finding");
+    expect(allCommands).toContain("side=LEFT");
+    expect(allCommands).toContain("mirrored range finding");
+    expect(allCommands).toContain("line=14");
+    expect(allCommands).toContain("start_line=12");
+    expect(allCommands).toContain("start_side=RIGHT");
     expect(allCommands).toContain("<!-- staff-watch-comment: acme/project#42:");
+    expect(allCommands).toContain("<!-- staff-watch-comment: acme/project#43:");
+    const pr43CommentPosts =
+      allCommands.match(
+        /gh:api --hostname github\.com repos\/acme\/project\/pulls\/43\/comments -X POST[\s\S]*?(?=\ngh:|\ngit:|$)/g,
+      ) ?? [];
+    expect(pr43CommentPosts.join("\n")).toContain("mirrored finding 43");
+    expect(pr43CommentPosts.join("\n")).not.toContain("mirrored finding 42");
+    expect(
+      allCommands.match(
+        /gh:api --hostname github\.com --paginate --slurp repos\/acme\/project\/pulls\/42\/comments\?per_page=100/g,
+      ) ?? [],
+    ).toHaveLength(1);
+    expect(
+      allCommands.match(
+        /gh:api --hostname github\.com --paginate --slurp repos\/acme\/project\/issues\/42\/comments\?per_page=100/g,
+      ) ?? [],
+    ).toHaveLength(3);
 
     await Bun.write(commandLog, "");
     await runCli([
@@ -610,12 +926,14 @@ if (log) {
     const commands = await Bun.file(commandLog).text();
     expect(commands).not.toContain("gh:repo view");
     expect(commands).toContain("git:fetch -q https://github.com/other/repo.git pull/5/head");
-    expect(commands).toContain("gh:api repos/other/repo/issues/5/comments -X POST");
+    expect(commands).toContain(
+      "gh:api --hostname github.com repos/other/repo/issues/5/comments -X POST",
+    );
 
     await Bun.write(commandLog, "");
     await runCli([
       "watch",
-      "https://ghe.example.com/org/repo/pull/9",
+      "https://ghe.example.com:8443/org/repo/pull/9",
       "--once",
       "--agents",
       "3",
@@ -628,14 +946,14 @@ if (log) {
     expect(enterpriseCommands).not.toContain("gh:repo view");
     expect(enterpriseCommands).not.toContain("gh:auth status");
     expect(enterpriseCommands).toContain(
-      "git:fetch -q https://ghe.example.com/org/repo.git pull/9/head",
+      "git:fetch -q https://ghe.example.com:8443/org/repo.git pull/9/head",
     );
-    expect(enterpriseCommands).toContain("gh:api --hostname ghe.example.com user");
+    expect(enterpriseCommands).toContain("gh:api --hostname ghe.example.com:8443 user");
     expect(enterpriseCommands).toContain(
-      "gh:api --hostname ghe.example.com repos/org/repo/pulls/9",
+      "gh:api --hostname ghe.example.com:8443 repos/org/repo/pulls/9",
     );
     expect(enterpriseCommands).toContain(
-      "gh:api --hostname ghe.example.com repos/org/repo/issues/9/comments -X POST",
+      "gh:api --hostname ghe.example.com:8443 repos/org/repo/issues/9/comments -X POST",
     );
 
     await Bun.write(commandLog, "");
@@ -643,7 +961,9 @@ if (log) {
     const closedCommands = await Bun.file(commandLog).text();
     expect(closedCommands).toContain("gh:pr view closed --json");
     expect(closedCommands).not.toContain("git:fetch");
-    expect(closedCommands).not.toContain("api repos/acme/project/issues/7/comments");
+    expect(closedCommands).not.toContain(
+      "api --hostname github.com repos/acme/project/issues/7/comments",
+    );
 
     await Bun.write(commandLog, "");
     await runCli(["watch", "closed", "--once", "--repo", repo]);
@@ -654,8 +974,95 @@ if (log) {
     await runCli(["watch", "https://github.com/other/repo/pull/5", "--once", "--repo", repo]);
     const defaultCommands = await Bun.file(commandLog).text();
     expect(defaultCommands).toContain(`codex:exec --cd ${realpathSync(repo)} -`);
+    expect(defaultCommands).not.toContain("GH_TOKEN");
+    expect(defaultCommands).not.toContain("GITHUB_TOKEN");
+    expect(defaultCommands).not.toContain("GH_ENTERPRISE_TOKEN");
+    expect(defaultCommands).not.toContain("GITHUB_ENTERPRISE_TOKEN");
+    expect(defaultCommands).toContain("GH_PROMPT_DISABLED=1");
+    expect(defaultCommands).not.toContain(`GH_CONFIG_DIR=${parentGhConfig}`);
     expect(defaultCommands).toContain("Run /staff-review");
     expect(defaultCommands).toContain("This is GitHub PR #5: Cross repo thing");
+
+    const missingHarnessSeparator = await runCliFailure([
+      "settings",
+      "set",
+      "watchHarness",
+      "capture-harness",
+      "--model",
+      "sonnet",
+    ]);
+    expect(missingHarnessSeparator.stderr).toContain("put watchHarness flags after --");
+
+    await Bun.write(capture, "");
+    await Bun.write(commandLog, "");
+    await runCli([
+      "settings",
+      "set",
+      "watchHarness",
+      "capture-harness",
+      "--",
+      "--subscription",
+      "--model",
+      "sonnet",
+    ]);
+    const configuredHarness = JSON.parse(await Bun.file(join(config, "settings.json")).text());
+    expect(configuredHarness.watchHarness).toEqual({
+      command: "capture-harness",
+      args: ["--subscription", "--model", "sonnet"],
+    });
+
+    await runCli(["watch", "https://github.com/other/repo/pull/5", "--once", "--repo", repo]);
+    const harnessCapture = await Bun.file(capture).text();
+    expect(harnessCapture).toContain("HARNESS_ARGS=--subscription|--model|sonnet");
+    expect(harnessCapture).toContain("PROMPT_ARG_START");
+    expect(harnessCapture).toContain("Run /staff-review");
+    expect(harnessCapture).toContain("This is GitHub PR #5: Cross repo thing");
+    expect(harnessCapture).toContain("PR=5");
+    expect(harnessCapture).toContain("URL=https://github.com/other/repo/pull/5");
+    expect(harnessCapture).toContain("AGENTS=2");
+    expect(harnessCapture).not.toContain("parent-gh-token");
+    expect(harnessCapture).not.toContain("parent-github-token");
+    expect(harnessCapture).not.toContain("parent-gh-enterprise-token");
+    expect(harnessCapture).not.toContain("parent-github-enterprise-token");
+    expect(harnessCapture).toContain("GH_PROMPT_DISABLED=1");
+    expect(harnessCapture).not.toContain(`GH_CONFIG_DIR=${parentGhConfig}`);
+    const harnessCommands = await Bun.file(commandLog).text();
+    expect(harnessCommands).toContain("harness:--subscription --model sonnet");
+    expect(harnessCommands).not.toContain("codex:");
+
+    await Bun.write(capture, "");
+    await Bun.write(commandLog, "");
+    await runCli(["watch", "https://github.com/other/repo/pull/5", "--once", "--repo", repo], {
+      STAFF_WATCH_REVIEW_COMMAND: reviewCommand,
+    });
+    const envCommandCapture = await Bun.file(capture).text();
+    expect(envCommandCapture).toContain("Run /staff-review");
+    expect(envCommandCapture).toContain("This is GitHub PR #5: Cross repo thing");
+    expect(envCommandCapture).toContain("PR=5");
+    expect(envCommandCapture).toContain("URL=https://github.com/other/repo/pull/5");
+    expect(envCommandCapture).toContain("AGENTS=2");
+    const envCommandLog = await Bun.file(commandLog).text();
+    expect(envCommandLog).not.toContain("codex:");
+    expect(envCommandLog).not.toContain("harness:");
+
+    await Bun.write(capture, "");
+    await Bun.write(commandLog, "");
+    const sourceMutation = await runCliFailure(
+      [
+        "watch",
+        "https://github.com/other/repo/pull/5",
+        "--once",
+        "--review-command",
+        reviewCommand,
+        "--repo",
+        repo,
+      ],
+      { STAFF_WATCH_MUTATE_SOURCE: "1" },
+    );
+    expect(sourceMutation.stderr).toContain("reviewer modified files outside .staffreview");
+    const sourceMutationLog = await Bun.file(commandLog).text();
+    expect(sourceMutationLog).not.toContain("repos/other/repo/pulls/5/comments -X POST");
+    expect(sourceMutationLog).toContain("repos/other/repo/issues/5/comments -X POST");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

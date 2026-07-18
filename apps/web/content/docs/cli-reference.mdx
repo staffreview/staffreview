@@ -12,6 +12,7 @@ staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set openBrowser false   Stop opening the browser automatically.
+staff settings set watchHarness claude Configure the watch review harness.
 staff watch <pr> | --all               Poll GitHub PRs for new commits and review them.
 staff install                          Choose skill groups + initialize the .staffreview/ store.
 staff --help                           Full usage.
@@ -76,12 +77,15 @@ staff settings get wrapLines           # diff line wrapping preference
 staff settings set wrapLines false     # make diffs horizontally scroll by default
 staff settings get structuredHighlighting        # intra-line word-diff toggle
 staff settings set structuredHighlighting false  # turn it off by default
+staff settings set watchHarness claude -- --dangerously-skip-permissions
+staff settings get watchHarness
 ```
 
 Settings (theme, split/unified, font size, syntax theme, browser auto-open,
 line wrapping, intra-line word-diff highlighting, review-loop cap, the review
-agent count, the section review agent count, and the docs scout count) live in
-the gear menu and persist globally.
+agent count, the section review agent count, the docs scout count, and the
+watch harness) persist globally. Display settings are also available in the gear
+menu.
 
 ## Watch
 
@@ -100,8 +104,20 @@ review starts, completes, or fails.
 `staff watch` requires the GitHub CLI (`gh`) installed and authenticated for the
 target repository.
 
-By default it invokes `codex exec` and passes the review prompt on stdin. To use
-another harness, pass `--review-command <cmd>` or set
-`STAFF_WATCH_REVIEW_COMMAND`; the command receives the prompt on stdin plus
-`STAFF_WATCH_PR_NUMBER`, `STAFF_WATCH_PR_URL`, `STAFF_WATCH_DIFF_SLUG`, and
-`STAFF_WATCH_AGENTS` in the environment.
+Set `watchHarness` to use a subscription/TUI harness instead of the default
+`codex exec` fallback:
+
+```bash
+staff settings set watchHarness claude -- --dangerously-skip-permissions
+staff settings set watchHarness codex -- --model gpt-5-codex
+```
+
+When `watchHarness` is set, `staff watch` launches `<binary> <flags> "<prompt>"`
+in the repository, inheriting the terminal stdio. The generated prompt is the
+same `/staff-review <slug> <agents>` request the previous command path received.
+
+For non-interactive automation, `--review-command <cmd>` and
+`STAFF_WATCH_REVIEW_COMMAND` still override the configured harness. Those legacy
+paths receive the prompt on stdin plus `STAFF_WATCH_PR_NUMBER`,
+`STAFF_WATCH_PR_URL`, `STAFF_WATCH_DIFF_SLUG`, and `STAFF_WATCH_AGENTS` in the
+environment.
