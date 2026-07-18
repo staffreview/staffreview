@@ -86,9 +86,29 @@ function parseArgs(argv: string[]): {
       flags[a.slice(1)] = true;
     } else {
       positional.push(a);
+      if (isWatchHarnessSettingsKey(positional)) {
+        positional.push(...stripWatchHarnessArgSeparator(argv.slice(i + 1)));
+        break;
+      }
     }
   }
   return { flags, positional };
+}
+
+function isWatchHarnessSettingsKey(positional: string[]): boolean {
+  const offset = positional.length - 3;
+  return (
+    offset >= 0 &&
+    positional[offset] === "settings" &&
+    positional[offset + 1] === "set" &&
+    positional[offset + 2] === "watchHarness"
+  );
+}
+
+function stripWatchHarnessArgSeparator(args: string[]): string[] {
+  const separator = args.indexOf("--");
+  if (separator < 0) return args;
+  return [...args.slice(0, separator), ...args.slice(separator + 1)];
 }
 
 function booleanFlag(value: string | boolean | undefined): boolean {
@@ -198,10 +218,14 @@ function formatSettingValue(value: unknown): string {
   return String(value);
 }
 
-function unexpectedWatchHarnessFlags(flags: Record<string, string | boolean>): string[] {
-  return Object.keys(flags)
-    .filter((flag) => flag !== "json" && flag !== "repo")
-    .sort();
+export function watchHarnessArgsFromSettingsSetArgv(argv: string[]): string[] | undefined {
+  const settingsIndex = argv.indexOf("settings");
+  if (settingsIndex < 0) return undefined;
+  if (argv[settingsIndex + 1] !== "set" || argv[settingsIndex + 2] !== "watchHarness") {
+    return undefined;
+  }
+  const raw = argv.slice(settingsIndex + 3);
+  return stripWatchHarnessArgSeparator(raw);
 }
 
 function exitInstallCancelled(message = "Install cancelled."): never {
@@ -613,7 +637,7 @@ USAGE
                                  Persist whether serve opens a browser / shows
                                  intra-line word-diff highlighting / wraps long
                                  diff lines.
-  staff settings set watchHarness <binary> [-- <flags...>]
+  staff settings set watchHarness <binary> [flags...]
                                  Persist the TUI harness binary and flags used
                                  by staff watch. The generated review prompt is
                                  appended as the final argument.
@@ -1101,18 +1125,10 @@ async function main(argv: string[]) {
       if (positional[1] === "set") {
         const key = positional[2];
         if (key === "watchHarness") {
-          const unexpectedFlags = unexpectedWatchHarnessFlags(flags);
-          if (unexpectedFlags.length > 0) {
-            throw new Error(
-              `put watchHarness flags after --, e.g. staff settings set watchHarness claude -- ${unexpectedFlags
-                .map((flag) => `--${flag}`)
-                .join(" ")}`,
-            );
-          }
           const [command, ...args] = positional.slice(3);
           const value = settings.normalizeWatchHarness({ command, args });
           if (!value) {
-            throw new Error("usage: staff settings set watchHarness <binary> [-- <flags...>]");
+            throw new Error("usage: staff settings set watchHarness <binary> [flags...]");
           }
           await settings.writeSettings({ watchHarness: value });
           if (flags.json) console.log(JSON.stringify({ watchHarness: value }, null, 2));
@@ -1121,7 +1137,7 @@ async function main(argv: string[]) {
         }
         if (key !== "openBrowser" && key !== "structuredHighlighting" && key !== "wrapLines") {
           throw new Error(
-            "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false> OR staff settings set watchHarness <binary> [-- <flags...>]",
+            "usage: staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false> OR staff settings set watchHarness <binary> [flags...]",
           );
         }
         const value = parseBooleanSetting(positional[3], key);

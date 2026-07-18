@@ -77,7 +77,7 @@ staff settings get wrapLines           # diff line wrapping preference
 staff settings set wrapLines false     # make diffs horizontally scroll by default
 staff settings get structuredHighlighting        # intra-line word-diff toggle
 staff settings set structuredHighlighting false  # turn it off by default
-staff settings set watchHarness claude -- --dangerously-skip-permissions
+staff settings set watchHarness claude --dangerously-skip-permissions
 staff settings get watchHarness
 ```
 
@@ -108,8 +108,8 @@ Set `watchHarness` to use a subscription/TUI harness instead of the default
 `codex exec` fallback:
 
 ```bash
-staff settings set watchHarness claude -- --dangerously-skip-permissions
-staff settings set watchHarness codex -- --model gpt-5-codex
+staff settings set watchHarness claude --dangerously-skip-permissions
+staff settings set watchHarness codex --model gpt-5-codex
 ```
 
 When `watchHarness` is set, `staff watch` launches `<binary> <flags> "<prompt>"`

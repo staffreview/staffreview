@@ -430,52 +430,76 @@ async function runReviewCommand({
   prompt: string;
   env: Record<string, string>;
 }) {
-  const configured = command?.trim() || process.env.STAFF_WATCH_REVIEW_COMMAND?.trim();
-  if (configured) {
-    const proc = Bun.spawn(shellCommand(configured), {
-      cwd,
-      env,
-      stdin: "pipe",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      throw new Error(reviewCommandFailureMessage(configured, exitCode));
-    }
-    return;
-  }
-
-  if (harness) {
-    const proc = Bun.spawn(watchHarnessCommand(harness, prompt), {
-      cwd,
-      env,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      throw new Error(watchHarnessFailureMessage(exitCode));
-    }
-    return;
-  }
-
-  const proc = Bun.spawn(["codex", "exec", "--cd", cwd, "-"], {
+  const launcher = reviewLauncher({
+    command,
+    envCommand: process.env.STAFF_WATCH_REVIEW_COMMAND,
+    harness,
+    cwd,
+    prompt,
+  });
+  const proc = Bun.spawn(launcher.argv, {
     cwd,
     env,
-    stdin: "pipe",
+    stdin: launcher.stdin,
     stdout: "inherit",
     stderr: "inherit",
   });
-  proc.stdin.write(prompt);
-  proc.stdin.end();
+  if (launcher.promptStdin !== undefined) {
+    proc.stdin.write(launcher.promptStdin);
+    proc.stdin.end();
+  }
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    throw new Error(reviewCommandFailureMessage(undefined, exitCode));
+    throw new Error(reviewLauncherFailureMessage(launcher, exitCode));
   }
+}
+
+export type ReviewLauncher = {
+  argv: string[];
+  stdin: "inherit" | "pipe";
+  promptStdin?: string;
+  failureLabel: string;
+};
+
+export function reviewLauncher({
+  command,
+  envCommand,
+  harness,
+  cwd,
+  prompt,
+}: {
+  command?: string;
+  envCommand?: string;
+  harness?: WatchHarnessSettings;
+  cwd: string;
+  prompt: string;
+}): ReviewLauncher {
+  const configured = command?.trim() || envCommand?.trim();
+  if (configured) {
+    return {
+      argv: shellCommand(configured),
+      stdin: "pipe",
+      promptStdin: prompt,
+      failureLabel: "configured review command",
+    };
+  }
+  if (harness) {
+    return {
+      argv: watchHarnessCommand(harness, prompt),
+      stdin: "inherit",
+      failureLabel: "configured watch harness",
+    };
+  }
+  return {
+    argv: ["codex", "exec", "--cd", cwd, "-"],
+    stdin: "pipe",
+    promptStdin: prompt,
+    failureLabel: "codex exec --cd <repo> -",
+  };
+}
+
+function reviewLauncherFailureMessage(launcher: ReviewLauncher, exitCode: number): string {
+  return `${launcher.failureLabel} failed with exit code ${exitCode}`;
 }
 
 export function reviewCommandFailureMessage(command: string | undefined, exitCode: number): string {

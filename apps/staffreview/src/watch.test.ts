@@ -21,6 +21,7 @@ import {
   repoFromPullRequestUrl,
   reviewCommandFailureMessage,
   reviewerSourceChanges,
+  reviewLauncher,
   statusBody,
   statusCommentToUpdate,
   watchDiffSlug,
@@ -162,6 +163,49 @@ test("reviewCommandFailureMessage does not include configured command text", () 
   expect(reviewCommandFailureMessage(undefined, 2)).toBe(
     "codex exec --cd <repo> - failed with exit code 2",
   );
+});
+
+test("reviewLauncher prefers explicit and env review commands over the TUI harness", () => {
+  const launcher = reviewLauncher({
+    command: "secret-token=abc123 codex exec -",
+    envCommand: "ignored",
+    harness: { command: "claude", args: ["--model", "sonnet"] },
+    cwd: "/repo",
+    prompt: "Run /staff-review slug 2.",
+  });
+
+  expect(launcher.stdin).toBe("pipe");
+  expect(launcher.promptStdin).toBe("Run /staff-review slug 2.");
+  expect(launcher.failureLabel).toBe("configured review command");
+  expect(launcher.argv).toContain("secret-token=abc123 codex exec -");
+});
+
+test("reviewLauncher runs configured watch harness as TUI argv", () => {
+  const launcher = reviewLauncher({
+    harness: { command: "claude", args: ["--model", "sonnet"] },
+    cwd: "/repo",
+    prompt: "Run /staff-review slug 2.",
+  });
+
+  expect(launcher).toEqual({
+    argv: ["claude", "--model", "sonnet", "Run /staff-review slug 2."],
+    stdin: "inherit",
+    failureLabel: "configured watch harness",
+  });
+});
+
+test("reviewLauncher falls back to codex exec stdin when no harness is configured", () => {
+  const launcher = reviewLauncher({
+    cwd: "/repo",
+    prompt: "Run /staff-review slug 2.",
+  });
+
+  expect(launcher).toEqual({
+    argv: ["codex", "exec", "--cd", "/repo", "-"],
+    stdin: "pipe",
+    promptStdin: "Run /staff-review slug 2.",
+    failureLabel: "codex exec --cd <repo> -",
+  });
 });
 
 test("watchHarnessCommand appends the review prompt after configured harness flags", () => {
@@ -983,15 +1027,22 @@ await Bun.write(
     expect(defaultCommands).toContain("Run /staff-review");
     expect(defaultCommands).toContain("This is GitHub PR #5: Cross repo thing");
 
-    const missingHarnessSeparator = await runCliFailure([
+    await Bun.write(capture, "");
+    await Bun.write(commandLog, "");
+    await runCli([
       "settings",
       "set",
       "watchHarness",
       "capture-harness",
-      "--model",
-      "sonnet",
+      "--help",
+      "--repo",
+      "not-a-repo",
     ]);
-    expect(missingHarnessSeparator.stderr).toContain("put watchHarness flags after --");
+    const collisionHarness = JSON.parse(await Bun.file(join(config, "settings.json")).text());
+    expect(collisionHarness.watchHarness).toEqual({
+      command: "capture-harness",
+      args: ["--help", "--repo", "not-a-repo"],
+    });
 
     await Bun.write(capture, "");
     await Bun.write(commandLog, "");
@@ -1000,7 +1051,6 @@ await Bun.write(
       "set",
       "watchHarness",
       "capture-harness",
-      "--",
       "--subscription",
       "--model",
       "sonnet",

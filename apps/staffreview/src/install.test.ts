@@ -9,6 +9,7 @@ import {
   installScopeFromFlags,
   resolveInstallFlags,
   toggleAllTopLevelSkillGroupSelection,
+  watchHarnessArgsFromSettingsSetArgv,
 } from "./cli.ts";
 import {
   formatHomePath,
@@ -528,6 +529,31 @@ test("resolveInstallFlags propagates the underlying flag-resolution errors", () 
   // An empty `--harness=` must surface the same error rather than slipping
   // through as a falsy spec that quietly resolves to a project install.
   expect(() => resolveInstallFlags({ harness: "" })).toThrow("--harness requires a value");
+});
+
+test("watchHarnessArgsFromSettingsSetArgv preserves harness flags without requiring --", () => {
+  expect(
+    watchHarnessArgsFromSettingsSetArgv([
+      "settings",
+      "set",
+      "watchHarness",
+      "claude",
+      "--dangerously-skip-permissions",
+      "--model",
+      "sonnet",
+    ]),
+  ).toEqual(["claude", "--dangerously-skip-permissions", "--model", "sonnet"]);
+  expect(
+    watchHarnessArgsFromSettingsSetArgv([
+      "settings",
+      "set",
+      "watchHarness",
+      "claude",
+      "--",
+      "--dangerously-skip-permissions",
+    ]),
+  ).toEqual(["claude", "--dangerously-skip-permissions"]);
+  expect(watchHarnessArgsFromSettingsSetArgv(["settings", "get", "watchHarness"])).toBeUndefined();
 });
 
 test("formatHomePath renders in-home paths as ~ and leaves others absolute", () => {
