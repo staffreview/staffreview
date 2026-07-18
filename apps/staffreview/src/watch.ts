@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { DEFAULT_REVIEW_AGENTS, MAX_REVIEW_AGENTS, MIN_REVIEW_AGENTS } from "./review-config.ts";
 import * as store from "./store.ts";
 import type { Comment, Diff } from "./types.ts";
@@ -5,6 +6,7 @@ import type { Comment, Diff } from "./types.ts";
 const STATUS_MARKER = "<!-- staff-watch-status -->";
 const COMMENT_MARKER_PREFIX = "<!-- staff-watch-comment:";
 const DEFAULT_INTERVAL_SECONDS = 60;
+const MAX_TIMEOUT_SECONDS = 2_147_483;
 
 type LogFn = (message: string) => void;
 
@@ -12,11 +14,27 @@ export type PullRequest = {
   number: number;
   title: string;
   url: string;
+  state?: string;
   isDraft: boolean;
   baseRefName: string;
   baseRefOid: string;
   headRefName: string;
   headRefOid: string;
+};
+
+export type GithubRepo = {
+  nameWithOwner: string;
+  url: string;
+};
+
+export type GitRemote = {
+  name: string;
+  url: string;
+};
+
+type WatchedPullRequest = {
+  pr: PullRequest;
+  repo: GithubRepo;
 };
 
 export type WatchOptions = {
@@ -41,9 +59,9 @@ async function run(cmd: string[], opts: CommandOptions = {}): Promise<string> {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const out = await new Response(proc.stdout).text();
-  const err = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
+  const stdout = new Response(proc.stdout).text();
+  const stderr = new Response(proc.stderr).text();
+  const [out, err, exitCode] = await Promise.all([stdout, stderr, proc.exited]);
   if (exitCode !== 0 && !opts.allowFail) {
     throw new Error(`Command failed (${exitCode}): ${cmd.join(" ")}\n${err.trim()}`);
   }
@@ -61,6 +79,43 @@ async function gh(args: string[], opts: CommandOptions = {}): Promise<string> {
 
 async function ghJson<T>(args: string[], opts: CommandOptions = {}): Promise<T> {
   return runJson<T>(["gh", ...args], opts);
+}
+
+function ghApiArgs(
+  repo: GithubRepo,
+  path: string,
+  args: string[] = [],
+  preArgs: string[] = [],
+): string[] {
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(repo.url).hostname;
+  } catch {
+    hostname = undefined;
+  }
+  const hostArgs = hostname && hostname !== "github.com" ? ["--hostname", hostname] : [];
+  return ["api", ...hostArgs, ...preArgs, path, ...args];
+}
+
+async function ghApiJson<T>(
+  repo: GithubRepo,
+  path: string,
+  cwd: string,
+  args: string[] = [],
+  preArgs: string[] = [],
+): Promise<T> {
+  return ghJson<T>(ghApiArgs(repo, path, args, preArgs), { cwd });
+}
+
+async function ghApiPaginatedJson<T>(repo: GithubRepo, path: string, cwd: string): Promise<T[]> {
+  const pages = await ghApiJson<T[][]>(repo, path, cwd, [], ["--paginate", "--slurp"]);
+  return pages.flat();
+}
+
+async function currentGithubLogin(cwd: string, repo: GithubRepo): Promise<string> {
+  const result = await ghApiJson<{ login?: string }>(repo, "user", cwd);
+  if (!result.login) throw new Error("could not determine authenticated GitHub login");
+  return result.login;
 }
 
 async function git(args: string[], cwd: string, opts: Omit<CommandOptions, "cwd"> = {}) {
@@ -85,31 +140,143 @@ export function normalizeIntervalSeconds(value: unknown): number {
       : typeof value === "string" && value.trim()
         ? Number(value)
         : DEFAULT_INTERVAL_SECONDS;
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : DEFAULT_INTERVAL_SECONDS;
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(MAX_TIMEOUT_SECONDS, Math.max(1, Math.round(parsed)))
+    : DEFAULT_INTERVAL_SECONDS;
 }
 
 function shortSha(sha: string): string {
   return sha.slice(0, 12);
 }
 
-async function currentRepo(): Promise<string> {
-  const result = await ghJson<{ nameWithOwner: string }>([
-    "repo",
-    "view",
-    "--json",
-    "nameWithOwner",
-  ]);
-  return result.nameWithOwner;
+async function currentRepo(cwd: string): Promise<GithubRepo> {
+  const result = await ghJson<{ nameWithOwner?: string; url?: string }>(
+    ["repo", "view", "--json", "nameWithOwner,url"],
+    { cwd },
+  );
+  if (!result.nameWithOwner) throw new Error("could not determine GitHub repository");
+  return {
+    nameWithOwner: result.nameWithOwner,
+    url: result.url ?? `https://github.com/${result.nameWithOwner}`,
+  };
+}
+
+function repoFetchUrl(repo: GithubRepo): string {
+  const baseUrl = repo.url.replace(/\/+$/, "");
+  return baseUrl.endsWith(".git") ? baseUrl : `${baseUrl}.git`;
+}
+
+function normalizedRepoPath(pathname: string): string | undefined {
+  const path = pathname
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "");
+  return path ? path.toLowerCase() : undefined;
+}
+
+function normalizedRepoKey(remoteUrl: string): string | undefined {
+  const trimmed = remoteUrl.trim();
+  if (!trimmed) return undefined;
+
+  if (!trimmed.includes("://")) {
+    const scpLike = trimmed.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
+    if (scpLike?.[1] && scpLike[2]) {
+      const path = normalizedRepoPath(scpLike[2]);
+      return path ? `${scpLike[1].toLowerCase()}/${path}` : undefined;
+    }
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const path = normalizedRepoPath(url.pathname);
+    return path ? `${url.hostname.toLowerCase()}/${path}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function repoFetchTargetFromRemotes(repo: GithubRepo, remotes: GitRemote[]): string {
+  const expected = normalizedRepoKey(repo.url);
+  const matchingRemote = expected
+    ? remotes.find((remote) => normalizedRepoKey(remote.url) === expected)
+    : undefined;
+  return matchingRemote?.name ?? repoFetchUrl(repo);
+}
+
+async function gitRemotes(cwd: string): Promise<GitRemote[]> {
+  const names = (await git(["remote"], cwd, { allowFail: true }))
+    .split(/\r?\n/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const remotes: GitRemote[] = [];
+  for (const name of names) {
+    const url = (await git(["remote", "get-url", name], cwd, { allowFail: true })).trim();
+    if (url) remotes.push({ name, url });
+  }
+  return remotes;
+}
+
+type RestPullRequest = {
+  number: number;
+  title: string;
+  html_url: string;
+  draft?: boolean;
+  state?: string;
+  base: {
+    ref: string;
+    sha: string;
+  };
+  head: {
+    ref: string;
+    sha: string;
+  };
+};
+
+function pullRequestFromRest(pr: RestPullRequest): PullRequest {
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.html_url,
+    state: pr.state ?? "open",
+    isDraft: pr.draft === true,
+    baseRefName: pr.base.ref,
+    baseRefOid: pr.base.sha,
+    headRefName: pr.head.ref,
+    headRefOid: pr.head.sha,
+  };
+}
+
+export function parseRepoFromPullRequestUrl(prUrl: string): GithubRepo | undefined {
+  try {
+    const url = new URL(prUrl);
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/\d+\/?$/);
+    if (!match?.[1] || !match[2]) return undefined;
+    const owner = decodeURIComponent(match[1]);
+    const name = decodeURIComponent(match[2]);
+    return {
+      nameWithOwner: `${owner}/${name}`,
+      url: `${url.protocol}//${url.host}/${owner}/${name}`,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function repoFromPullRequestUrl(prUrl: string, fallback: GithubRepo): GithubRepo {
+  return parseRepoFromPullRequestUrl(prUrl) ?? fallback;
 }
 
 async function listPullRequests(
   prRef: string | undefined,
   all: boolean | undefined,
-): Promise<PullRequest[]> {
+  cwd: string,
+  repo: GithubRepo,
+): Promise<WatchedPullRequest[]> {
   const fields = [
     "number",
     "title",
     "url",
+    "state",
     "isDraft",
     "baseRefName",
     "baseRefOid",
@@ -117,47 +284,75 @@ async function listPullRequests(
     "headRefOid",
   ].join(",");
   if (all) {
-    const prs = await ghJson<PullRequest[]>([
-      "pr",
-      "list",
-      "--state",
-      "open",
-      "--limit",
-      "100",
-      "--json",
-      fields,
-    ]);
-    return prs.filter((pr) => !pr.isDraft);
+    const prs = await ghApiPaginatedJson<RestPullRequest>(
+      repo,
+      `repos/${repo.nameWithOwner}/pulls?state=open&per_page=100`,
+      cwd,
+    );
+    return prs
+      .map(pullRequestFromRest)
+      .filter((pr) => !pr.isDraft)
+      .map((pr) => ({ pr, repo }));
   }
 
   if (!prRef) throw new Error("pass a PR ref or use --all");
-  const pr = await ghJson<PullRequest>(["pr", "view", prRef, "--json", fields]);
+  const pr = await ghJson<PullRequest>(["pr", "view", prRef, "--json", fields], { cwd });
+  if (pr.state && pr.state.toLowerCase() !== "open") return [];
   if (pr.isDraft) return [];
-  return [pr];
+  return [{ pr, repo: repoFromPullRequestUrl(pr.url, repo) }];
 }
 
 async function ensurePrCommits(
   pr: PullRequest,
   cwd: string,
+  repo: GithubRepo,
 ): Promise<{ baseSha: string; headSha: string }> {
-  await git(["fetch", "-q", "origin", `pull/${pr.number}/head`], cwd);
+  const fetchTarget = repoFetchTargetFromRemotes(repo, await gitRemotes(cwd));
+  await git(["fetch", "-q", fetchTarget, `pull/${pr.number}/head`], cwd);
   const fetchedHead = (await git(["rev-parse", "FETCH_HEAD"], cwd)).trim();
   const headSha = fetchedHead || pr.headRefOid;
 
-  await git(["fetch", "-q", "origin", pr.baseRefName], cwd, { allowFail: true });
+  await git(["fetch", "-q", fetchTarget, pr.baseRefName], cwd, { allowFail: true });
   const hasBase = (
     await git(["rev-parse", "--verify", "--quiet", `${pr.baseRefOid}^{commit}`], cwd, {
       allowFail: true,
     })
   ).trim();
-  if (hasBase) return { baseSha: pr.baseRefOid, headSha };
+  if (!hasBase) await git(["fetch", "-q", fetchTarget, pr.baseRefOid], cwd);
 
-  await git(["fetch", "-q", "origin", pr.baseRefOid], cwd);
-  return { baseSha: pr.baseRefOid, headSha };
+  const mergeBase = (await git(["merge-base", pr.baseRefOid, headSha], cwd)).trim();
+  return { baseSha: mergeBase || pr.baseRefOid, headSha };
 }
 
-async function createPrDiff(pr: PullRequest, cwd: string): Promise<Diff> {
-  const { baseSha, headSha } = await ensurePrCommits(pr, cwd);
+async function currentMergeBase(
+  repo: GithubRepo,
+  pr: PullRequest,
+  currentBaseRefName: string,
+  currentBaseSha: string,
+  reviewedHeadSha: string,
+  cwd: string,
+): Promise<string> {
+  const fetchTarget = repoFetchTargetFromRemotes(repo, await gitRemotes(cwd));
+  await git(["fetch", "-q", fetchTarget, currentBaseRefName], cwd, { allowFail: true });
+  const hasBase = (
+    await git(["rev-parse", "--verify", "--quiet", `${currentBaseSha}^{commit}`], cwd, {
+      allowFail: true,
+    })
+  ).trim();
+  if (!hasBase) await git(["fetch", "-q", fetchTarget, currentBaseSha], cwd);
+
+  const hasHead = (
+    await git(["rev-parse", "--verify", "--quiet", `${reviewedHeadSha}^{commit}`], cwd, {
+      allowFail: true,
+    })
+  ).trim();
+  if (!hasHead) await git(["fetch", "-q", fetchTarget, `pull/${pr.number}/head`], cwd);
+
+  return (await git(["merge-base", currentBaseSha, reviewedHeadSha], cwd)).trim();
+}
+
+async function createPrDiff(pr: PullRequest, cwd: string, repo: GithubRepo): Promise<Diff> {
+  const { baseSha, headSha } = await ensurePrCommits(pr, cwd, repo);
   return store.loadOrCreateDiff(
     { kind: "commit", ref: baseSha, label: pr.baseRefName },
     { kind: "commit", ref: headSha, label: pr.headRefName },
@@ -224,10 +419,13 @@ async function runReviewCommand({
   proc.stdin.end();
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    throw new Error(
-      `review command failed with exit code ${exitCode}: ${configured || "codex exec --cd <repo> -"}`,
-    );
+    throw new Error(reviewCommandFailureMessage(configured, exitCode));
   }
+}
+
+export function reviewCommandFailureMessage(command: string | undefined, exitCode: number): string {
+  const label = command?.trim() ? "configured review command" : "codex exec --cd <repo> -";
+  return `${label} failed with exit code ${exitCode}`;
 }
 
 function shellCommand(command: string): string[] {
@@ -267,50 +465,89 @@ type IssueComment = {
   id: number;
   body?: string;
   html_url?: string;
+  user?: {
+    login?: string;
+  } | null;
 };
 
-async function upsertStatusComment(repo: string, pr: PullRequest, body: string): Promise<void> {
-  const comments = await ghJson<IssueComment[]>([
-    "api",
-    `repos/${repo}/issues/${pr.number}/comments?per_page=100`,
-  ]);
-  const existing = comments.find((comment) => comment.body?.includes(STATUS_MARKER));
+export function statusCommentToUpdate(
+  comments: IssueComment[],
+  authorLogin: string,
+): IssueComment | undefined {
+  return comments.find(
+    (comment) => comment.body?.includes(STATUS_MARKER) && comment.user?.login === authorLogin,
+  );
+}
+
+async function upsertStatusComment(
+  repo: GithubRepo,
+  pr: PullRequest,
+  body: string,
+  cwd: string,
+  authorLogin: string,
+): Promise<void> {
+  const comments = await ghApiPaginatedJson<IssueComment>(
+    repo,
+    `repos/${repo.nameWithOwner}/issues/${pr.number}/comments?per_page=100`,
+    cwd,
+  );
+  const existing = statusCommentToUpdate(comments, authorLogin);
   if (existing) {
-    await gh([
-      "api",
-      `repos/${repo}/issues/comments/${existing.id}`,
-      "-X",
-      "PATCH",
-      "-f",
-      `body=${body}`,
-    ]);
+    await gh(
+      ghApiArgs(repo, `repos/${repo.nameWithOwner}/issues/comments/${existing.id}`, [
+        "-X",
+        "PATCH",
+        "-f",
+        `body=${body}`,
+      ]),
+      { cwd },
+    );
     return;
   }
-  await gh([
-    "api",
-    `repos/${repo}/issues/${pr.number}/comments`,
-    "-X",
-    "POST",
-    "-f",
-    `body=${body}`,
-  ]);
+  await gh(
+    ghApiArgs(repo, `repos/${repo.nameWithOwner}/issues/${pr.number}/comments`, [
+      "-X",
+      "POST",
+      "-f",
+      `body=${body}`,
+    ]),
+    { cwd },
+  );
 }
 
 type ReviewComment = {
   body?: string;
+  user?: {
+    login?: string;
+  } | null;
 };
 
-async function existingPublishedMarkers(repo: string, pr: PullRequest): Promise<Set<string>> {
-  const reviewComments = await ghJson<ReviewComment[]>([
-    "api",
-    `repos/${repo}/pulls/${pr.number}/comments?per_page=100`,
-  ]);
-  const issueComments = await ghJson<ReviewComment[]>([
-    "api",
-    `repos/${repo}/issues/${pr.number}/comments?per_page=100`,
-  ]);
+async function existingPublishedMarkers(
+  repo: GithubRepo,
+  pr: PullRequest,
+  cwd: string,
+  authorLogin: string,
+): Promise<Set<string>> {
+  const reviewComments = await ghApiPaginatedJson<ReviewComment>(
+    repo,
+    `repos/${repo.nameWithOwner}/pulls/${pr.number}/comments?per_page=100`,
+    cwd,
+  );
+  const issueComments = await ghApiPaginatedJson<ReviewComment>(
+    repo,
+    `repos/${repo.nameWithOwner}/issues/${pr.number}/comments?per_page=100`,
+    cwd,
+  );
+  return collectPublishedMarkers([...reviewComments, ...issueComments], authorLogin);
+}
+
+export function collectPublishedMarkers(
+  comments: ReviewComment[],
+  authorLogin: string,
+): Set<string> {
   const markers = new Set<string>();
-  for (const comment of [...reviewComments, ...issueComments]) {
+  for (const comment of comments) {
+    if (comment.user?.login !== authorLogin) continue;
     const body = comment.body ?? "";
     for (const marker of extractCommentMarkers(body)) markers.add(marker);
   }
@@ -331,8 +568,21 @@ function extractCommentMarkers(body: string): string[] {
   return markers;
 }
 
+export function findingIdentity(comment: Comment): string {
+  const normalizedBody = comment.body.replace(/\r\n?/g, "\n").trim();
+  const payload = JSON.stringify({
+    file: comment.file ?? null,
+    side: comment.side ?? "new",
+    line: comment.line ?? null,
+    endLine: comment.endLine ?? comment.line ?? null,
+    priority: comment.priority ?? null,
+    body: normalizedBody,
+  });
+  return createHash("sha256").update(payload).digest("hex").slice(0, 24);
+}
+
 function commentMarker(repo: string, pr: PullRequest, headSha: string, comment: Comment): string {
-  return `${COMMENT_MARKER_PREFIX} ${repo}#${pr.number}:${headSha}:${comment.threadId} -->`;
+  return `${COMMENT_MARKER_PREFIX} ${repo}#${pr.number}:${headSha}:${findingIdentity(comment)} -->`;
 }
 
 export function commentBody(comment: Comment, marker: string): string {
@@ -342,52 +592,54 @@ export function commentBody(comment: Comment, marker: string): string {
 
 export function commentsToPublish({
   diff,
-  beforeCommentIds,
   existingMarkers,
   repo,
   pr,
   headSha,
 }: {
   diff: Diff;
-  beforeCommentIds: Set<string>;
   existingMarkers: Set<string>;
   repo: string;
   pr: PullRequest;
   headSha: string;
 }): Array<{ comment: Comment; marker: string }> {
   return diff.comments
-    .filter((comment) => !comment.parentId)
-    .filter((comment) => !beforeCommentIds.has(comment.id))
+    .filter((comment) => !comment.parentId && !comment.resolution && comment.priority)
     .map((comment) => ({ comment, marker: commentMarker(repo, pr, headSha, comment) }))
     .filter(({ marker }) => !existingMarkers.has(marker));
 }
 
-async function postTopLevelComment(repo: string, pr: PullRequest, body: string): Promise<void> {
-  await gh([
-    "api",
-    `repos/${repo}/issues/${pr.number}/comments`,
-    "-X",
-    "POST",
-    "-f",
-    `body=${body}`,
-  ]);
+async function postTopLevelComment(
+  repo: GithubRepo,
+  pr: PullRequest,
+  body: string,
+  cwd: string,
+): Promise<void> {
+  await gh(
+    ghApiArgs(repo, `repos/${repo.nameWithOwner}/issues/${pr.number}/comments`, [
+      "-X",
+      "POST",
+      "-f",
+      `body=${body}`,
+    ]),
+    { cwd },
+  );
 }
 
 async function postInlineComment(
-  repo: string,
+  repo: GithubRepo,
   pr: PullRequest,
   headSha: string,
   comment: Comment,
   body: string,
+  cwd: string,
 ) {
   if (!comment.file || comment.line == null) {
-    await postTopLevelComment(repo, pr, body);
+    await postTopLevelComment(repo, pr, body, cwd);
     return;
   }
 
-  const args = [
-    "api",
-    `repos/${repo}/pulls/${pr.number}/comments`,
+  const args = ghApiArgs(repo, `repos/${repo.nameWithOwner}/pulls/${pr.number}/comments`, [
     "-X",
     "POST",
     "-f",
@@ -400,7 +652,7 @@ async function postInlineComment(
     `side=${comment.side === "old" ? "LEFT" : "RIGHT"}`,
     "-F",
     `line=${comment.endLine ?? comment.line}`,
-  ];
+  ]);
   if (comment.endLine != null && comment.endLine !== comment.line) {
     args.push(
       "-F",
@@ -411,11 +663,11 @@ async function postInlineComment(
   }
 
   try {
-    await gh(args);
+    await gh(args, { cwd });
   } catch (error) {
     const anchor = `Could not anchor this Staff Review finding at \`${comment.file}:${comment.line}\`, so it was posted as a top-level PR comment.`;
     const fallback = `${anchor}\n\n${body}`;
-    await postTopLevelComment(repo, pr, fallback);
+    await postTopLevelComment(repo, pr, fallback, cwd);
     if (error instanceof Error) {
       console.warn(
         `warning: inline comment fallback for ${comment.file}:${comment.line}: ${error.message}`,
@@ -429,27 +681,99 @@ async function publishComments({
   pr,
   headSha,
   diff,
-  beforeCommentIds,
+  cwd,
+  authorLogin,
 }: {
-  repo: string;
+  repo: GithubRepo;
   pr: PullRequest;
   headSha: string;
   diff: Diff;
-  beforeCommentIds: Set<string>;
+  cwd: string;
+  authorLogin: string;
 }): Promise<number> {
-  const existingMarkers = await existingPublishedMarkers(repo, pr);
+  const existingMarkers = await existingPublishedMarkers(repo, pr, cwd, authorLogin);
   const comments = commentsToPublish({
     diff,
-    beforeCommentIds,
     existingMarkers,
-    repo,
+    repo: repo.nameWithOwner,
     pr,
     headSha,
   });
+  let posted = 0;
   for (const { comment, marker } of comments) {
-    await postInlineComment(repo, pr, headSha, comment, commentBody(comment, marker));
+    const latestMarkers = await existingPublishedMarkers(repo, pr, cwd, authorLogin);
+    if (latestMarkers.has(marker)) continue;
+    await postInlineComment(repo, pr, headSha, comment, commentBody(comment, marker), cwd);
+    posted++;
   }
-  return comments.length;
+  return posted;
+}
+
+type CurrentPullRequestState = {
+  headSha: string;
+  baseSha: string;
+  baseRefName: string;
+  state: string;
+  isDraft: boolean;
+};
+
+async function currentPullRequestState(
+  repo: GithubRepo,
+  pr: PullRequest,
+  cwd: string,
+): Promise<CurrentPullRequestState> {
+  const latest = await ghApiJson<RestPullRequest>(
+    repo,
+    `repos/${repo.nameWithOwner}/pulls/${pr.number}`,
+    cwd,
+  );
+  if (!latest.head?.sha) throw new Error(`could not determine current head for PR #${pr.number}`);
+  if (!latest.base?.sha) throw new Error(`could not determine current base for PR #${pr.number}`);
+  return {
+    headSha: latest.head.sha,
+    baseSha: latest.base.sha,
+    baseRefName: latest.base.ref || pr.baseRefName,
+    state: latest.state ?? "open",
+    isDraft: latest.draft === true,
+  };
+}
+
+export function assertPrHeadCurrent(
+  pr: PullRequest,
+  reviewedHeadSha: string,
+  currentHeadSha: string,
+) {
+  if (currentHeadSha !== reviewedHeadSha) {
+    throw new Error(
+      `PR #${pr.number} head changed during review from ${shortSha(reviewedHeadSha)} to ${shortSha(currentHeadSha)}; skipping stale findings.`,
+    );
+  }
+}
+
+export function assertPrPublishable(
+  pr: PullRequest,
+  reviewedHeadSha: string,
+  current: CurrentPullRequestState,
+) {
+  assertPrHeadCurrent(pr, reviewedHeadSha, current.headSha);
+  if (current.state !== "open") {
+    throw new Error(`PR #${pr.number} is ${current.state}; skipping findings.`);
+  }
+  if (current.isDraft) {
+    throw new Error(`PR #${pr.number} is draft; skipping findings.`);
+  }
+}
+
+export function assertPrReviewedBaseCurrent(
+  pr: PullRequest,
+  reviewedBaseSha: string,
+  currentBaseSha: string,
+) {
+  if (currentBaseSha !== reviewedBaseSha) {
+    throw new Error(
+      `PR #${pr.number} merge base changed during review from ${shortSha(reviewedBaseSha)} to ${shortSha(currentBaseSha)}; skipping stale findings.`,
+    );
+  }
 }
 
 async function reviewPullRequest({
@@ -458,22 +782,26 @@ async function reviewPullRequest({
   cwd,
   agents,
   reviewCommand,
+  authorLogin,
   log,
 }: {
-  repo: string;
+  repo: GithubRepo;
   pr: PullRequest;
   cwd: string;
   agents: number;
   reviewCommand?: string;
+  authorLogin: string;
   log: LogFn;
 }): Promise<string> {
-  const diff = await createPrDiff(pr, cwd);
+  const diff = await createPrDiff(pr, cwd, repo);
+  const reviewedBaseSha = diff.base.ref ?? pr.baseRefOid;
   const headSha = diff.head.ref ?? pr.headRefOid;
-  const beforeCommentIds = new Set(diff.comments.map((comment) => comment.id));
   await upsertStatusComment(
     repo,
     pr,
     statusBody({ pr, headSha, state: "reviewing", details: `Running with ${agents} agents.` }),
+    cwd,
+    authorLogin,
   );
   log(`reviewing PR #${pr.number} at ${shortSha(headSha)} (${diff.slug})`);
 
@@ -486,12 +814,24 @@ async function reviewPullRequest({
     });
     const updated = await store.loadDiff(diff.slug, cwd);
     if (!updated) throw new Error(`diff disappeared during review: ${diff.slug}`);
+    const current = await currentPullRequestState(repo, pr, cwd);
+    assertPrPublishable(pr, headSha, current);
+    const currentBaseSha = await currentMergeBase(
+      repo,
+      pr,
+      current.baseRefName,
+      current.baseSha,
+      headSha,
+      cwd,
+    );
+    assertPrReviewedBaseCurrent(pr, reviewedBaseSha, currentBaseSha);
     const posted = await publishComments({
       repo,
       pr,
       headSha,
       diff: updated,
-      beforeCommentIds,
+      cwd,
+      authorLogin,
     });
     await upsertStatusComment(
       repo,
@@ -502,6 +842,8 @@ async function reviewPullRequest({
         state: "complete",
         details: posted === 1 ? "Posted 1 finding." : `Posted ${posted} findings.`,
       }),
+      cwd,
+      authorLogin,
     );
     log(`completed PR #${pr.number} at ${shortSha(headSha)}: posted ${posted} findings`);
     return headSha;
@@ -511,6 +853,8 @@ async function reviewPullRequest({
       repo,
       pr,
       statusBody({ pr, headSha, state: "failed", details: message }),
+      cwd,
+      authorLogin,
     );
     throw error;
   }
@@ -521,36 +865,60 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function runWatch(options: WatchOptions): Promise<void> {
-  await gh(["auth", "status"]);
-  const repo = await currentRepo();
+  const repo =
+    !options.all && options.prRef
+      ? (parseRepoFromPullRequestUrl(options.prRef) ?? undefined)
+      : undefined;
+  const checkoutRepo = repo ?? (await currentRepo(options.cwd));
+  const authorLogin = await currentGithubLogin(options.cwd, checkoutRepo);
   const agents = normalizeAgents(options.agents);
   const intervalSeconds = normalizeIntervalSeconds(options.intervalSeconds);
   const log = options.log ?? console.log;
-  const seenHeads = new Map<number, string>();
+  const seenHeads = new Map<string, string>();
 
   for (;;) {
-    const prs = await listPullRequests(options.prRef, options.all);
+    const failures: string[] = [];
+    let prs: WatchedPullRequest[];
+    try {
+      prs = await listPullRequests(options.prRef, options.all, options.cwd, checkoutRepo);
+    } catch (error) {
+      if (options.once) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      log(`failed to list PRs: ${message}`);
+      await sleep(intervalSeconds * 1000);
+      continue;
+    }
     if (prs.length === 0) {
       log(options.all ? "no open non-draft PRs found" : "PR is draft or not found");
     }
-    for (const pr of prs) {
-      if (seenHeads.get(pr.number) === pr.headRefOid) continue;
+    for (const { pr, repo: prRepo } of prs) {
+      const seenKey = `${prRepo.nameWithOwner}#${pr.number}`;
+      if (seenHeads.get(seenKey) === pr.headRefOid) continue;
       try {
         const reviewedHead = await reviewPullRequest({
-          repo,
+          repo: prRepo,
           pr,
           cwd: options.cwd,
           agents,
           reviewCommand: options.reviewCommand,
+          authorLogin,
           log,
         });
-        seenHeads.set(pr.number, reviewedHead || pr.headRefOid);
+        seenHeads.set(seenKey, reviewedHead || pr.headRefOid);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log(`failed PR #${pr.number}: ${message}`);
+        if (options.once) failures.push(`PR #${pr.number}: ${message}`);
       }
     }
-    if (options.once) return;
+    if (options.once) {
+      if (failures.length > 0) {
+        throw new Error(
+          `staff watch --once failed for ${failures.length} PR(s): ${failures.join("; ")}`,
+        );
+      }
+      return;
+    }
     await sleep(intervalSeconds * 1000);
   }
 }

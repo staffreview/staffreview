@@ -97,6 +97,9 @@ staff watch 123 --once                 # one polling pass, useful for automation
 comments. It reuses one top-level PR status comment per PR, updating it when a
 review starts, completes, or fails.
 
+`staff watch` requires the GitHub CLI (`gh`) installed and authenticated for the
+target repository.
+
 By default it invokes `codex exec` and passes the review prompt on stdin. To use
 another harness, pass `--review-command <cmd>` or set
 `STAFF_WATCH_REVIEW_COMMAND`; the command receives the prompt on stdin plus

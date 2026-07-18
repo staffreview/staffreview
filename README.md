@@ -174,6 +174,7 @@ staff comment add|edit|delete|list|resolve|unresolve
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
 staff settings set <openBrowser|structuredHighlighting|wrapLines> <true|false>
                                        Persist browser auto-open, line wrapping, or intra-line word-diff highlighting.
+staff watch <pr> | --all               Poll GitHub PRs for new commits and review them.
 staff install                          Choose skill groups + initialize the .staffreview/ store.
 staff --help                           Full usage.
 ```
@@ -186,6 +187,9 @@ Settings (theme, split/unified, font size, syntax theme, browser auto-open, line
 
 - **git** and macOS or Linux — that’s it to run the prebuilt binary
 - [Bun](https://bun.sh) only if you build or run from source
+- [GitHub CLI](https://cli.github.com) authenticated for the target repository if
+  you use `staff watch` or the GitHub PR skills (`/staff-copy`, `/staff-document`,
+  or `/staff-docs`)
 - An AI coding agent for the automated review (Claude Code works out of the box; any harness that can read a `SKILL.md` and run shell commands works too)
 
 ## Contributing

@@ -1094,6 +1094,21 @@ async function main(argv: string[]) {
       if (watchAll && prRef) {
         throw new Error("use either `staff watch <pr>` or `staff watch --all`, not both");
       }
+      if (!watchAll && !prRef) {
+        throw new Error("pass a PR ref or use --all");
+      }
+      const reviewCommand = flags["review-command"];
+      if (reviewCommand === true || reviewCommand === "") {
+        throw new Error("pass a value for --review-command");
+      }
+      const interval = flags.interval;
+      if (interval === true || interval === "") {
+        throw new Error("pass a value for --interval");
+      }
+      const agents = flags.agents;
+      if (agents === true || agents === "") {
+        throw new Error("pass a value for --agents");
+      }
       const configuredSettings = settings.settingsWithDefaults(await settings.readSettings());
       await runWatch({
         cwd,
@@ -1101,13 +1116,12 @@ async function main(argv: string[]) {
         all: watchAll,
         once: booleanFlag(flags.once),
         intervalSeconds: normalizeIntervalSeconds(
-          typeof flags.interval === "string" ? flags.interval : undefined,
+          typeof interval === "string" ? interval : undefined,
         ),
         agents: normalizeAgents(
-          typeof flags.agents === "string" ? flags.agents : configuredSettings.reviewAgents,
+          typeof agents === "string" ? agents : configuredSettings.reviewAgents,
         ),
-        reviewCommand:
-          typeof flags["review-command"] === "string" ? flags["review-command"] : undefined,
+        reviewCommand: typeof reviewCommand === "string" ? reviewCommand : undefined,
         log: console.log,
       });
       return;

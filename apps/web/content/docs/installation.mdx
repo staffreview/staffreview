@@ -44,9 +44,9 @@ bun run apps/staffreview/src/cli.ts <args>
 - An **AI coding agent** for the automated review. Claude Code works out of the
   box; any harness that can read a `SKILL.md` and run shell commands works too.
 - The [**GitHub CLI (`gh`)**](https://cli.github.com) — optional, and only for
-  `/staff-copy`, `/staff-document`, and `/staff-docs` when working with GitHub
-  PRs. It must be installed and authenticated (`gh auth login`) before those
-  skills can read PR comments.
+  `staff watch`, `/staff-copy`, `/staff-document`, and `/staff-docs` when
+  working with GitHub PRs. It must be installed and authenticated
+  (`gh auth login`) before Staff Review can watch PRs or read PR comments.
 
 <Callout type="info">
   Once installed, run `staff install` inside a git repo to choose skill groups and
