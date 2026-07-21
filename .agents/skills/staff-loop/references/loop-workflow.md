@@ -6,10 +6,12 @@ contexts stay isolated from yours, and you decide when to stop.
 
 One **round** is: a multi-agent **review** (you fan out find + verify sub-agents
 and post the survivors) → if any comments are open, a **resolve** sub-agent fixes
-them. Resolving edits the working tree, so the next round's review sees the
-updated code and can catch regressions or issues the first pass missed. The loop
-ends when a review posts **no new open comments** (the diff has converged) or
-after the **configured round cap** (default 5), whichever comes first.
+them. A round is complete only after both phases finish (or after review when
+there is nothing to resolve). Resolving edits the working tree, so the next
+round's review sees the updated code and can catch regressions or issues the
+first pass missed. The loop ends when a review posts **no new open comments**
+(the diff has converged) or after completing the **configured round cap**
+(default 5), whichever comes first.
 
 You run the review **inline as the orchestrator** — you do **not** spawn a
 `/staff-review` sub-agent. `/staff-review` is itself an orchestrator that spawns
@@ -123,7 +125,8 @@ staff comment list --open --json
 
 - If it's `[]` (empty) → **the loop is done.** Do **not** launch a resolve
   sub-agent. Go to Step 3.
-- Otherwise, there are open threads to fix — continue to (c).
+- Otherwise, there are open threads to fix — continue to (c), even in round R.
+  The round cap is not checked immediately after review.
 
 ### c. Spawn a resolve subagent
 
@@ -136,13 +139,13 @@ Use the Agent/Task tool, foreground, awaited. Prompt (substitute the slug):
 > touched code. Do **not** commit. Report back a one-line summary of how many
 > threads you fixed / documented / skipped.
 
-Then loop back to (a) for the next round.
+After resolve finishes, continue to (d).
 
 ### d. Round cap
 
-If you complete round R's resolve and have not yet converged, **stop without a
-further review.** The last round's fixes were applied but not re-verified — say
-so in Step 3.
+Check the round cap only after resolve. If you completed round R, **stop without
+starting review R+1.** The final round's fixes were applied but not re-reviewed —
+say so in Step 3. Otherwise, loop back to (a) for the next round.
 
 ## Step 3 — Report back
 
@@ -151,8 +154,8 @@ Summarize to the user in chat (don't post a top-level comment):
 - How many rounds ran; the fan-out width **A** used.
 - Per round: comments posted by review, threads resolved (fixed/documented/skipped).
 - Why it stopped: **converged** (a review found nothing new) or **hit the round
-  cap** (R — and therefore may not be fully settled; recommend a manual look or
-  another `/staff-loop`).
+  cap** (R — final-round fixes were applied but not re-reviewed; recommend a
+  manual look or another `/staff-loop`).
 - That changes are in the working tree, **uncommitted**, for the user to review
   and commit.
 
@@ -169,6 +172,9 @@ Summarize to the user in chat (don't post a top-level comment):
   and any resolve happen only **after the whole review has drained** — every find
   chain verified/reaped and final survivors posted — and a round's resolve must
   fully finish before the next round's review, since they share one working tree.
+- **The final round still resolves.** If review in round R posts comments, run
+  resolve for those comments and wait for it to finish. The cap prevents review
+  R+1; it never permits stopping with round R's comments still open.
 - **Reap background sub-agents as you consume them.** Stop each find agent
   (`TaskStop`) the instant you read its findings, and each verify agent once
   you've read its verdicts — leaving finished agents open exhausts the limited
