@@ -58,13 +58,30 @@ test("writeLruEntry persists the value and prunes over the cap", () => {
   expect(localStorage.getItem(key(0))).toBeNull(); // oldest evicted
 });
 
-test("writeLruEntry re-appends an existing key (removeItem-before-setItem MRU)", () => {
-  // Without the removeItem, a bare setItem on an existing key keeps its slot
-  // (Web Storage spec) and eviction would degrade to FIFO-by-first-write.
+test("writeLruEntry refreshes an existing key's explicit recency", () => {
   for (let i = 0; i < CAP; i++) writeLruEntry(PREFIX, CAP, key(i), `v${i}`);
   writeLruEntry(PREFIX, CAP, key(0), "touched"); // re-touch the oldest → newest
   writeLruEntry(PREFIX, CAP, key(CAP), "fresh"); // push over the cap
   expect(countStored()).toBe(CAP);
   expect(localStorage.getItem(key(0))).toBe("touched"); // survived: re-appended
   expect(localStorage.getItem(key(1))).toBeNull(); // now the oldest → evicted
+});
+
+test("pruning does not depend on localStorage key enumeration order", () => {
+  for (let i = 0; i < CAP; i++) writeLruEntry(PREFIX, CAP, key(i), `v${i}`);
+  writeLruEntry(PREFIX, CAP, key(0), "touched");
+
+  const originalKey = localStorage.key.bind(localStorage);
+  const enumerated = Array.from({ length: localStorage.length }, (_, i) =>
+    originalKey(i),
+  ).reverse();
+  localStorage.key = (index: number) => enumerated[index] ?? null;
+  try {
+    writeLruEntry(PREFIX, CAP, key(CAP), "fresh");
+  } finally {
+    localStorage.key = originalKey;
+  }
+
+  expect(localStorage.getItem(key(0))).toBe("touched");
+  expect(localStorage.getItem(key(1))).toBeNull();
 });

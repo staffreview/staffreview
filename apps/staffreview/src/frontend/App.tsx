@@ -623,7 +623,10 @@ export function App() {
       // updater would double-fire under StrictMode and could run on discarded
       // concurrent renders — every other persisted setter here keeps the
       // side effect outside the updater too.
-      const next = { ...reviewedFileSignatures };
+      const next: Record<string, string> = Object.assign(
+        Object.create(null),
+        reviewedFileSignatures,
+      );
       if (reviewed) {
         next[file.path] = fileReviewSignature(file);
       } else {

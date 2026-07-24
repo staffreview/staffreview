@@ -92,6 +92,14 @@ test("prop-driven reviewed→false re-expands the card when no collapse override
   expect(isExpanded()).toBe(true); // the sync effect re-expands for re-review
 });
 
+test("binary files disable the reviewed control", () => {
+  mount(false);
+  const checkbox = container?.querySelector(
+    `[data-testid="reviewed-${FILE.path}"]`,
+  ) as HTMLButtonElement | null;
+  expect(checkbox?.disabled).toBe(true);
+});
+
 test("prop-driven reviewed→false leaves the card collapsed when a `true` override exists", () => {
   // The user explicitly COLLAPSED this file (the chevron writes a `true` override).
   setCollapseOverride(SLUG, FILE.path, true);

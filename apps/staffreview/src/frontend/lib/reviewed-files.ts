@@ -1,6 +1,6 @@
 import type { FileDiff } from "../../types.ts";
 import { contentSignature } from "./content-signature.ts";
-import { writeLruEntry } from "./localstorage-lru.ts";
+import { removeLruEntry, writeLruEntry } from "./localstorage-lru.ts";
 
 const REVIEWED_FILES_KEY_PREFIX = "staff:file-reviewed:v1";
 // Scan prefix for the per-slug entry family (see reviewedFilesKey).
@@ -12,13 +12,6 @@ export function reviewedFilesKey(slug: string): string {
 }
 
 export function fileReviewSignature(file: FileDiff): string {
-  // NOTE: binary blobs are NOT content-invalidated. `git.ts` clears
-  // `oldContent`/`newContent` to "" for binaries, so a binary's signature is
-  // byte-independent (it only reflects status/path/kind). Swapping an image's
-  // bytes without changing its path leaves the signature unchanged, so a file
-  // marked reviewed stays "reviewed". Closing that gap would require a blob
-  // identifier (oid) on `FileDiff`; until then binaries rely on path/status
-  // changes to invalidate.
   return [
     file.status,
     file.oldPath ?? "",
@@ -37,7 +30,7 @@ export function loadReviewedFileSignatures(slug: string): Record<string, string>
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
-    const signatures: Record<string, string> = {};
+    const signatures: Record<string, string> = Object.create(null);
     for (const [path, signature] of Object.entries(parsed)) {
       if (typeof path === "string" && typeof signature === "string") {
         signatures[path] = signature;
@@ -52,14 +45,11 @@ export function loadReviewedFileSignatures(slug: string): Record<string, string>
 export function saveReviewedFileSignatures(slug: string, signatures: Record<string, string>) {
   const key = reviewedFilesKey(slug);
   if (Object.keys(signatures).length === 0) {
-    try {
-      localStorage.removeItem(key);
-    } catch {}
+    removeLruEntry(REVIEWED_FILES_SCAN_PREFIX, key);
     return;
   }
-  // writeLruEntry removeItem's before setItem so an existing slug is genuinely
-  // re-appended to enumeration order (a bare setItem keeps its original slot per
-  // the Web Storage spec), then prunes down to the cap.
+  // writeLruEntry refreshes the slug's explicit recency metadata, then prunes
+  // the family down to the cap.
   writeLruEntry(
     REVIEWED_FILES_SCAN_PREFIX,
     MAX_REVIEWED_FILE_SLUGS,
@@ -74,8 +64,11 @@ export function reviewedFilePaths(
 ): Set<string> {
   const paths = new Set<string>();
   for (const file of files) {
+    // Binary contents are omitted from FileDiff, so no stable signature can
+    // prove that a persisted mark still refers to the current bytes.
+    if (file.isBinary) continue;
     // Short-circuit on the stored entry first so unreviewed files (the common
-    // case) skip the FNV hash over their full old+new content. Otherwise every
+    // case) skip the SHA-256 digest over their full old+new content. Otherwise every
     // Reviewed toggle would re-hash the entire diff via the App.tsx memo.
     const stored = signatures[file.path];
     if (stored !== undefined && stored === fileReviewSignature(file)) {
