@@ -28,33 +28,17 @@ make the code shippable and durable, not perform expertise.
 
 ## Step 1 — Read the code and its context
 
-**Mode `diff`:** load the changed files. The `staff` CLI is optional; do not
-check for it up front, stop, or ask the user to install it. Try the CLI command
-when appropriate:
+**Mode `diff`:** load the changed files. Try the CLI, but never require it:
 
 ```bash
 staff files --slug <slug> --json   # { path, status, oldContent, newContent } per file
 ```
 
-If that command is unavailable, parse `<base>..<head>` and use Git. Apply
-`--no-ext-diff --find-renames` (and, when enumerating, `--name-status`) to the
-appropriate command:
-
-| Base | Head | Git command |
-| --- | --- | --- |
-| ref | ref | `git diff <base> <head> --` |
-| ref | `STAGED` | `git diff --cached <base> --` |
-| ref | `WT` | `git diff <base> --` |
-| `STAGED` | ref | `git diff -R --cached <head> --` |
-| `STAGED` | `WT` | `git diff --` |
-| `WT` | ref | `git diff -R <head> --` |
-| `WT` | `STAGED` | `git diff -R --` |
-
-Equal endpoints are an empty diff. Whenever `WT` is either endpoint, also run
-`git ls-files --others --exclude-standard`. Git diff omits these files: treat
-each untracked file as added/new content when `WT` is the head, or as
-deleted/old content when `WT` is the base. Then read the patch and current files.
-Read **every** changed file.
+Without it, map refs to Git trees, `STAGED` to the index, and `WT` to the working
+tree; use `git diff`/`--cached` and `-R` when those endpoints are reversed. Use
+`--name-status` to enumerate, then read the patch and files. When `WT` appears,
+also include `git ls-files --others --exclude-standard` (added if WT is the head,
+deleted if it is the base). Read **every** changed file.
 
 **Mode `files`:** `Read` **every** assigned file in full — there is no diff, so
 **do not run `staff files --slug`** (it spans the whole repo). If you were given a
@@ -132,8 +116,7 @@ still-open thread either. Report only genuinely new or still-unaddressed issues.
 This read-only `staff comment list` is allowed; the prohibition below is against
 *mutating* comment commands (`add`/`edit`/`delete`/`resolve`).
 
-When the CLI is unavailable, skip this best-effort existing-comment check and
-continue the review. CLI absence never blocks finding issues.
+Without the CLI, skip this best-effort check and continue.
 
 ## Output — return findings, do not post
 

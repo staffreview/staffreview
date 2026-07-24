@@ -4,15 +4,10 @@ Work through the open comment threads on the active Staff Review diff. For each 
 
 ## Step 1 — Read the comments or supplied findings
 
-The `staff` CLI is optional. Never stop or ask the user to install it. When an
-orchestrator or user supplies finding JSON directly, or the current conversation
-contains the final survivor list from the most recent CLI-free `/staff-review`,
-treat each finding as an open review thread: read all of them before editing,
-then use its title/body/file/line as the review context. Skip CLI replies and
-resolution metadata in this mode, but still choose exactly one
-fix/document/skip outcome per finding. Use the supplied review slug and the find
-guide's Git mapping to capture any original hunk needed for documentation before
-editing.
+The CLI is optional. Supplied findings (including a prior CLI-free review's
+survivors) are threads: use their body/anchor, skip comment commands, and return
+indexed `fixed|documented|skipped` outcomes. Otherwise use the CLI below; if
+neither source exists, report no review input without asking for installation.
 
 Otherwise, read persisted comments with the CLI. If the user passed a diff slug
 as an argument (e.g. `/staff-resolve main..WT`), target it first so the commands
@@ -28,9 +23,6 @@ Then read the threads:
 staff active --json
 staff comment list --open --json
 ```
-
-If neither direct findings nor CLI-backed comments are accessible, report that
-there is no review input to resolve. Do not ask the user to install `staff`.
 
 This returns every unresolved thread as `{ threadId, file, line, endLine, side, resolution, documentRequested, comments }` (`endLine` is set for range comments). Read all of them before touching code so you can group related fixes and avoid conflicting edits.
 
@@ -59,34 +51,27 @@ In CLI mode handle each thread in three steps, **in this order**:
    staff comment resolve --thread <threadId> --author "<your model name>" --status fixed --body "Fixed."
    ```
 
-In CLI-free direct-findings mode, perform step 1 for every finding but omit steps
-2 and 3. Return only JSON with one result per successfully handled finding:
-`[{"index": 0, "outcome": "fixed|documented|skipped"}]`. Preserve the supplied
-indexes; do not report an index whose action did not complete.
+For direct findings, perform step 1 only and return
+`[{"index":0,"outcome":"fixed|documented|skipped"}]`; omit failed indexes.
 
 Choosing the action:
 
 1. **Fix it.** Make the code change. Run the tests / typecheck / linter for the
-   affected area. In CLI mode, reply describing the change, then resolve
-   `--status fixed`.
+   affected area. In CLI mode, reply and resolve `--status fixed`.
 
 2. **Document it.** If the thread has `documentRequested: true` (the human clicked **Document**), or the reviewer's note is a teaching point worth saving, write a new file under `.staffreview/docs/`. **You** decide the filename and write the content — the UI only flags the thread. Follow the `/staff-document` schema (frontmatter + Context + Issue + Original/Fix code + Why it matters). The example should contain:
    - The comment body.
-   - The diff hunk the comment was made on (in CLI mode, from `staff files
-     --json`; in direct mode, from the supplied slug using the find guide's Git
-     mapping).
+   - The diff hunk the comment was made on (use `staff files --json` or Git).
    - The fix you made, if you also changed code.
    - The fix diff (the snippet after your edit).
-   In CLI mode, reply noting the saved file, then resolve (this also clears
-   `documentRequested`):
+   In CLI mode, reply noting the saved file, then resolve:
    ```bash
    staff comment resolve --thread <threadId> --author "<your model name>" \
      --status documented --body "Saved as <slug>.md" --documented-as <slug>.md
    ```
 
-3. **Skip it.** Only when the comment is actually wrong, out of scope, or
-   duplicated by another thread. In CLI mode, reply with the explicit
-   justification, then resolve `--status skipped`.
+3. **Skip it.** Only when the comment is wrong, out of scope, or duplicated. In
+   CLI mode, reply with the justification and resolve `--status skipped`.
 
 Honour the reviewer's pre-marked intent:
 - A thread whose only comment is from `/staff-review` with no resolution and no `documentRequested` → treat as **fix** by default.
@@ -114,10 +99,6 @@ post nothing — just report the summary back to the user in chat instead.
 ## Constraints
 
 - **Do not commit.** Leave changes staged or in the working tree. The human reviews and commits.
-- **Do not require the CLI.** Direct findings from an orchestrator are sufficient
-  review input; only persisted replies and resolution metadata are unavailable.
 - **Do not delete review comments.** Resolution is recorded as metadata; the thread stays.
 - **One resolution per thread.** If you change your mind, run `staff comment unresolve --thread <threadId>` then resolve again with the new status.
-- **In CLI mode, explain in a reply, not a top-level comment.** Each persisted
-  thread gets an in-thread reply describing what you did; the resolution
-  `--body` is a short status line (it still can't be empty).
+- **In CLI mode, explain in a reply, not a top-level comment.**

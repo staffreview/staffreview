@@ -19,21 +19,14 @@ verdicts — you do not post comments, spawn other agents, or modify code.**
 
 Re-derive each finding's reasoning from the code yourself.
 
-- **Mode `diff`:** load the changed files and re-check against them. The `staff`
-  CLI is optional; do not stop or ask the user to install it.
+- **Mode `diff`:** load the changed files and re-check against them.
 
   ```bash
   staff files --slug <slug> --json   # the changed files
   ```
 
-  If that command is unavailable, parse `<base>..<head>` and use the complete
-  mapping from the find guide: ref→ref `git diff <base> <head>`, ref→STAGED
-  `git diff --cached <base>`, ref→WT `git diff <base>`, STAGED→ref
-  `git diff -R --cached <head>`, STAGED→WT `git diff`, WT→ref
-  `git diff -R <head>`, and WT→STAGED `git diff -R`. Apply
-  `--no-ext-diff --find-renames` and `--` to each. When `WT` is either endpoint,
-  also enumerate `git ls-files --others --exclude-standard`; treat untracked
-  files as added when `WT` is the head and deleted when it is the base.
+  Without the CLI, use the Git fallback in
+  `.agents/skills/staff-review-find/references/find-guide.md`.
 
 - **Mode `files`:** `Read` the file at the finding's anchor directly. **Do not
   run `staff files --slug`** — the section slug is a whole-tree diff and would

@@ -26,7 +26,3 @@ alone.
 - `review areas` *(diff mode)*: area numbers assigned by the orchestrator.
 - `files` *(files mode)*: assigned file paths, or a large-file line range.
 - `docs lessons`: assigned `.staffreview/docs/` filenames, or `none`.
-
-The `staff` CLI is optional. Never stop or ask the user to install it; the find
-guide gives Git fallbacks for loading a diff and makes existing-comment checks
-best-effort.

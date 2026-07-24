@@ -15,41 +15,25 @@ same sub-agent units without ever spawning a `/staff-review` sub-agent (which
 would nest orchestrators). Keep your own context lean: pass slugs, area
 assignments, and short findings between agents — never whole file contents.
 
-## Step 1 — Determine the diff, CLI mode, and agent count
+## Step 1 — Determine the diff and agent count
 
-The `staff` CLI adds persisted diffs, settings, and comments, but it is **not a
-prerequisite for reviewing**. Do not preflight it and stop, and never ask the
-user to install it. If a `staff` command is unavailable, switch to CLI-free mode
-and continue with Git.
-
-**The diff.** Resolve the slug in this exact order:
-
-1. A diff slug passed by the user (a token containing `..`).
-2. The active diff returned by `staff active --json`, when the CLI is available
-   and an active diff exists.
-3. **`main..WT`**.
-
-When the CLI is available, target the resolved slug so it is created if needed
-and made active:
+The `staff` CLI is optional: never stop to ask for it. Resolve the slug from a
+user argument, then `staff active --json` if available, otherwise `main..WT`.
+With the CLI, target that slug; without it, continue and let workers use Git:
 
 ```bash
 staff diff <slug> --json
 ```
 
-A slug is `<base>..<head>`, where each side is `WT` (working tree), `STAGED`, or
-a git ref (branch, tag, or SHA). In CLI-free mode, validate the two sides with
-Git and keep the resolved slug unchanged; the workers load its content directly.
-
-Note the `slug` — pass it to every sub-agent; every comment references it.
+Pass the slug to every sub-agent.
 
 **The agent count `N`.** This is the find-agent fan-out width, and the target
 live sub-agent count while find slots convert into verify slots. Resolve it in
 this order:
 
-1. A **bare integer argument** to the skill (e.g. `/staff-review main..WT 6`, or
-   just `/staff-review 6`) — the user tailoring fan-out to the diff's size.
-2. Otherwise the global setting, when the CLI is available.
-3. Otherwise **2**.
+1. A **bare integer argument** (e.g. `/staff-review main..WT 6`).
+2. `staff settings get reviewAgents`, if available.
+3. **2**.
 
 ```bash
 staff settings get reviewAgents   # prints a number; default 2, bounds 1–20
@@ -72,16 +56,8 @@ review a ten-line change.
 Gather just enough to partition the work. Do **not** deep-read files — the
 sub-agents do that.
 
-```bash
-staff files --slug <slug> --json   # CLI mode: paths + status
-git diff --name-status <base>      # CLI-free example for <base>..WT
-ls .staffreview/docs/              # captured review lessons (may be empty)
-```
-
-In CLI-free mode use the complete endpoint mapping in the find/verify workers,
-including `git ls-files --others --exclude-standard` whenever `WT` is an
-endpoint. Untracked files are added on a `..WT` diff and deleted on a `WT..`
-diff; include them in the changed-file survey instead of silently omitting them.
+Use `staff files --slug <slug> --json`, or the find worker's Git fallback when
+the CLI is absent, plus `ls .staffreview/docs/` (which may be empty).
 
 ## Step 3 — FIND: launch N find agents in the background
 
@@ -185,10 +161,8 @@ printf '%s' "$BODY" | staff comment add \
 **P2** (should fix: real but non-blocking), **P3** (minor: nits, naming, optional
 cleanups). Be honest with the scale — if everything is P1, nothing is.
 
-In CLI-free mode, do not discard the review or ask for an installation. Render
-the final survivor list in the Step 5 chat response with priority, title,
-`file:line`, and body. The only unavailable feature is persistence in the Staff
-Review UI.
+Without the CLI, return the final survivors in chat instead; only UI persistence
+is unavailable.
 
 **Optional top-level comment.** If a confirmed finding is genuinely
 cross-cutting (architecture, a missing migration, an overall coverage gap) with
@@ -218,9 +192,8 @@ Summarize to the user in chat (don't post a top-level comment for this):
   any post-time duplicates you merged).
 - A one-line severity breakdown of what you posted (e.g. "2 P1, 3 P2, 1 P3").
 
-Then stop. Do not commit or modify code. In CLI mode the user can run
-`/staff-resolve` next. In CLI-free mode, keep the final survivor list available
-in the conversation so a following `/staff-resolve` can use it directly.
+Then stop. Do not commit or modify code. Keep CLI-free survivors available for a
+following `/staff-resolve`.
 
 ## Conventions for comment bodies
 
@@ -250,8 +223,5 @@ in the conversation so a following `/staff-resolve` can use it directly.
   batches so you never exceed the pool.
 - **No worktree isolation.** Sub-agents read the real working tree the diff
   points at; don't isolate them.
-- **CLI absence is non-blocking.** Git can load the diff and the full review must
-  still run. Only settings, existing-comment lookup, and persisted posting are
-  unavailable; use documented defaults and return findings in chat.
 - **Don't commit or modify code.** The review ends with findings posted or
   returned in chat.
