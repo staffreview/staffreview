@@ -25,6 +25,9 @@ Re-derive each finding's reasoning from the code yourself.
   staff files --slug <slug> --json   # the changed files
   ```
 
+  Without the CLI, use the Git fallback in
+  `.agents/skills/staff-review-find/references/find-guide.md`.
+
 - **Mode `files`:** `Read` the file at the finding's anchor directly. **Do not
   run `staff files --slug`** — the section slug is a whole-tree diff and would
   dump the entire repository.

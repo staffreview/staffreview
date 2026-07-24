@@ -2,10 +2,16 @@
 
 Work through the open comment threads on the active Staff Review diff. For each one, either fix the code, save the lesson into `.staffreview/docs/`, or skip it with a justification — then record what you did via `/staff-comment`.
 
-## Step 1 — Read the comments
+## Step 1 — Read the comments or supplied findings
 
-If the user passed a diff slug as an argument (e.g. `/staff-resolve main..WT`),
-target it first so the commands below operate on that diff:
+The CLI is optional. Supplied findings (including a prior CLI-free review's
+survivors) are threads: use their body/anchor, skip comment commands, and return
+indexed `fixed|documented|skipped` outcomes. Otherwise use the CLI below; if
+neither source exists, report no review input without asking for installation.
+
+Otherwise, read persisted comments with the CLI. If the user passed a diff slug
+as an argument (e.g. `/staff-resolve main..WT`), target it first so the commands
+below operate on that diff:
 
 ```bash
 staff diff main..WT --json   # only when a slug was given; sets it active
@@ -22,13 +28,13 @@ This returns every unresolved thread as `{ threadId, file, line, endLine, side, 
 
 `documentRequested: true` means a human clicked **Document** in the UI and wants this thread turned into a docs entry (see option 2 below). Treat it as the reviewer's explicit instruction to document rather than fix.
 
-## Step 2 — For each thread: act, reply, then resolve
+## Step 2 — For each thread: act, then record when possible
 
 Pass `--author "<your model name>"` (e.g. `Opus 4.8`, `GPT-5.5`) on every
 `staff comment` command below so the work is attributed to the model, not
 "agent".
 
-Handle each thread in three steps, **in this order**:
+In CLI mode handle each thread in three steps, **in this order**:
 
 1. **Act** — pick exactly one of fix / document / skip (see below).
 2. **Reply in-thread** with what you did and why. This is the record the
@@ -45,22 +51,27 @@ Handle each thread in three steps, **in this order**:
    staff comment resolve --thread <threadId> --author "<your model name>" --status fixed --body "Fixed."
    ```
 
+For direct findings, perform step 1 only and return
+`[{"index":0,"outcome":"fixed|documented|skipped"}]`; omit failed indexes.
+
 Choosing the action:
 
-1. **Fix it.** Make the code change. Run the tests / typecheck / linter for the affected area. Reply describing the change, then resolve `--status fixed`.
+1. **Fix it.** Make the code change. Run the tests / typecheck / linter for the
+   affected area. In CLI mode, reply and resolve `--status fixed`.
 
 2. **Document it.** If the thread has `documentRequested: true` (the human clicked **Document**), or the reviewer's note is a teaching point worth saving, write a new file under `.staffreview/docs/`. **You** decide the filename and write the content — the UI only flags the thread. Follow the `/staff-document` schema (frontmatter + Context + Issue + Original/Fix code + Why it matters). The example should contain:
    - The comment body.
-   - The diff hunk the comment was made on (from `staff files --json` filtered to the file/line).
+   - The diff hunk the comment was made on (use `staff files --json` or Git).
    - The fix you made, if you also changed code.
    - The fix diff (the snippet after your edit).
-   Reply noting the saved file, then resolve (this also clears `documentRequested`):
+   In CLI mode, reply noting the saved file, then resolve:
    ```bash
    staff comment resolve --thread <threadId> --author "<your model name>" \
      --status documented --body "Saved as <slug>.md" --documented-as <slug>.md
    ```
 
-3. **Skip it.** Only when the comment is actually wrong, out of scope, or duplicated by another thread. Reply with the explicit justification, then resolve `--status skipped`.
+3. **Skip it.** Only when the comment is wrong, out of scope, or duplicated. In
+   CLI mode, reply with the justification and resolve `--status skipped`.
 
 Honour the reviewer's pre-marked intent:
 - A thread whose only comment is from `/staff-review` with no resolution and no `documentRequested` → treat as **fix** by default.
@@ -90,4 +101,4 @@ post nothing — just report the summary back to the user in chat instead.
 - **Do not commit.** Leave changes staged or in the working tree. The human reviews and commits.
 - **Do not delete review comments.** Resolution is recorded as metadata; the thread stays.
 - **One resolution per thread.** If you change your mind, run `staff comment unresolve --thread <threadId>` then resolve again with the new status.
-- **Explain in a reply, not a top-level comment.** Each thread gets an in-thread reply describing what you did; the resolution `--body` is a short status line (it still can't be empty).
+- **In CLI mode, explain in a reply, not a top-level comment.**

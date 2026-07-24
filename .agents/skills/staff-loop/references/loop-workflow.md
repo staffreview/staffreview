@@ -33,16 +33,13 @@ directly — the same units `/staff-review` uses.
 
 ## Step 1 — Set up and validate the diff
 
-If the user passed a slug (e.g. `/staff-loop main..WT`), make it active first;
-otherwise read the active diff:
-
-```bash
-staff diff main..WT --json   # only if a slug was given; sets it active
-staff active --json          # otherwise — capture the slug
-```
+The CLI is optional: never stop to ask for it. Resolve the slug from a user
+argument, then `staff active --json` if available, otherwise `main..WT`. With
+the CLI, run `staff diff <slug> --json`; without it, workers use Git.
 
 **Precondition — the head must be the working tree.** Resolve edits the working
-tree; review must see those edits next round. Check `head.kind` in the JSON:
+tree; review must see those edits next round. Check `head.kind` in CLI output or
+that the slug ends in `..WT` without it:
 
 - `head.kind === "working-tree"` → good, proceed.
 - Otherwise (a fixed `ref`/commit head, e.g. `main..HEAD`) → resolve's edits will
@@ -51,8 +48,7 @@ tree; review must see those edits next round. Check `head.kind` in the JSON:
 
 Capture the `slug` — pass it to every sub-agent so they operate on the same diff.
 
-Then read the two settings that shape the loop (both changeable in the web UI's
-gear menu):
+Read the settings below when available; otherwise use `R=5`, `A=2`.
 
 ```bash
 staff settings get loopMaxRounds   # round cap; default 5  → call this R
@@ -64,7 +60,8 @@ for this run instead of the setting — tailoring fan-out to the diff's size.)
 
 ## Step 2 — Run the loop (up to R rounds)
 
-Track a round counter yourself. For `round` = 1..R:
+Track a round counter. Without the CLI, also track settled
+`file`/`line`/`title`/`body` fingerprints in memory. For `round` = 1..R:
 
 ### a. Review the diff yourself (pipelined find → verify → post)
 
@@ -103,34 +100,30 @@ order-dependent.
    (`TaskStop`) — finished agents left open keep holding slots and will trip the
    sub-agent limit. Reaping each agent as you consume it keeps the live count near
    **A**, not 2A.
-4. **Dedup and post after every verify chain drains.** When all verify agents
-   have returned and been reaped, dedup the collected survivor list before
-   posting. If two survivors are true duplicates — same `file`+`line` describing
-   the *same* issue — keep the clearest/highest-severity version, including its
-   priority, and drop the duplicate. Post only this final survivor list with the
-   `staff` CLI, body via stdin, `--author "<your model name>"` and each finding's
-   `--priority` (as `/staff-review` Step 4 describes).
+4. **Dedup and publish after every verify chain drains.** Dedup as
+   `/staff-review` describes. With the CLI, post survivors normally. Without it,
+   retain them for resolve and remove fingerprints settled in earlier rounds.
 
-The find skill already skips threads earlier rounds settled, so a re-review won't
-re-raise resolved issues.
+In CLI mode the find skill skips threads earlier rounds settled. In CLI-free
+mode, resolved code changes remove the issue from the next round's diff.
 
 ### b. Check for convergence — **this is the loop's exit**
 
-After the round's review pipeline has **fully drained** — every find chain
-verified and its survivors posted:
+After the review drains, use open CLI threads or, without the CLI, this round's
+survivors:
 
 ```bash
-staff comment list --open --json
+staff comment list --open --json   # CLI mode
 ```
 
-- If it's `[]` (empty) → **the loop is done.** Do **not** launch a resolve
-  sub-agent. Go to Step 3.
-- Otherwise, there are open threads to fix — continue to (c), even in round R.
+- If the applicable list is `[]` (empty) → **the loop is done.** Do **not**
+  launch a resolve sub-agent. Go to Step 3.
+- Otherwise, there are issues to fix — continue to (c), even in round R.
   The round cap is not checked immediately after review.
 
 ### c. Spawn a resolve subagent
 
-Use the Agent/Task tool, foreground, awaited. Prompt (substitute the slug):
+Use the Agent/Task tool, foreground, awaited. In CLI mode use this prompt:
 
 > Read `.agents/skills/staff-resolve/SKILL.md` and follow it to the letter to
 > resolve **every** open thread on the active Staff Review diff `<slug>`.
@@ -139,13 +132,19 @@ Use the Agent/Task tool, foreground, awaited. Prompt (substitute the slug):
 > touched code. Do **not** commit. Report back a one-line summary of how many
 > threads you fixed / documented / skipped.
 
+Without the CLI, instead pass `slug` plus indexed survivor JSON and tell resolve
+not to run `staff`; it returns `[{"index":0,"outcome":"fixed|documented|skipped"}]`.
+Settle only reported `documented`/`skipped` fingerprints. A `fixed` finding must
+disappear from the next review; missing indexes remain unresolved.
+
 After resolve finishes, continue to (d).
 
 ### d. Round cap
 
 Check the round cap only after resolve. If you completed round R, **stop without
 starting review R+1.** The final round's fixes were applied but not re-reviewed —
-say so in Step 3. Otherwise, loop back to (a) for the next round.
+say so in Step 3. Without the CLI, retain omitted resolver indexes for reporting.
+Otherwise, loop back to (a) for the next round.
 
 ## Step 3 — Report back
 
@@ -156,6 +155,8 @@ Summarize to the user in chat (don't post a top-level comment):
 - Why it stopped: **converged** (a review found nothing new) or **hit the round
   cap** (R — final-round fixes were applied but not re-reviewed; recommend a
   manual look or another `/staff-loop`).
+- Without the CLI at the round cap, list every retained unresolved survivor in
+  full (priority, title, anchor, and body) so no finding is lost.
 - That changes are in the working tree, **uncommitted**, for the user to review
   and commit.
 

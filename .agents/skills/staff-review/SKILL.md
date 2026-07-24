@@ -18,6 +18,8 @@ candidate discovery to `staff-review-find`, verify each batch with
 
 ## Rules
 
+- Never require the `staff` CLI; fall back to Git and `main..WT` as the workflow
+  describes.
 - Pass slugs and short JSON findings between agents, not full file contents.
 - Pipeline each find agent into its own verifier and reap background agents as
   soon as their output is consumed.

@@ -28,13 +28,17 @@ make the code shippable and durable, not perform expertise.
 
 ## Step 1 — Read the code and its context
 
-**Mode `diff`:** load the changed files.
+**Mode `diff`:** load the changed files. Try the CLI, but never require it:
 
 ```bash
 staff files --slug <slug> --json   # { path, status, oldContent, newContent } per file
 ```
 
-Read **every** changed file.
+Without it, map refs to Git trees, `STAGED` to the index, and `WT` to the working
+tree; use `git diff`/`--cached` and `-R` when those endpoints are reversed. Use
+`--name-status` to enumerate, then read the patch and files. When `WT` appears,
+also include `git ls-files --others --exclude-standard` (added if WT is the head,
+deleted if it is the base). Read **every** changed file.
 
 **Mode `files`:** `Read` **every** assigned file in full — there is no diff, so
 **do not run `staff files --slug`** (it spans the whole repo). If you were given a
@@ -100,7 +104,7 @@ code repeats it, that's a finding — cite the file in the body. If your list is
 ## Step 4 — Don't re-raise settled or already-posted work
 
 Your findings may land on a diff that already has comments (a later `/staff-loop`
-round, or the long-lived `/staff-section` diff):
+round, or the long-lived `/staff-section` diff). When the CLI is available:
 
 ```bash
 staff comment list --json   # add --slug <slug> if you were given one
@@ -111,6 +115,8 @@ Treat any thread already resolved as `fixed`, `skipped`, or `documented` as
 still-open thread either. Report only genuinely new or still-unaddressed issues.
 This read-only `staff comment list` is allowed; the prohibition below is against
 *mutating* comment commands (`add`/`edit`/`delete`/`resolve`).
+
+Without the CLI, skip this best-effort check and continue.
 
 ## Output — return findings, do not post
 

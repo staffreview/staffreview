@@ -150,9 +150,8 @@ export function setCollapseOverride(slug: string, path: string, collapsed: boole
   try {
     localStorage.removeItem(COLLAPSE_OVERRIDES_V1_KEY); // drop the orphaned v1 key on each write
   } catch {}
-  // writeLruEntry removeItem's before setItem so an existing slug is genuinely
-  // re-appended to enumeration order (a bare setItem keeps its original slot),
-  // then prunes down to the cap — true most-recently-written, not FIFO.
+  // writeLruEntry refreshes explicit recency metadata for this slug, then
+  // prunes the least-recently-written entries down to the cap.
   writeLruEntry(
     COLLAPSE_OVERRIDES_SCAN_PREFIX,
     MAX_COLLAPSE_OVERRIDE_SLUGS,
@@ -1834,6 +1833,7 @@ export function DiffFile({
             <Checkbox
               id={reviewedId}
               checked={reviewed}
+              disabled={file.isBinary}
               onCheckedChange={(checked) => handleReviewedChange(checked === true)}
               className="size-3.5 rounded-[3px]"
               data-testid={`reviewed-${file.path}`}

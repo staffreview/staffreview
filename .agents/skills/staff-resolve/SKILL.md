@@ -20,8 +20,9 @@ justification.
 
 ## Rules
 
+- Resolve supplied findings without requiring the CLI.
 - Read all open threads before editing so related fixes can be grouped.
-- Reply in-thread with the substantive explanation, then resolve the thread.
+- For persisted threads, reply with the explanation, then resolve the thread.
 - Honor `documentRequested: true` by writing a docs entry and resolving as
   documented.
 - Run relevant checks for touched code.

@@ -61,6 +61,14 @@ test("load keeps only string→string entries", () => {
   expect(loadReviewedFileSignatures("main..WT")).toEqual({ "src/a.ts": "sig-a" });
 });
 
+test("load preserves a file path named __proto__ as an own entry", () => {
+  localStorage.setItem(reviewedFilesKey("main..WT"), '{"__proto__":"sig"}');
+  const signatures = loadReviewedFileSignatures("main..WT");
+
+  expect(Object.hasOwn(signatures, "__proto__")).toBe(true);
+  expect(signatures.__proto__).toBe("sig");
+});
+
 // --- saveReviewedFileSignatures: persistence + empty-map cleanup -----------
 
 test("save round-trips through load", () => {
@@ -77,6 +85,17 @@ test("saving an empty map removes the stored key", () => {
   expect(localStorage.getItem(reviewedFilesKey("main..WT"))).toBeNull();
 });
 
+test("saving an empty map removes the slug from LRU metadata", () => {
+  saveReviewedFileSignatures("main..WT", { "src/a.ts": "sig-a" });
+  saveReviewedFileSignatures("main..WT", {});
+
+  const metadataKey = Array.from({ length: localStorage.length }, (_, i) =>
+    localStorage.key(i),
+  ).find((key) => key?.startsWith("staff:lru-recency:"));
+  expect(metadataKey).toBeDefined();
+  expect(JSON.parse(localStorage.getItem(metadataKey as string) ?? "{}")).toEqual({});
+});
+
 test("saving overwrites the previous value cleanly", () => {
   saveReviewedFileSignatures("main..WT", { "src/a.ts": "sig-a" });
   saveReviewedFileSignatures("main..WT", { "src/b.ts": "sig-b" });
@@ -85,18 +104,13 @@ test("saving overwrites the previous value cleanly", () => {
 
 // --- saveReviewedFileSignatures: LRU recency -------------------------------
 
-test("re-saving an existing slug refreshes its LRU recency (removeItem-before-setItem)", () => {
-  // Locks the load-bearing removeItem-before-setItem in saveReviewedFileSignatures.
-  // localStorage enumeration order is insertion order and a bare setItem on an
-  // EXISTING key does NOT move it — so without the removeItem, a re-touched slug
-  // keeps its original (front) slot and eviction degrades to FIFO-by-first-write.
+test("re-saving an existing slug refreshes its explicit LRU recency", () => {
   const sig = { "src/a.ts": "sig-a" };
-  // Fill to exactly the cap. slug-0 is the oldest by insertion order.
+  // Fill to exactly the cap. slug-0 has the oldest recency.
   for (let i = 0; i < MAX_REVIEWED_FILE_SLUGS; i++) {
     saveReviewedFileSignatures(`slug-${i}`, sig);
   }
-  // Re-touch the oldest slug. The removeItem-before-setItem re-appends it, so it
-  // is no longer the front/oldest — slug-1 is.
+  // Re-touch the oldest slug, making slug-1 the oldest.
   saveReviewedFileSignatures("slug-0", sig);
   // One more distinct slug pushes over the cap and evicts the true oldest.
   saveReviewedFileSignatures("fresh", sig);
@@ -137,11 +151,14 @@ test("signature changes when text content changes", () => {
   expect(a).not.toBe(b);
 });
 
-test("binary signatures are byte-independent (documented gap)", () => {
-  // git.ts clears old/new content to "" for binaries, so distinct binary bytes
-  // under the same path produce the same signature. This locks the documented
-  // behavior in fileReviewSignature.
-  const a = fileReviewSignature(fileDiff({ isBinary: true, oldContent: "", newContent: "" }));
-  const b = fileReviewSignature(fileDiff({ isBinary: true, oldContent: "", newContent: "" }));
-  expect(a).toBe(b);
+test("signature distinguishes same-length FNV-1a collisions", () => {
+  const a = fileReviewSignature(fileDiff({ newContent: "Zd)crb9_" }));
+  const b = fileReviewSignature(fileDiff({ newContent: "~2Fo1G(7" }));
+  expect(a).not.toBe(b);
+});
+
+test("binary files never restore persisted reviewed marks", () => {
+  const binary = fileDiff({ path: "image.png", isBinary: true, oldContent: "", newContent: "" });
+  const signatures = { "image.png": fileReviewSignature(binary) };
+  expect(reviewedFilePaths([binary], signatures)).toEqual(new Set());
 });
