@@ -19,6 +19,10 @@ is reached.
 
 ## Rules
 
+- The `staff` CLI is optional. Never stop or ask the user to install it; without
+  it, use Git for the diff and pass confirmed findings directly to resolve.
+- Resolve the diff in this order: user-provided slug, active CLI diff, then
+  `main..WT`.
 - Do not spawn `staff-review` as a sub-agent; spawn `staff-review-find` and
   `staff-review-verify` directly.
 - Resolve edits must happen in the real working tree; do not isolate them in a

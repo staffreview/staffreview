@@ -15,29 +15,30 @@ same sub-agent units without ever spawning a `/staff-review` sub-agent (which
 would nest orchestrators). Keep your own context lean: pass slugs, area
 assignments, and short findings between agents — never whole file contents.
 
-## Step 1 — Determine the diff and the agent count
+## Step 1 — Determine the diff, CLI mode, and agent count
 
-**The diff.** If the user passed a diff slug as an argument (a token containing
-`..`, e.g. `/staff-review main..WT` or `/staff-review <sha>..WT`), target it
-first — this creates it from the slug if needed and makes it active:
+The `staff` CLI adds persisted diffs, settings, and comments, but it is **not a
+prerequisite for reviewing**. Do not preflight it and stop, and never ask the
+user to install it. If a `staff` command is unavailable, switch to CLI-free mode
+and continue with Git.
+
+**The diff.** Resolve the slug in this exact order:
+
+1. A diff slug passed by the user (a token containing `..`).
+2. The active diff returned by `staff active --json`, when the CLI is available
+   and an active diff exists.
+3. **`main..WT`**.
+
+When the CLI is available, target the resolved slug so it is created if needed
+and made active:
 
 ```bash
-staff diff main..WT --json
+staff diff <slug> --json
 ```
 
 A slug is `<base>..<head>`, where each side is `WT` (working tree), `STAGED`, or
-a git ref (branch, tag, or SHA). Otherwise use the active diff:
-
-```bash
-staff active --json
-```
-
-If no diff is active and no slug was given, default to the working tree vs the
-current branch:
-
-```bash
-staff diff --base HEAD --head working-tree --json
-```
+a git ref (branch, tag, or SHA). In CLI-free mode, validate the two sides with
+Git and keep the resolved slug unchanged; the workers load its content directly.
 
 Note the `slug` — pass it to every sub-agent; every comment references it.
 
@@ -47,7 +48,8 @@ this order:
 
 1. A **bare integer argument** to the skill (e.g. `/staff-review main..WT 6`, or
    just `/staff-review 6`) — the user tailoring fan-out to the diff's size.
-2. Otherwise the global setting: `staff settings get reviewAgents` (defaults to **2**).
+2. Otherwise the global setting, when the CLI is available.
+3. Otherwise **2**.
 
 ```bash
 staff settings get reviewAgents   # prints a number; default 2, bounds 1–20
@@ -71,9 +73,15 @@ Gather just enough to partition the work. Do **not** deep-read files — the
 sub-agents do that.
 
 ```bash
-staff files --slug <slug> --json   # the changed-file list (paths + status)
-ls .staffreview/docs/           # the team's captured review lessons (may be empty)
+staff files --slug <slug> --json   # CLI mode: paths + status
+git diff --name-status <base>      # CLI-free example for <base>..WT
+ls .staffreview/docs/              # captured review lessons (may be empty)
 ```
+
+In CLI-free mode use the complete endpoint mapping in the find/verify workers,
+including `git ls-files --others --exclude-standard` whenever `WT` is an
+endpoint. Untracked files are added on a `..WT` diff and deleted on a `WT..`
+diff; include them in the changed-file survey instead of silently omitting them.
 
 ## Step 3 — FIND: launch N find agents in the background
 
@@ -157,14 +165,14 @@ corrected one). Discard the rest — track how many you dropped for the Step 5
 report. Reap each verify agent immediately after consuming its verdicts, then
 append that batch's confirmed survivors to an in-memory list.
 
-**3. Dedup and post survivors after all verify chains drain.** Once every verify
-agent has returned and been reaped, dedup the collected survivors before posting.
+**3. Dedup and publish survivors after all verify chains drain.** Once every
+verify agent has returned and been reaped, dedup the collected survivors.
 If two survivors are true duplicates — same `file`+`line` describing the *same*
 issue — keep the clearest/highest-severity version, including its priority, and
-drop the duplicate. Post only this final survivor list via the `staff` CLI (see
-`/staff-comment` for the full form). Pipe the body via stdin so multi-line
-Markdown is safe, and always pass `--author` with **your model name** (e.g.
-`Opus 4.8`, `GPT-5.5`) and the survivor's `--priority`:
+drop the duplicate. In CLI mode, post only this final survivor list via the
+`staff` CLI (see `/staff-comment` for the full form). Pipe the body via stdin so
+multi-line Markdown is safe, and always pass `--author` with **your model name**
+(e.g. `Opus 4.8`, `GPT-5.5`) and the survivor's `--priority`:
 
 ```bash
 # inline (anchored). Omit --file/--line for a top-level finding. Add --end-line for a range.
@@ -176,6 +184,11 @@ printf '%s' "$BODY" | staff comment add \
 `--priority`: **P1** (must fix: bugs, security, data loss, broken contracts),
 **P2** (should fix: real but non-blocking), **P3** (minor: nits, naming, optional
 cleanups). Be honest with the scale — if everything is P1, nothing is.
+
+In CLI-free mode, do not discard the review or ask for an installation. Render
+the final survivor list in the Step 5 chat response with priority, title,
+`file:line`, and body. The only unavailable feature is persistence in the Staff
+Review UI.
 
 **Optional top-level comment.** If a confirmed finding is genuinely
 cross-cutting (architecture, a missing migration, an overall coverage gap) with
@@ -201,11 +214,13 @@ Summarize to the user in chat (don't post a top-level comment for this):
 
 - `N` find agents used; the diff slug.
 - Findings: raised by the find agents → confirmed by their verifiers → posted
-  (and how many false positives verification dropped, plus any post-time
-  duplicates you merged).
+  or returned in chat (and how many false positives verification dropped, plus
+  any post-time duplicates you merged).
 - A one-line severity breakdown of what you posted (e.g. "2 P1, 3 P2, 1 P3").
 
-Then stop. Do not commit or modify code. The user will run `/staff-resolve` next.
+Then stop. Do not commit or modify code. In CLI mode the user can run
+`/staff-resolve` next. In CLI-free mode, keep the final survivor list available
+in the conversation so a following `/staff-resolve` can use it directly.
 
 ## Conventions for comment bodies
 
@@ -235,4 +250,8 @@ Then stop. Do not commit or modify code. The user will run `/staff-resolve` next
   batches so you never exceed the pool.
 - **No worktree isolation.** Sub-agents read the real working tree the diff
   points at; don't isolate them.
-- **Don't commit or modify code.** The review ends with comments posted.
+- **CLI absence is non-blocking.** Git can load the diff and the full review must
+  still run. Only settings, existing-comment lookup, and persisted posting are
+  unavailable; use documented defaults and return findings in chat.
+- **Don't commit or modify code.** The review ends with findings posted or
+  returned in chat.

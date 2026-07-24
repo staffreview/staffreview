@@ -33,16 +33,24 @@ directly — the same units `/staff-review` uses.
 
 ## Step 1 — Set up and validate the diff
 
-If the user passed a slug (e.g. `/staff-loop main..WT`), make it active first;
-otherwise read the active diff:
+The `staff` CLI is optional. Do not preflight it and stop, and never ask the user
+to install it. Resolve the slug in this exact order:
+
+1. A slug passed by the user.
+2. The active diff returned by `staff active --json`, when the CLI is available
+   and an active diff exists.
+3. **`main..WT`**.
+
+When the CLI is available, make the resolved slug active. Otherwise continue in
+CLI-free mode; the find and verify agents load it with Git.
 
 ```bash
-staff diff main..WT --json   # only if a slug was given; sets it active
-staff active --json          # otherwise — capture the slug
+staff diff <slug> --json
 ```
 
 **Precondition — the head must be the working tree.** Resolve edits the working
-tree; review must see those edits next round. Check `head.kind` in the JSON:
+tree; review must see those edits next round. In CLI mode check `head.kind` in
+the JSON; in CLI-free mode check that the slug's head is `WT`:
 
 - `head.kind === "working-tree"` → good, proceed.
 - Otherwise (a fixed `ref`/commit head, e.g. `main..HEAD`) → resolve's edits will
@@ -51,8 +59,9 @@ tree; review must see those edits next round. Check `head.kind` in the JSON:
 
 Capture the `slug` — pass it to every sub-agent so they operate on the same diff.
 
-Then read the two settings that shape the loop (both changeable in the web UI's
-gear menu):
+Then read the two settings that shape the loop when the CLI is available (both
+changeable in the web UI's gear menu). In CLI-free mode use their defaults:
+`R=5`, `A=2`.
 
 ```bash
 staff settings get loopMaxRounds   # round cap; default 5  → call this R
@@ -64,7 +73,10 @@ for this run instead of the setting — tailoring fan-out to the diff's size.)
 
 ## Step 2 — Run the loop (up to R rounds)
 
-Track a round counter yourself. For `round` = 1..R:
+Track a round counter yourself. In CLI-free mode also keep an in-memory set of
+settled finding fingerprints (`file`, `line`, normalized title/body); this takes
+the place of persisted resolved threads for the duration of the run. For
+`round` = 1..R:
 
 ### a. Review the diff yourself (pipelined find → verify → post)
 
@@ -103,34 +115,40 @@ order-dependent.
    (`TaskStop`) — finished agents left open keep holding slots and will trip the
    sub-agent limit. Reaping each agent as you consume it keeps the live count near
    **A**, not 2A.
-4. **Dedup and post after every verify chain drains.** When all verify agents
-   have returned and been reaped, dedup the collected survivor list before
-   posting. If two survivors are true duplicates — same `file`+`line` describing
-   the *same* issue — keep the clearest/highest-severity version, including its
-   priority, and drop the duplicate. Post only this final survivor list with the
+4. **Dedup and publish after every verify chain drains.** When all verify agents
+   have returned and been reaped, dedup the collected survivor list. If two
+   survivors are true duplicates — same `file`+`line` describing the *same*
+   issue — keep the clearest/highest-severity version, including its priority,
+   and drop the duplicate. In CLI mode, post this final survivor list with the
    `staff` CLI, body via stdin, `--author "<your model name>"` and each finding's
-   `--priority` (as `/staff-review` Step 4 describes).
+   `--priority` (as `/staff-review` Step 4 describes). In CLI-free mode, keep the
+   final survivors in memory for the convergence and resolve steps, then remove
+   any survivor equivalent to a settled fingerprint from an earlier round. Do
+   not stop or ask for an installation.
 
-The find skill already skips threads earlier rounds settled, so a re-review won't
-re-raise resolved issues.
+In CLI mode the find skill skips threads earlier rounds settled. In CLI-free
+mode, resolved code changes remove the issue from the next round's diff.
 
 ### b. Check for convergence — **this is the loop's exit**
 
 After the round's review pipeline has **fully drained** — every find chain
-verified and its survivors posted:
+verified and its survivors published:
 
 ```bash
-staff comment list --open --json
+staff comment list --open --json   # CLI mode
 ```
 
-- If it's `[]` (empty) → **the loop is done.** Do **not** launch a resolve
-  sub-agent. Go to Step 3.
-- Otherwise, there are open threads to fix — continue to (c), even in round R.
+- In CLI mode, use the open-thread list.
+- In CLI-free mode, use this round's final survivor list.
+- If the applicable list is `[]` (empty) → **the loop is done.** Do **not**
+  launch a resolve sub-agent. Go to Step 3.
+- Otherwise, there are issues to fix — continue to (c), even in round R.
   The round cap is not checked immediately after review.
 
 ### c. Spawn a resolve subagent
 
-Use the Agent/Task tool, foreground, awaited. Prompt (substitute the slug):
+Use the Agent/Task tool, foreground, awaited. In CLI mode use this prompt
+(substitute the slug):
 
 > Read `.agents/skills/staff-resolve/SKILL.md` and follow it to the letter to
 > resolve **every** open thread on the active Staff Review diff `<slug>`.
@@ -139,13 +157,31 @@ Use the Agent/Task tool, foreground, awaited. Prompt (substitute the slug):
 > touched code. Do **not** commit. Report back a one-line summary of how many
 > threads you fixed / documented / skipped.
 
+In CLI-free mode, pass the deduplicated survivor JSON directly instead:
+
+> Read `.agents/skills/staff-resolve/SKILL.md` and follow it to resolve every
+> supplied finding. CLI-free mode: do not run `staff` commands; fix, document,
+> or skip each finding directly, using its body and anchor as the review thread.
+> Slug=`<slug>`; findings=`<indexed survivor JSON>`. Use the find guide's Git
+> mapping to capture any original hunk needed for documentation before editing.
+> Run the repo's quick checks for touched code. Do not commit. Return only JSON:
+> `[{"index":0,"outcome":"fixed|documented|skipped"}]`, one entry per finding.
+
+After the resolver returns successfully, add fingerprints only for survivors
+reported as `documented` or `skipped`; these outcomes may not change code and
+would otherwise be raised forever. Do not settle `fixed` findings—the code
+change must make those disappear naturally on review—or a missing index, so
+ineffective and partial fixes remain eligible for the next round.
+
 After resolve finishes, continue to (d).
 
 ### d. Round cap
 
 Check the round cap only after resolve. If you completed round R, **stop without
 starting review R+1.** The final round's fixes were applied but not re-reviewed —
-say so in Step 3. Otherwise, loop back to (a) for the next round.
+say so in Step 3. In CLI-free mode, retain any survivor whose index was omitted
+from the resolver output; there is no persisted comment to recover it from.
+Otherwise, loop back to (a) for the next round.
 
 ## Step 3 — Report back
 
@@ -156,6 +192,8 @@ Summarize to the user in chat (don't post a top-level comment):
 - Why it stopped: **converged** (a review found nothing new) or **hit the round
   cap** (R — final-round fixes were applied but not re-reviewed; recommend a
   manual look or another `/staff-loop`).
+- In CLI-free mode at the round cap, list every retained unresolved survivor in
+  full (priority, title, anchor, and body) so no finding is lost.
 - That changes are in the working tree, **uncommitted**, for the user to review
   and commit.
 
@@ -183,4 +221,7 @@ Summarize to the user in chat (don't post a top-level comment):
 - **No worktree isolation.** The sub-agents must operate on the real working tree
   the diff points at, so don't isolate them in a separate worktree.
 - **Don't commit.** Both phases leave edits in the working tree; the human commits.
+- **CLI absence is non-blocking.** Use Git-backed find/verify workers, default to
+  `R=5` and `A=2`, carry survivors directly into resolve, and use the survivor
+  count after filtering settled fingerprints as the convergence signal.
 - **Respect the precondition.** If the head isn't the working tree, don't loop.

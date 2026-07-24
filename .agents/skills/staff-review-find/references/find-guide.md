@@ -28,12 +28,32 @@ make the code shippable and durable, not perform expertise.
 
 ## Step 1 — Read the code and its context
 
-**Mode `diff`:** load the changed files.
+**Mode `diff`:** load the changed files. The `staff` CLI is optional; do not
+check for it up front, stop, or ask the user to install it. Try the CLI command
+when appropriate:
 
 ```bash
 staff files --slug <slug> --json   # { path, status, oldContent, newContent } per file
 ```
 
+If that command is unavailable, parse `<base>..<head>` and use Git. Apply
+`--no-ext-diff --find-renames` (and, when enumerating, `--name-status`) to the
+appropriate command:
+
+| Base | Head | Git command |
+| --- | --- | --- |
+| ref | ref | `git diff <base> <head> --` |
+| ref | `STAGED` | `git diff --cached <base> --` |
+| ref | `WT` | `git diff <base> --` |
+| `STAGED` | ref | `git diff -R --cached <head> --` |
+| `STAGED` | `WT` | `git diff --` |
+| `WT` | ref | `git diff -R <head> --` |
+| `WT` | `STAGED` | `git diff -R --` |
+
+Equal endpoints are an empty diff. Whenever `WT` is either endpoint, also run
+`git ls-files --others --exclude-standard`. Git diff omits these files: treat
+each untracked file as added/new content when `WT` is the head, or as
+deleted/old content when `WT` is the base. Then read the patch and current files.
 Read **every** changed file.
 
 **Mode `files`:** `Read` **every** assigned file in full — there is no diff, so
@@ -100,7 +120,7 @@ code repeats it, that's a finding — cite the file in the body. If your list is
 ## Step 4 — Don't re-raise settled or already-posted work
 
 Your findings may land on a diff that already has comments (a later `/staff-loop`
-round, or the long-lived `/staff-section` diff):
+round, or the long-lived `/staff-section` diff). When the CLI is available:
 
 ```bash
 staff comment list --json   # add --slug <slug> if you were given one
@@ -111,6 +131,9 @@ Treat any thread already resolved as `fixed`, `skipped`, or `documented` as
 still-open thread either. Report only genuinely new or still-unaddressed issues.
 This read-only `staff comment list` is allowed; the prohibition below is against
 *mutating* comment commands (`add`/`edit`/`delete`/`resolve`).
+
+When the CLI is unavailable, skip this best-effort existing-comment check and
+continue the review. CLI absence never blocks finding issues.
 
 ## Output — return findings, do not post
 

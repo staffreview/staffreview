@@ -31,7 +31,12 @@ EMPTY_TREE=$(git hash-object -t tree /dev/null)   # the repo's empty-tree object
 staff diff "${EMPTY_TREE}..WT" --json             # creates it if needed; sets it active
 ```
 
-Note the printed `slug` (it looks like `<40-hex>..WT`). All section-review
+The `staff` CLI is optional. Do not preflight it and stop, and never ask the user
+to install it. In CLI-free mode, still compute the slug as `${EMPTY_TREE}..WT`
+and pass it as context, but workers skip existing-comment checks and the
+orchestrator returns confirmed findings in chat instead of persisting them.
+
+Note the resulting `slug` (it looks like `<40-hex>..WT`). All section-review
 comments across all runs accumulate on this one diff, so `/staff-resolve` and the
 web UI see them in one place. **Sub-agents must NOT run `staff files --slug` on
 this diff** — it would dump the entire repository; they read their assigned files
@@ -43,7 +48,8 @@ directly with `Read`/`Grep`.
 (more agents → a bigger section per run). Resolve it in this order:
 
 1. A **bare integer argument** to the skill (e.g. `/staff-section 4`).
-2. Otherwise the global setting: `staff settings get sectionAgents` (default **2**).
+2. Otherwise the global setting, when the CLI is available.
+3. Otherwise **2**.
 
 ```bash
 staff settings get sectionAgents   # prints a number; default 2, bounds 1–20
@@ -204,10 +210,10 @@ Identical in shape to `/staff-review` Step 4 — **event-driven, reaping as you 
    it wholesale. Append survivors to an in-memory list and **stop the verify
    agent's task** once consumed. Track how many false positives you dropped.
 
-3. **Dedup and post after every verify chain drains.** Dedup true duplicates
+3. **Dedup and publish after every verify chain drains.** Dedup true duplicates
    (same `file`+`line`, same issue — keep the clearest/highest-severity one), then
-   post each survivor via the `staff` CLI (see `/staff-comment`). Pipe the body via
-   stdin, pass `--author` with **your model name** and the survivor's
+   in CLI mode post each survivor via the `staff` CLI (see `/staff-comment`). Pipe
+   the body via stdin, pass `--author` with **your model name** and the survivor's
    `--priority`. For inline findings, pass `--side new`; for range findings, also
    pass `--end-line <n>`. For top-level findings (`file: null` / `line: null`),
    omit `--file`, `--line`, `--end-line`, and `--side`:
@@ -225,6 +231,10 @@ Identical in shape to `/staff-review` Step 4 — **event-driven, reaping as you 
 
    `--priority`: **P1** (must fix), **P2** (should fix), **P3** (minor). Be honest
    with the scale.
+
+   In CLI-free mode, return the deduplicated survivors in the Step 7 chat report
+   with priority, title, `file:line`, and body. Continue to update the section
+   cache; only UI persistence is unavailable.
 
 Reaping on consume keeps the **live** sub-agent count near `N` (a find slot turns
 into a verify slot), never 2N. If `N` is large, launch finds in batches and reap
@@ -285,5 +295,7 @@ the comments.
   consume it.
 - **No worktree isolation.** Sub-agents read the real working tree; don't isolate
   them.
-- **Don't commit or modify code.** The review ends with comments posted and the
-  cache updated.
+- **CLI absence is non-blocking.** Use default `N=2`, skip existing-comment
+  lookup, and return confirmed findings in chat while preserving cache progress.
+- **Don't commit or modify code.** The review ends with findings published and
+  the cache updated.

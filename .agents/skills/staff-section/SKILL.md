@@ -19,10 +19,12 @@ the stable whole-tree diff.
 
 ## Rules
 
+- The `staff` CLI is optional. Never stop or ask the user to install it; without
+  it, review files normally and return confirmed findings in chat.
 - Review whole files in the selected section; skip unchanged sections, not
   individual changed files.
 - Never run `staff files --slug` on the whole-tree section diff.
-- Pipeline find to verify, reap background agents promptly, and post only
+- Pipeline find to verify, reap background agents promptly, and publish only
   verified survivors.
-- Update `.staffreview/section-cache.json` only after posting is complete.
+- Update `.staffreview/section-cache.json` only after publishing is complete.
 - Do not modify source code or commit.

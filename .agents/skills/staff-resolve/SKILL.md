@@ -20,8 +20,12 @@ justification.
 
 ## Rules
 
+- The `staff` CLI is optional. Never stop or ask the user to install it. When an
+  orchestrator, the user, or the most recent CLI-free review supplies findings,
+  fix/document/skip them without CLI replies or resolution metadata.
 - Read all open threads before editing so related fixes can be grouped.
-- Reply in-thread with the substantive explanation, then resolve the thread.
+- In CLI mode, reply in-thread with the substantive explanation, then resolve
+  the thread.
 - Honor `documentRequested: true` by writing a docs entry and resolving as
   documented.
 - Run relevant checks for touched code.

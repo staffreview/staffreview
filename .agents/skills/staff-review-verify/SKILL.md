@@ -23,3 +23,6 @@ JSON schema. Don't verify from this page alone.
 - `slug`: the diff under review (`diff` mode) or the whole-tree diff the comments
   are hosted on (`files` mode — context only).
 - `candidate findings`: JSON array from one find agent.
+
+The `staff` CLI is optional. Never stop or ask the user to install it; use the
+verify guide's Git fallback to inspect a diff.
