@@ -5,6 +5,22 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.8.0 — 2026-07-24
+
+### Added
+- **Review skills now work without an installed `staff` CLI.** `/staff-review`
+  and `/staff-loop` fall back to Git, use `main..WT` when neither the user nor
+  the CLI selected a diff, and return confirmed findings in chat when local UI
+  persistence is unavailable.
+
+### Fixed
+- **Reviewed-file state now has reliable invalidation and eviction.** Content
+  signatures use SHA-256, localStorage LRU recency is explicit rather than based
+  on browser-dependent key order, and stale recency metadata is removed.
+- **Reviewed marks handle binary files and unusual paths safely.** Binary marks
+  no longer persist across unknown content changes, and paths such as
+  `__proto__` cannot interfere with the reviewed-file signature map.
+
 ## 1.7.1 — 2026-07-21
 
 ### Fixed
