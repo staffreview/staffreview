@@ -60,10 +60,16 @@ file changed since its last review):
 ```bash
 paths=$(mktemp "${TMPDIR:-/tmp}/staff-section-paths.XXXXXX")
 hashes=$(mktemp "${TMPDIR:-/tmp}/staff-section-hashes.XXXXXX")
-trap 'rm -f "$paths" "$hashes"' EXIT
+ignored=$(mktemp "${TMPDIR:-/tmp}/staff-section-ignored.XXXXXX")
+trap 'rm -f "$paths" "$hashes" "$ignored"' EXIT
 git ls-files -s -- ':!:.staffreview/' |
   awk '$1 == "100644" || $1 == "100755" { sub(/^[0-9]+ [0-9a-f]+ [0-9]+\t/, ""); print }' |
   sort > "$paths"
+if test -f .staffignore; then
+  git ls-files -ci --exclude-from=.staffignore | sort > "$ignored"
+  comm -23 "$paths" "$ignored" > "$paths.filtered"
+  mv "$paths.filtered" "$paths"
+fi
 git hash-object --stdin-paths < "$paths" > "$hashes"
 paste "$paths" "$hashes"   # path<TAB>blobsha
 ```
@@ -71,7 +77,8 @@ paste "$paths" "$hashes"   # path<TAB>blobsha
 (If `git hash-object --stdin-paths` aborts on a tracked-but-deleted path, drop
 missing paths first — `git ls-files -s` then filter to existing files. Keep only
 regular file modes (`100644` / `100755`) before hashing so symlinks and
-submodule gitlinks do not produce anchors that diverge from the whole-tree diff.)
+submodule gitlinks do not produce anchors that diverge from the whole-tree diff.
+The `.staffignore` file uses gitignore syntax.)
 
 From that list, **exclude what isn't worth a human-grade read**, keeping a stable
 order (sort by path):

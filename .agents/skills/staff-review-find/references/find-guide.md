@@ -38,7 +38,9 @@ Without it, map refs to Git trees, `STAGED` to the index, and `WT` to the workin
 tree; use `git diff`/`--cached` and `-R` when those endpoints are reversed. Use
 `--name-status` to enumerate, then read the patch and files. When `WT` appears,
 also include `git ls-files --others --exclude-standard` (added if WT is the head,
-deleted if it is the base). Read **every** changed file.
+deleted if it is the base). If the repository has a `.staffignore`, apply its
+gitignore-style patterns to the enumerated paths. Read **every** remaining
+changed file.
 
 **Mode `files`:** `Read` **every** assigned file in full — there is no diff, so
 **do not run `staff files --slug`** (it spans the whole repo). If you were given a
