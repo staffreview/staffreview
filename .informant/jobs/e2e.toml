@@ -1,0 +1,6 @@
+name = "e2e"
+command = """
+set -euo pipefail
+bun install --frozen-lockfile
+bun run --cwd apps/staffreview test:e2e
+"""

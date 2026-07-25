@@ -1,0 +1,6 @@
+name = "check"
+command = """
+set -euo pipefail
+bun install --frozen-lockfile
+bun run check
+"""
