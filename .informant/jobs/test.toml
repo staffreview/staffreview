@@ -1,0 +1,6 @@
+name = "test"
+command = """
+set -euo pipefail
+bun install --frozen-lockfile
+bun run --cwd apps/staffreview test
+"""
