@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDiff } from "./git.ts";
@@ -48,6 +48,19 @@ async function initRepoWithBinaryAttributes() {
   await git(["commit", "-m", "initial"]);
 }
 
+async function initRepoWithFiles() {
+  await git(["init"]);
+  await git(["config", "user.email", "test@example.com"]);
+  await git(["config", "user.name", "Test User"]);
+  mkdirSync(join(tmp, "ignored"));
+  await Bun.write(join(tmp, ".staffignore"), "ignored/*\n!ignored/keep.ts\n");
+  await Bun.write(join(tmp, "keep.ts"), "export const keep = 1;\n");
+  await Bun.write(join(tmp, "ignored", "skip.ts"), "export const skip = 1;\n");
+  await Bun.write(join(tmp, "ignored", "keep.ts"), "export const nestedKeep = 1;\n");
+  await git(["add", "."]);
+  await git(["commit", "-m", "initial"]);
+}
+
 test("getDiff keeps renamed files marked binary by attributes as binary rows", async () => {
   await initRepoWithBinaryAttributes();
   await git(["mv", "old.dat", "new.dat"]);
@@ -79,4 +92,17 @@ test("getDiff keeps modified files marked binary by attributes as binary rows", 
     newContent: "",
     isBinary: true,
   });
+});
+
+test("getDiff excludes files matched by .staffignore", async () => {
+  await initRepoWithFiles();
+  await Bun.write(join(tmp, "keep.ts"), "export const keep = 2;\n");
+  await Bun.write(join(tmp, "ignored", "skip.ts"), "export const skip = 2;\n");
+  await Bun.write(join(tmp, "ignored", "keep.ts"), "export const nestedKeep = 2;\n");
+  await Bun.write(join(tmp, "new.ts"), "export const added = true;\n");
+  await Bun.write(join(tmp, "ignored", "untracked.ts"), "export const hidden = true;\n");
+
+  const files = await getDiff({ kind: "commit", ref: "HEAD" }, { kind: "working-tree" }, tmp);
+
+  expect(files.map((file) => file.path).sort()).toEqual(["ignored/keep.ts", "keep.ts", "new.ts"]);
 });

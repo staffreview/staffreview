@@ -3,6 +3,6 @@ command = """
 set -euo pipefail
 bun install --frozen-lockfile
 bun run build:binary
-bun run --cwd apps/web build
+bun run --cwd apps/web build --webpack
 """
 needs = ["check", "test", "typecheck", "e2e"]

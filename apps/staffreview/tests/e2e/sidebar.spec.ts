@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, reloadInitialDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   // Clear any persisted sidebar state so tests start from the default (open).
@@ -7,10 +7,7 @@ test.beforeEach(async () => {
 });
 
 test("sidebar collapses and expands; state persists across reloads", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   // Default: sidebar open with content visible.
   const sidebar = page.getByTestId("review-sidebar");
@@ -32,10 +29,7 @@ test("sidebar collapses and expands; state persists across reloads", async ({ pa
   await expect(sidebar.getByTestId("sidebar-new-comment")).toBeVisible();
 
   // Reload — state should persist via localStorage.
-  await page.reload();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await reloadInitialDiff(page);
   await expect(page.getByTestId("review-sidebar")).toHaveAttribute("data-state", "collapsed");
   await expect(page.getByTestId("sidebar-toggle")).toHaveAttribute("aria-pressed", "true");
 
@@ -48,10 +42,7 @@ test("sidebar collapses and expands; state persists across reloads", async ({ pa
 test("collapsed-strip Plus button expands the sidebar, opens the composer, and focuses the editor", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   // Collapse the sidebar first.
   await page.getByTestId("sidebar-toggle").click();
@@ -73,10 +64,7 @@ test("collapsed-strip Plus button expands the sidebar, opens the composer, and f
 test("header live badge keeps right padding and collapsed strip buttons align", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   // Collapse the sidebar.
   await page.getByTestId("sidebar-toggle").click();
@@ -121,10 +109,7 @@ test("the diff and sidebar are independent scroll panes; the page itself doesn't
 });
 
 test("Storage card and Review heading are gone from the sidebar", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
   await expect(page.getByText("Storage", { exact: true })).toHaveCount(0);
   await expect(page.locator("text=.staffreview/diffs/")).toHaveCount(0);
   // The "Review · N threads" heading was replaced by the collapse button.

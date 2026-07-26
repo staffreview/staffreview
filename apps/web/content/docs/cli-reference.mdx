@@ -32,6 +32,17 @@ staff files --json                     # { path, status, oldContent, newContent 
 A slug is `<base>..<head>`, where each side is `WT` (working tree), `STAGED`, or
 a git ref (branch, tag, or SHA).
 
+## Ignoring files in reviews
+
+Add a `.staffignore` file at the repository root to exclude paths from Staff
+Review diffs and agent reviews. It uses the same pattern syntax as `.gitignore`:
+
+```text
+.agents/skills/
+generated/
+*.snap
+```
+
 ## Comments
 
 ```bash

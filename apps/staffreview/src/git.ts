@@ -1,5 +1,6 @@
 import { lstat, readlink } from "node:fs/promises";
 import { join } from "node:path";
+import ignore from "ignore";
 import type { DiffTarget, FileDiff, GitRefInfo } from "./types.ts";
 
 async function run(
@@ -248,6 +249,14 @@ async function listChangedFiles(
   return results;
 }
 
+async function applyStaffIgnore<T extends { path: string }>(files: T[], cwd: string): Promise<T[]> {
+  const staffIgnore = Bun.file(join(cwd, ".staffignore"));
+  if (!(await staffIgnore.exists())) return files;
+
+  const matcher = ignore().add(await staffIgnore.text());
+  return files.filter((file) => !matcher.ignores(file.path));
+}
+
 function diffArgsForTargets(
   base: DiffTarget,
   head: DiffTarget,
@@ -410,7 +419,7 @@ export async function getDiff(
   head: DiffTarget,
   cwd = process.cwd(),
 ): Promise<FileDiff[]> {
-  const files = (await listChangedFiles(base, head, cwd)).filter(
+  const files = (await applyStaffIgnore(await listChangedFiles(base, head, cwd), cwd)).filter(
     (f) => !f.path.startsWith(".staffreview/") && !f.path.startsWith(".staff-review/"),
   );
   const binaryFiles = await listBinaryFiles(base, head, cwd);

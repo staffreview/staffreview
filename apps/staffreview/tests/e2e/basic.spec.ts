@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson, staff } from "./helpers.ts";
+import { gotoInitialDiff, resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -48,11 +48,7 @@ test("renders a diff between two branches", async ({ page }) => {
 });
 
 test("active diff is created on first load and matches CLI", async ({ page }) => {
-  await page.goto("/");
-  // Allow the initial diff creation roundtrip
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   const active = JSON.parse(await staff(["active", "--json"]));
   expect(active).not.toBeNull();

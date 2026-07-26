@@ -1,15 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
 });
 
 test("base picker typeahead filters refs and ranks an exact name match first", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   await page.getByTestId("target-picker-base-button").click();
   const search = page.getByPlaceholder(/Search refs/);
@@ -32,10 +29,7 @@ test("base picker typeahead filters refs and ranks an exact name match first", a
 test("branch list is capped when idle, expandable via View more, fully searchable", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   await page.getByTestId("target-picker-base-button").click();
 
@@ -57,10 +51,7 @@ test("branch list is capped when idle, expandable via View more, fully searchabl
 test("tag list is capped, expandable, and keeps the selected hidden tag visible", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   await page.getByTestId("target-picker-base-button").click();
 
@@ -86,10 +77,7 @@ test("tag list is capped, expandable, and keeps the selected hidden tag visible"
 });
 
 test("search results are not capped", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   await page.getByTestId("target-picker-base-button").click();
   // Typing a query that matches all legacy branches shows them all with no

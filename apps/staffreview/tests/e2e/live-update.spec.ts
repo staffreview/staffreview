@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson, staff } from "./helpers.ts";
+import { resetDiffsJson, staff, waitForInitialDiff } from "./helpers.ts";
 import { SCRATCH_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -9,11 +9,10 @@ test.beforeEach(async () => {
 });
 
 test("editing the working tree refreshes the diff in the open UI", async ({ page }) => {
+  const initialDiff = waitForInitialDiff(page);
   await page.goto("/");
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await initialDiff;
 
   const fname = "live-wt-marker.txt";
   const fpath = join(SCRATCH_DIR, fname);
@@ -52,12 +51,11 @@ test("a static commit↔commit diff ignores working-tree edits", async ({ page }
 });
 
 test("CLI-added comment shows up in the open UI via WebSocket", async ({ page }) => {
+  const initialDiff = waitForInitialDiff(page);
   await page.goto("/");
   // wait for initial diff load + WS hello
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await initialDiff;
 
   // Out-of-process CLI add — server's fs.watch should broadcast diff:changed
   await staff(["comment", "add", "--body", "live-update-marker", "--author", "cli"]);
@@ -66,11 +64,10 @@ test("CLI-added comment shows up in the open UI via WebSocket", async ({ page })
 });
 
 test("CLI can create a line-range comment (--line + --end-line)", async ({ page }) => {
+  const initialDiff = waitForInitialDiff(page);
   await page.goto("/");
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await initialDiff;
 
   const out = await staff([
     "comment",
@@ -99,11 +96,10 @@ test("CLI can create a line-range comment (--line + --end-line)", async ({ page 
 });
 
 test("CLI resolution updates the UI", async ({ page }) => {
+  const initialDiff = waitForInitialDiff(page);
   await page.goto("/");
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await initialDiff;
 
   const out = await staff(["comment", "add", "--body", "resolve-me", "--author", "cli"]);
   const comment = JSON.parse(out);
