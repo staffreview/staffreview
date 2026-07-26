@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readActiveDiff, resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, readActiveDiff, reloadInitialDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
@@ -10,10 +10,7 @@ function editor(page: import("@playwright/test").Page) {
 }
 
 async function openComposer(page: import("@playwright/test").Page) {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
   await page.getByRole("button", { name: /new comment/i }).click();
   await editor(page).click();
 }
@@ -82,10 +79,7 @@ test("persists an in-progress draft to localStorage and restores it on reload", 
   expect(stored).toBeGreaterThan(0);
 
   // Reload — the composer should reopen with the draft restored.
-  await page.reload();
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await reloadInitialDiff(page);
   await page.getByRole("button", { name: /new comment/i }).click();
   await expect(editor(page)).toContainText("half-written thought");
 });

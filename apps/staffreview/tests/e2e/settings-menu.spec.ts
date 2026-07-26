@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, resetDiffsJson } from "./helpers.ts";
 import { STAFF_CONFIG_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -36,10 +36,7 @@ test("settings menu aligns to the gear button after Refresh", async ({ page }) =
 });
 
 test("header Refresh re-runs the diff fetch", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   const refresh = page.getByTestId("header-refresh");
   await expect(refresh).toBeVisible();

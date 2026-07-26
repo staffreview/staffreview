@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, resetDiffsJson } from "./helpers.ts";
 import { SCRATCH_DIR } from "./setup.ts";
 
 test.beforeEach(async () => {
@@ -22,10 +22,7 @@ function run(cmd: string, args: string[]): Promise<void> {
 }
 
 test("a banner appears when the branch base is pinned to advances", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
   // The default base is already pinned to main's current commit.
   await expect(page.getByTestId("stale-target-banner")).toHaveCount(0);
 
@@ -53,10 +50,7 @@ test("a banner appears when the branch base is pinned to advances", async ({ pag
 test("the banner is dismissible with the X button, until a newer commit lands", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   // Advance main once → banner appears.
   await writeFile(join(SCRATCH_DIR, "DISMISS1.md"), "one\n");

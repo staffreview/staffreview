@@ -16,6 +16,31 @@ type EditorLocator = {
   pressSequentially(text: string): Promise<void>;
 };
 
+type DiffPage = {
+  goto(url: string): Promise<unknown>;
+  reload(): Promise<unknown>;
+  waitForResponse(
+    predicate: (response: { url(): string; request(): { method(): string } }) => boolean,
+  ): Promise<unknown>;
+};
+
+/** Register a listener for the initial diff creation response. */
+export function waitForInitialDiff(page: DiffPage): Promise<unknown> {
+  return page.waitForResponse(
+    (response) => response.url().includes("/api/diff") && response.request().method() === "POST",
+  );
+}
+
+/** Navigate only after registering the initial diff response listener. */
+export async function gotoInitialDiff(page: DiffPage, url = "/"): Promise<void> {
+  await Promise.all([waitForInitialDiff(page), page.goto(url)]);
+}
+
+/** Reload only after registering the initial diff response listener. */
+export async function reloadInitialDiff(page: DiffPage): Promise<void> {
+  await Promise.all([waitForInitialDiff(page), page.reload()]);
+}
+
 /**
  * Type plain text into a TipTap WYSIWYG comment editor (a contenteditable
  * `role=textbox`, so `.fill()` from the textarea days doesn't apply).

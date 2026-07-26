@@ -1,15 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { resetDiffsJson } from "./helpers.ts";
+import { gotoInitialDiff, resetDiffsJson } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
 });
 
 test("active diff slug is reflected in the URL as ?diff=", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
   // Default base is pinned to the current branch's commit SHA, head is WT.
   await expect
     .poll(() => new URL(page.url()).searchParams.get("diff"))

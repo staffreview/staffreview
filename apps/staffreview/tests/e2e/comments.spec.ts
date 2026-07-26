@@ -1,15 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { fillEditor, readActiveDiff, resetDiffsJson, staff } from "./helpers.ts";
+import { fillEditor, gotoInitialDiff, readActiveDiff, resetDiffsJson, staff } from "./helpers.ts";
 
 test.beforeEach(async () => {
   await resetDiffsJson();
 });
 
 test("creates a top-level comment from the UI", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   await page.getByRole("button", { name: /new comment/i }).click();
   await fillEditor(page.getByTestId("comment-editor"), "Overall LGTM, modulo nits below.");
@@ -143,10 +140,7 @@ test("Reply adds a child comment to the thread", async ({ page }) => {
 });
 
 test("CLI replies without file metadata render inline with their root thread", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   const root = JSON.parse(
     await staff([
@@ -217,10 +211,7 @@ test("an open (unresolved) thread can be collapsed and expanded via its chevron"
 });
 
 test("long inline-code paths wrap inside the comment card", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForResponse(
-    (r) => r.url().includes("/api/diff") && r.request().method() === "POST",
-  );
+  await gotoInitialDiff(page);
 
   const diff = await readActiveDiff();
   const longPath =
