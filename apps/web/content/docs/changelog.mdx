@@ -5,6 +5,13 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.9.1 — 2026-07-27
+
+### Fixed
+- **Switching active diffs no longer exposes incomplete JSON to concurrent
+  readers.** Staff Review now updates the active-diff pointer atomically and
+  cleans up temporary files left by interrupted writes.
+
 ## 1.9.0 — 2026-07-26
 
 ### Added
