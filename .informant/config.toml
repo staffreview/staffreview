@@ -11,4 +11,11 @@ image = "oven/bun:1"
 cpu = 2
 memory_mb = 4096
 prepareInputs = ["bun.lock", "package.json", "apps/*/package.json"]
-prepare = "bun install --frozen-lockfile --ignore-scripts"
+prepare = """
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends git
+rm -rf /var/lib/apt/lists/*
+bun install --frozen-lockfile --ignore-scripts
+"""
