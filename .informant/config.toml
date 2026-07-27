@@ -5,21 +5,10 @@ triggers = [
   { event = "commit", pull_request = { state = "open", draft = false } },
 ]
 environment = { CI = "true", NEXT_TELEMETRY_DISABLED = "1" }
-cache = [{ paths = ["~/.bun/install/cache"], shared = true }]
 
-[vm]
-image = "ghcr.io/cirruslabs/ubuntu:latest"
-os = "linux"
-user = "admin"
-password = "admin"
+[container]
+image = "oven/bun:1"
 cpu = 2
 memory_mb = 4096
-prepare = """
-set -euo pipefail
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl unzip
-curl -fsSL https://bun.sh/install | bash
-sudo mkdir -p /usr/local/bin
-sudo ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun
-bun x playwright@1.60.0 install --with-deps chromium
-"""
+prepareInputs = ["bun.lock", "package.json", "apps/*/package.json"]
+prepare = "bun install --frozen-lockfile --ignore-scripts"

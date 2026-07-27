@@ -1,6 +1,5 @@
 name = "typecheck"
 command = """
 set -euo pipefail
-bun install --frozen-lockfile
 bun run --cwd apps/web types:check
 """
