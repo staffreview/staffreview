@@ -1,7 +1,6 @@
 name = "build"
 command = """
 set -euo pipefail
-bun install --frozen-lockfile
 bun run build:binary
 bun run --cwd apps/web build --webpack
 """
