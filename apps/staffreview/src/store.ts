@@ -33,6 +33,17 @@ export async function ensureDirs(cwd = process.cwd()) {
   await mkdir(attachmentsDir(cwd), { recursive: true });
 }
 
+async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
+  await Bun.write(tmp, JSON.stringify(value, null, 2));
+  try {
+    await rename(tmp, path);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
+}
+
 // Reap orphaned `<slug>.json.<uuid>.tmp` files left in diffsDir. saveDiff
 // writes to a fresh-UUID temp file then atomically renames it into place,
 // unlinking it on rename failure — but if the process is killed (SIGKILL,
@@ -90,17 +101,7 @@ export async function saveDiff(c: Diff, cwd = process.cwd()): Promise<void> {
   // reader (the file watcher, a browser refetch, another `staff`) never sees a
   // partially-written or empty file and trips a JSON parse error.
   const path = diffPath(c.slug, cwd);
-  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-  await Bun.write(tmp, JSON.stringify(c, null, 2));
-  try {
-    await rename(tmp, path);
-  } catch (e) {
-    // The rename failed (or was interrupted), so the temp file would otherwise
-    // be left orphaned in diffsDir. Clean it up; ignore unlink errors so we
-    // surface the original rename failure, not a secondary cleanup error.
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
+  await writeJsonAtomic(path, c);
 }
 
 export async function loadOrCreateDiff(
@@ -140,7 +141,9 @@ export async function listDiffs(cwd = process.cwd()): Promise<Diff[]> {
 
 export async function setActiveDiff(slug: string, cwd = process.cwd()): Promise<void> {
   await ensureDirs(cwd);
-  await Bun.write(activePointerPath(cwd), JSON.stringify({ slug }, null, 2));
+  // Consumers commonly parse active.json directly. Replace it atomically so
+  // they never observe truncated JSON while the active diff changes.
+  await writeJsonAtomic(activePointerPath(cwd), { slug });
 }
 
 export async function getActiveDiffSlug(cwd = process.cwd()): Promise<string | null> {

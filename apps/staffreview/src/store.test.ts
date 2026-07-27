@@ -3,7 +3,18 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diffPath, diffsDir, ensureDirs, loadDiff, saveDiff, sweepStaleTmp } from "./store.ts";
+import {
+  activePointerPath,
+  diffPath,
+  diffsDir,
+  ensureDirs,
+  getActiveDiffSlug,
+  loadDiff,
+  saveDiff,
+  setActiveDiff,
+  staffDir,
+  sweepStaleTmp,
+} from "./store.ts";
 import type { Diff } from "./types.ts";
 
 // Every helper in store.ts takes an explicit `cwd`, so point them at a
@@ -63,6 +74,16 @@ test("saveDiff then loadDiff round-trips to an equal object", async () => {
   const loaded = await loadDiff(d.slug, tmp);
   // saveDiff stamps updatedAt, so compare against the mutated in-memory copy.
   expect(loaded).toEqual(d);
+});
+
+test("setActiveDiff atomically writes valid JSON", async () => {
+  await setActiveDiff("abc123..WT", tmp);
+
+  expect(JSON.parse(await Bun.file(activePointerPath(tmp)).text())).toEqual({
+    slug: "abc123..WT",
+  });
+  expect(await getActiveDiffSlug(tmp)).toBe("abc123..WT");
+  expect((await readdir(staffDir(tmp))).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
 });
 
 test("a successful save leaves no *.tmp files in the diffs dir", async () => {
