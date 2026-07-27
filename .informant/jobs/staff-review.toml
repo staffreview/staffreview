@@ -1,0 +1,108 @@
+name = "staff-review"
+command = """
+set -eu
+review_root="$PWD"
+review_home="$(mktemp -d)"
+printf '{}\n' > "$review_home/settings.json"
+pr_number="${INFORMANT_BRANCH#pull/}"
+if [ "$pr_number" = "$INFORMANT_BRANCH" ]; then
+  echo "staff review can only run for a pull request" >&2
+  exit 1
+fi
+github_token="$GITHUB_TOKEN"
+export GH_TOKEN="$github_token"
+head_sha="$(gh api "repos/$INFORMANT_REPOSITORY/pulls/$pr_number" --jq '.head.sha')"
+base_sha="$(gh api "repos/$INFORMANT_REPOSITORY/pulls/$pr_number" --jq '.base.sha')"
+if [ "$head_sha" != "$INFORMANT_SHA" ]; then
+  echo "pull request head changed before staff review" >&2
+  exit 1
+fi
+
+staff diff --base "$base_sha" --head working-tree --json >/dev/null
+slug="$base_sha..WT"
+diff_file=".staffreview/diffs/$slug.json"
+
+unset GITHUB_TOKEN
+unset GH_TOKEN
+export HOME="$review_home"
+export XDG_CONFIG_HOME="$review_home/.config"
+cd "$review_root"
+amp --settings-file "$review_home/settings.json" --mcp-config '{}' --no-ide --no-notifications \
+  --visibility unlisted --mode medium --execute "/staff-review $slug"
+
+export GH_TOKEN="$github_token"
+head_sha="$(gh api "repos/$INFORMANT_REPOSITORY/pulls/$pr_number" --jq '.head.sha')"
+if [ "$head_sha" != "$INFORMANT_SHA" ]; then
+  echo "pull request head changed during staff review" >&2
+  exit 1
+fi
+
+diff_base="$(jq -r '.base.ref' "$diff_file")"
+if [ "$diff_base" != "$base_sha" ]; then
+  echo "staff review diff does not match the pull request base" >&2
+  exit 1
+fi
+
+finding_count="$(jq '[.comments[] | select(.parentId == null)] | length' "$diff_file")"
+if [ "$finding_count" -eq 0 ]; then
+  echo "Staff review found no actionable issues"
+  exit 0
+fi
+if [ "$finding_count" -gt 50 ]; then
+  echo "staff review produced more than 50 findings" >&2
+  exit 1
+fi
+
+marker="<!-- informant-staff-review:$INFORMANT_SHA -->"
+export marker
+if gh api --paginate "repos/$INFORMANT_REPOSITORY/pulls/$pr_number/reviews?per_page=100" \
+  --jq '.[] | select((.body // "") | contains(env.marker)) | .id' | grep -q .; then
+  echo "Staff review already exists for this commit"
+  exit 0
+fi
+
+payload="$(jq --arg commit "$INFORMANT_SHA" --arg marker "$marker" '
+  [.comments[] | select(.parentId == null)] as $findings
+  | {
+      commit_id: $commit,
+      event: "COMMENT",
+      body: (
+        "Automated Staff Review by Informant.\n\n" + $marker
+        + ([$findings[] | select(.file == null) | "\n\n**" + (.priority // "Finding") + "**\n\n" + .body] | join(""))
+      ),
+      comments: [
+        $findings[]
+        | select(.file != null)
+        | if .line == null or .side != "new" then error("invalid inline finding anchor") else . end
+        | {
+            path: .file,
+            side: "RIGHT",
+            body: ("**" + (.priority // "P2") + "**\n\n" + .body)
+          }
+          + if .endLine != null and .endLine != .line then
+              { start_line: .line, start_side: "RIGHT", line: .endLine }
+            else
+              { line: .line }
+            end
+      ]
+    }
+' "$diff_file")"
+printf '%s' "$payload" | gh api "repos/$INFORMANT_REPOSITORY/pulls/$pr_number/reviews" --method POST --input - >/dev/null
+echo "Posted $finding_count staff review finding(s)"
+"""
+triggers = [{ event = "commit", pull_request = { state = "open", draft = false } }]
+secrets = ["AMP_API_KEY", "GITHUB_TOKEN"]
+container = { prepare = """
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl gh git jq ripgrep
+rm -rf /var/lib/apt/lists/*
+export HOME=/root
+mkdir -p "$HOME/.bun/install/global"
+bun add --global @ampcode/cli-linux-arm64@0.0.1784917055-ge644b2
+ln -sf "$HOME/.bun/install/global/node_modules/@ampcode/cli-linux-arm64/amp" /usr/local/bin/amp
+curl -fsSL https://github.com/staffreview/staffreview/releases/download/v1.9.0/staff-linux-arm64 \
+  -o /usr/local/bin/staff
+chmod +x /usr/local/bin/staff
+""" }
