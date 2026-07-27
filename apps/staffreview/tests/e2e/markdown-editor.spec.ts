@@ -90,10 +90,13 @@ test("clears the draft from localStorage after a successful post", async ({ page
   await page.getByRole("button", { name: /^Comment$/ }).click();
   await expect(page.getByText("ship it")).toBeVisible();
 
-  const remaining = await page.evaluate(
-    () => Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
-  );
-  expect(remaining).toBe(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => Object.keys(localStorage).filter((k) => k.startsWith("staff:draft:")).length,
+      ),
+    )
+    .toBe(0);
 });
 
 test("attaching an image inserts an inline image and uploads to /api/attachment", async ({
