@@ -78,11 +78,12 @@ test("saveDiff then loadDiff round-trips to an equal object", async () => {
 
 test("setActiveDiff atomically writes valid JSON", async () => {
   await setActiveDiff("abc123..WT", tmp);
+  await setActiveDiff("def456..WT", tmp);
 
   expect(JSON.parse(await Bun.file(activePointerPath(tmp)).text())).toEqual({
-    slug: "abc123..WT",
+    slug: "def456..WT",
   });
-  expect(await getActiveDiffSlug(tmp)).toBe("abc123..WT");
+  expect(await getActiveDiffSlug(tmp)).toBe("def456..WT");
   expect((await readdir(staffDir(tmp))).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
 });
 
@@ -100,10 +101,11 @@ test("sweepStaleTmp reaps orphaned *.tmp files left by a crash mid-write", async
   // and rename — each crash uses a fresh UUID so they accumulate unbounded.
   await writeFile(join(diffsDir(tmp), "abc123..WT.json.uuid-1.tmp"), "{}");
   await writeFile(join(diffsDir(tmp), "def456..WT.json.uuid-2.tmp"), "{}");
+  await writeFile(`${activePointerPath(tmp)}.uuid-3.tmp`, "{}");
   // The one-shot startup sweep (server boot) clears them.
   await sweepStaleTmp(tmp);
-  const entries = await readdir(diffsDir(tmp));
-  expect(entries.filter((e) => e.endsWith(".tmp"))).toEqual([]);
+  expect((await readdir(diffsDir(tmp))).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+  expect((await readdir(staffDir(tmp))).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
 });
 
 test("sweepStaleTmp leaves real *.json diffs untouched while reaping *.tmp", async () => {

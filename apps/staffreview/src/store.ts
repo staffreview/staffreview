@@ -35,8 +35,8 @@ export async function ensureDirs(cwd = process.cwd()) {
 
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-  await Bun.write(tmp, JSON.stringify(value, null, 2));
   try {
+    await Bun.write(tmp, JSON.stringify(value, null, 2));
     await rename(tmp, path);
   } catch (e) {
     await unlink(tmp).catch(() => {});
@@ -44,10 +44,10 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   }
 }
 
-// Reap orphaned `<slug>.json.<uuid>.tmp` files left in diffsDir. saveDiff
-// writes to a fresh-UUID temp file then atomically renames it into place,
-// unlinking it on rename failure — but if the process is killed (SIGKILL,
-// OOM, power loss) between the write and the rename, the temp file survives.
+// Reap orphaned `<slug>.json.<uuid>.tmp` and `active.json.<uuid>.tmp` files.
+// Atomic JSON writes use a fresh-UUID temp file then rename it into place,
+// unlinking it on failure — but if the process is killed (SIGKILL, OOM, power
+// loss) between the write and the rename, the temp file survives.
 // Each crash uses a new UUID, so without a reaper these accumulate unbounded.
 //
 // This is a one-shot startup sweep (called from server boot), NOT part of the
@@ -62,13 +62,18 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 // Best-effort: ignore per-file unlink errors and any scan error so cleanup
 // never breaks an actual save/load.
 export async function sweepStaleTmp(cwd = process.cwd()) {
-  const dir = diffsDir(cwd);
-  try {
-    const glob = new Bun.Glob("*.tmp");
-    for await (const file of glob.scan({ cwd: dir })) {
-      await unlink(join(dir, file)).catch(() => {});
-    }
-  } catch {}
+  const locations = [
+    { directory: diffsDir(cwd), pattern: "*.tmp" },
+    { directory: staffDir(cwd), pattern: "active.json.*.tmp" },
+  ];
+  for (const { directory, pattern } of locations) {
+    try {
+      const glob = new Bun.Glob(pattern);
+      for await (const file of glob.scan({ cwd: directory })) {
+        await unlink(join(directory, file)).catch(() => {});
+      }
+    } catch {}
+  }
 }
 
 export async function loadDiff(slug: string, cwd = process.cwd()): Promise<Diff | null> {
