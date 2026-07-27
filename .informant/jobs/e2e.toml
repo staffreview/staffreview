@@ -5,6 +5,10 @@ bun run --cwd apps/staffreview test:e2e
 """
 container = { prepare = """
 set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends git
 bun install --frozen-lockfile --ignore-scripts
 bun x playwright@1.60.0 install --with-deps chromium
+rm -rf /var/lib/apt/lists/*
 """ }

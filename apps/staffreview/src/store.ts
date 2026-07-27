@@ -33,10 +33,21 @@ export async function ensureDirs(cwd = process.cwd()) {
   await mkdir(attachmentsDir(cwd), { recursive: true });
 }
 
-// Reap orphaned `<slug>.json.<uuid>.tmp` files left in diffsDir. saveDiff
-// writes to a fresh-UUID temp file then atomically renames it into place,
-// unlinking it on rename failure — but if the process is killed (SIGKILL,
-// OOM, power loss) between the write and the rename, the temp file survives.
+async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
+  try {
+    await Bun.write(tmp, JSON.stringify(value, null, 2));
+    await rename(tmp, path);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
+}
+
+// Reap orphaned `<slug>.json.<uuid>.tmp` and `active.json.<uuid>.tmp` files.
+// Atomic JSON writes use a fresh-UUID temp file then rename it into place,
+// unlinking it on failure — but if the process is killed (SIGKILL, OOM, power
+// loss) between the write and the rename, the temp file survives.
 // Each crash uses a new UUID, so without a reaper these accumulate unbounded.
 //
 // This is a one-shot startup sweep (called from server boot), NOT part of the
@@ -51,13 +62,18 @@ export async function ensureDirs(cwd = process.cwd()) {
 // Best-effort: ignore per-file unlink errors and any scan error so cleanup
 // never breaks an actual save/load.
 export async function sweepStaleTmp(cwd = process.cwd()) {
-  const dir = diffsDir(cwd);
-  try {
-    const glob = new Bun.Glob("*.tmp");
-    for await (const file of glob.scan({ cwd: dir })) {
-      await unlink(join(dir, file)).catch(() => {});
-    }
-  } catch {}
+  const locations = [
+    { directory: diffsDir(cwd), pattern: "*.tmp" },
+    { directory: staffDir(cwd), pattern: "active.json.*.tmp" },
+  ];
+  for (const { directory, pattern } of locations) {
+    try {
+      const glob = new Bun.Glob(pattern);
+      for await (const file of glob.scan({ cwd: directory })) {
+        await unlink(join(directory, file)).catch(() => {});
+      }
+    } catch {}
+  }
 }
 
 export async function loadDiff(slug: string, cwd = process.cwd()): Promise<Diff | null> {
@@ -90,17 +106,7 @@ export async function saveDiff(c: Diff, cwd = process.cwd()): Promise<void> {
   // reader (the file watcher, a browser refetch, another `staff`) never sees a
   // partially-written or empty file and trips a JSON parse error.
   const path = diffPath(c.slug, cwd);
-  const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-  await Bun.write(tmp, JSON.stringify(c, null, 2));
-  try {
-    await rename(tmp, path);
-  } catch (e) {
-    // The rename failed (or was interrupted), so the temp file would otherwise
-    // be left orphaned in diffsDir. Clean it up; ignore unlink errors so we
-    // surface the original rename failure, not a secondary cleanup error.
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
+  await writeJsonAtomic(path, c);
 }
 
 export async function loadOrCreateDiff(
@@ -140,7 +146,9 @@ export async function listDiffs(cwd = process.cwd()): Promise<Diff[]> {
 
 export async function setActiveDiff(slug: string, cwd = process.cwd()): Promise<void> {
   await ensureDirs(cwd);
-  await Bun.write(activePointerPath(cwd), JSON.stringify({ slug }, null, 2));
+  // Consumers commonly parse active.json directly. Replace it atomically so
+  // they never observe truncated JSON while the active diff changes.
+  await writeJsonAtomic(activePointerPath(cwd), { slug });
 }
 
 export async function getActiveDiffSlug(cwd = process.cwd()): Promise<string | null> {
