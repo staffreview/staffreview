@@ -1,6 +1,6 @@
 {
   "name": "@staffreview/staff",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "private": false,
   "type": "module",
   "module": "src/cli.ts",

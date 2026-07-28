@@ -5,6 +5,13 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.10.1 — 2026-07-28
+
+### Fixed
+- **Informant reviews no longer fail while posting with a JSON parse error.**
+  `staff review post` now uses Informant's complete pull request context without
+  attempting to parse an unrelated inherited GitHub event payload.
+
 ## 1.10.0 — 2026-07-28
 
 ### Added

@@ -1,4 +1,4 @@
-name = "staff-review"
+name = "Staff Review"
 command = """
 set -eu
 review_root="$PWD"
@@ -44,7 +44,7 @@ export HOME=/root
 mkdir -p "$HOME/.bun/install/global"
 bun add --global @ampcode/cli-linux-arm64@0.0.1784917055-ge644b2
 ln -sf "$HOME/.bun/install/global/node_modules/@ampcode/cli-linux-arm64/amp" /usr/local/bin/amp
-curl -fsSL https://github.com/staffreview/staffreview/releases/download/v1.10.0/staff-linux-arm64 \
+curl -fsSL https://github.com/staffreview/staffreview/releases/download/v1.10.1/staff-linux-arm64 \
   -o /usr/local/bin/staff
 chmod +x /usr/local/bin/staff
 """ }
