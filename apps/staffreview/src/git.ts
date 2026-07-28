@@ -40,6 +40,35 @@ export async function currentBranch(cwd = process.cwd()): Promise<string | null>
   return out || null;
 }
 
+export async function currentCommit(cwd = process.cwd()): Promise<string | null> {
+  const out = (
+    await run(["git", "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], {
+      cwd,
+      allowFail: true,
+    })
+  ).trim();
+  return out || null;
+}
+
+export async function hasTrackedChanges(cwd = process.cwd()): Promise<boolean> {
+  const proc = Bun.spawn(["git", "status", "--porcelain", "--untracked-files=no"], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(
+      `Command failed (${exitCode}): git status --porcelain --untracked-files=no\n${stderr}`,
+    );
+  }
+  return stdout.trim() !== "";
+}
+
 export async function listRefs(cwd = process.cwd()): Promise<GitRefInfo[]> {
   const refs: GitRefInfo[] = [];
 

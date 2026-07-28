@@ -5,6 +5,7 @@ import { cancel, intro, isCancel, multiselect, outro, select } from "@clack/prom
 import packageJson from "../package.json" with { type: "json" };
 import { parseBooleanSetting } from "./boolean-setting.ts";
 import * as git from "./git.ts";
+import { postReview } from "./github-review.ts";
 import {
   GLOBAL_HARNESSES,
   type GlobalHarnessId,
@@ -557,6 +558,11 @@ USAGE
   staff files [--slug <slug>] [--json]
                                  Print the file-level changes for a diff.
 
+  staff review post [--slug <slug>] [--pr <number>]
+                    [--github-repo <owner/name>] [--commit <sha>]
+                                 Post root comments from the active diff as a
+                                 review on the current GitHub pull request.
+
   staff comment add  [--slug <s>] [--file <p>] [--line <n>] [--end-line <n>]
                      [--side new|old] [--body <text>] [--reply-to <id>] [--author <name>]
                      [--priority P1|P2|P3]
@@ -650,6 +656,7 @@ async function main(argv: string[]) {
     "active",
     "diff",
     "files",
+    "review",
     "comment",
     "settings",
     "install",
@@ -867,6 +874,29 @@ async function main(argv: string[]) {
       else {
         for (const f of files) console.log(`${f.status[0]!.toUpperCase()}\t${f.path}`);
       }
+      return;
+    }
+
+    case "review": {
+      const sub = positional[1];
+      if (sub !== "post")
+        throw new Error(
+          "usage: staff review post [--slug <slug>] [--pr <number>] [--github-repo <owner/name>] [--commit <sha>]",
+        );
+      const slug = await activeSlugOrThrow(
+        cwd,
+        typeof flags.slug === "string" ? flags.slug : undefined,
+      );
+      const diff = await store.loadDiff(slug, cwd);
+      if (!diff) throw new Error(`diff not found: ${slug}`);
+      const result = await postReview(diff, {
+        cwd,
+        pr: typeof flags.pr === "string" ? flags.pr : undefined,
+        repository: typeof flags["github-repo"] === "string" ? flags["github-repo"] : undefined,
+        expectedHead: typeof flags.commit === "string" ? flags.commit : undefined,
+      });
+      if (flags.json) console.log(JSON.stringify(result, null, 2));
+      else console.log(result.message);
       return;
     }
 

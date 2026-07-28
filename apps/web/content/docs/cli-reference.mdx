@@ -8,6 +8,7 @@ staff [serve] [<slug>] [--port <n>] [--open] [--no-open] [--repo <dir>]
                                        Open the web UI (default). <slug> like main..WT.
 staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
 staff files [--json]                   List the file-level changes for a diff.
+staff review post [--pr <number>]      Post active-diff comments to the current GitHub PR.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
@@ -31,6 +32,36 @@ staff files --json                     # { path, status, oldContent, newContent 
 
 A slug is `<base>..<head>`, where each side is `WT` (working tree), `STAGED`, or
 a git ref (branch, tag, or SHA).
+
+## GitHub pull requests
+
+```bash
+staff review post                      # infer the PR from gh or GitHub Actions
+staff review post --pr 123             # explicitly select a PR
+staff review post --slug main..WT      # post comments from a specific diff
+staff review post --github-repo owner/repo --pr 123 --commit "$HEAD_SHA"
+```
+
+The command uses the GitHub CLI's existing authentication (`GH_TOKEN`,
+`GITHUB_TOKEN`, or `gh auth login`). It posts root comments as one PR review,
+rejects stale base/head context, and skips a review already posted for the same
+commit. Replies and resolved-thread metadata remain local.
+
+In GitHub Actions, the command reads `GITHUB_REPOSITORY` and the pull-request
+event at `GITHUB_EVENT_PATH`, so it also works from a detached checkout. Grant
+the workflow token permission to post reviews and check out the PR head rather
+than GitHub's synthetic merge commit:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+```
 
 ## Ignoring files in reviews
 
