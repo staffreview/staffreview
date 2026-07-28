@@ -144,7 +144,14 @@ export async function postReview(
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const runGh = options.runGh ?? ((args, input) => runGhCommand(args, input, cwd, env));
-  const event = await githubEvent(env.GITHUB_EVENT_PATH, options.event);
+  // Informant provides the repository, PR number, and expected head directly.
+  // Do not also consume an inherited GITHUB_EVENT_PATH in that environment:
+  // it may belong to the host workflow rather than this checkout, and parsing
+  // it can fail before the complete Informant context below is even used.
+  const event = await githubEvent(
+    env.INFORMANT_REPOSITORY && env.INFORMANT_BRANCH ? undefined : env.GITHUB_EVENT_PATH,
+    options.event,
+  );
   const eventPrNumber = event?.pull_request?.number ?? event?.number;
 
   const repository =

@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { postReview, reviewPayload, validateDiffHead } from "./github-review.ts";
 import type { Diff } from "./types.ts";
 
@@ -139,6 +142,35 @@ test("postReview resolves Informant context without changing review branding", a
     body: expect.stringContaining("Staff Review."),
   });
   expect(post.input).not.toContain("Informant");
+});
+
+test("postReview ignores an inherited GitHub event path in Informant context", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "staffreview-event-"));
+  const eventPath = join(directory, "event.json");
+  await writeFile(eventPath, "'not json'");
+  const commitDiff = diff([]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+
+  try {
+    const result = await postReview(commitDiff, {
+      env: {
+        GITHUB_EVENT_PATH: eventPath,
+        INFORMANT_REPOSITORY: "owner/repo",
+        INFORMANT_BRANCH: "pull/42",
+        INFORMANT_SHA: "head",
+      },
+      runGh: async (args) => {
+        if (args[1] === "repos/owner/repo/pulls/42") {
+          return JSON.stringify({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+        }
+        return "{}";
+      },
+    });
+
+    expect(result.message).toBe("Staff review found no actionable issues");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("postReview does not post a duplicate review", async () => {
