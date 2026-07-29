@@ -5,6 +5,13 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.10.2 — 2026-07-29
+
+### Fixed
+- **GitHub review posting no longer depends on the installed GitHub CLI.**
+  `staff review post` now calls the GitHub REST API directly, follows paginated
+  review responses, and reports HTTP response details when posting fails.
+
 ## 1.10.1 — 2026-07-28
 
 ### Fixed
