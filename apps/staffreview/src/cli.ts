@@ -561,7 +561,9 @@ USAGE
   staff review post [--slug <slug>] [--pr <number>]
                     [--github-repo <owner/name>] [--commit <sha>]
                                  Post root comments from the active diff as a
-                                 review on the current GitHub pull request.
+                                 GitHub pull request review. Repository and PR
+                                 default from CI; otherwise pass both flags.
+                                 Requires GH_TOKEN or GITHUB_TOKEN.
 
   staff comment add  [--slug <s>] [--file <p>] [--line <n>] [--end-line <n>]
                      [--side new|old] [--body <text>] [--reply-to <id>] [--author <name>]

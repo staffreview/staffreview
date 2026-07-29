@@ -8,7 +8,8 @@ staff [serve] [<slug>] [--port <n>] [--open] [--no-open] [--repo <dir>]
                                        Open the web UI (default). <slug> like main..WT.
 staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
 staff files [--json]                   List the file-level changes for a diff.
-staff review post [--pr <number>]      Post active-diff comments to the current GitHub PR.
+staff review post [--pr <n>] [--github-repo <owner/name>]
+                                       Post active-diff comments to a GitHub PR.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).
@@ -36,16 +37,16 @@ a git ref (branch, tag, or SHA).
 ## GitHub pull requests
 
 ```bash
-staff review post                      # infer the PR from gh or GitHub Actions
-staff review post --pr 123             # explicitly select a PR
-staff review post --slug main..WT      # post comments from a specific diff
+staff review post                      # use Informant or GitHub Actions context
+staff review post --slug main..WT      # post a specific diff using CI context
 staff review post --github-repo owner/repo --pr 123 --commit "$HEAD_SHA"
 ```
 
-The command uses the GitHub CLI's existing authentication (`GH_TOKEN`,
-`GITHUB_TOKEN`, or `gh auth login`). It posts root comments as one PR review,
-rejects stale base/head context, and skips a review already posted for the same
-commit. Replies and resolved-thread metadata remain local.
+The command calls the GitHub REST API directly and requires `GH_TOKEN` or
+`GITHUB_TOKEN`. Outside Informant or GitHub Actions, pass both `--github-repo`
+and `--pr`. It posts root comments as one PR review, rejects stale base/head
+context, and skips a review already posted for the same commit. Replies and
+resolved-thread metadata remain local.
 
 In GitHub Actions, the command reads `GITHUB_REPOSITORY` and the pull-request
 event at `GITHUB_EVENT_PATH`, so it also works from a detached checkout. Grant

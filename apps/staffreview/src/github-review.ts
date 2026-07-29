@@ -1,8 +1,6 @@
 import * as git from "./git.ts";
 import type { Comment, Diff } from "./types.ts";
 
-type GhRunner = (args: string[], input?: string) => Promise<string>;
-
 type PullRequest = {
   number: number;
   head: { sha: string };
@@ -27,35 +25,44 @@ export type PostReviewOptions = {
   pr?: string;
   repository?: string;
   expectedHead?: string;
-  runGh?: GhRunner;
+  fetch?: typeof globalThis.fetch;
 };
 
-async function runGhCommand(
-  args: string[],
-  input?: string,
-  cwd = process.cwd(),
-  env: Record<string, string | undefined> = process.env,
-): Promise<string> {
-  const proc = Bun.spawn(["gh", ...args], {
-    cwd,
-    env,
-    stdin: input === undefined ? "ignore" : "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+async function githubRequest<T>(
+  url: string,
+  token: string,
+  fetch: typeof globalThis.fetch,
+  init: RequestInit = {},
+): Promise<{ data: T; response: Response }> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "staffreview",
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...init.headers,
+    },
   });
-  if (input !== undefined) {
-    proc.stdin!.write(input);
-    proc.stdin!.end();
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `GitHub API ${init.method ?? "GET"} ${new URL(url).pathname} failed (${response.status} ${response.statusText})${body ? `\n${body}` : ""}`,
+    );
   }
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(`gh ${args.join(" ")} failed (${exitCode})\n${stderr.trim()}`);
+  return {
+    data: (body ? JSON.parse(body) : undefined) as T,
+    response,
+  };
+}
+
+function nextPage(link: string | null): string | undefined {
+  if (!link) return undefined;
+  for (const entry of link.split(",")) {
+    const match = entry.match(/^\s*<([^>]+)>;\s*rel="([^"]+)"\s*$/);
+    if (match?.[2] === "next") return match[1];
   }
-  return stdout;
+  return undefined;
 }
 
 function priorityLabel(comment: Comment, fallback: string): string {
@@ -143,7 +150,7 @@ export async function postReview(
 ): Promise<{ posted: boolean; findingCount: number; message: string }> {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
-  const runGh = options.runGh ?? ((args, input) => runGhCommand(args, input, cwd, env));
+  const fetch = options.fetch ?? globalThis.fetch;
   // Informant provides the repository, PR number, and expected head directly.
   // Do not also consume an inherited GITHUB_EVENT_PATH in that environment:
   // it may belong to the host workflow rather than this checkout, and parsing
@@ -154,27 +161,25 @@ export async function postReview(
   );
   const eventPrNumber = event?.pull_request?.number ?? event?.number;
 
-  const repository =
-    options.repository ??
-    env.INFORMANT_REPOSITORY ??
-    env.GITHUB_REPOSITORY ??
-    (
-      JSON.parse(await runGh(["repo", "view", "--json", "nameWithOwner"])) as {
-        nameWithOwner: string;
-      }
-    ).nameWithOwner;
+  const repository = options.repository ?? env.INFORMANT_REPOSITORY ?? env.GITHUB_REPOSITORY;
+  if (!repository) {
+    throw new Error("GitHub repository is required; pass --github-repo <owner/name>");
+  }
   const prNumber =
     options.pr ??
     informantPrNumber(env.INFORMANT_BRANCH) ??
-    (eventPrNumber === undefined
-      ? String(
-          (JSON.parse(await runGh(["pr", "view", "--json", "number"])) as { number: number })
-            .number,
-        )
-      : String(eventPrNumber));
-  const pr = JSON.parse(
-    await runGh(["api", `repos/${repository}/pulls/${prNumber}`]),
-  ) as PullRequest;
+    (eventPrNumber === undefined ? undefined : String(eventPrNumber));
+  if (!prNumber) {
+    throw new Error("GitHub pull request is required; pass --pr <number>");
+  }
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error("GitHub token is required; set GH_TOKEN or GITHUB_TOKEN");
+  }
+  const apiUrl = (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, "");
+  const repositoryPath = repository.split("/").map(encodeURIComponent).join("/");
+  const pullUrl = `${apiUrl}/repos/${repositoryPath}/pulls/${encodeURIComponent(prNumber)}`;
+  const { data: pr } = await githubRequest<PullRequest>(pullUrl, token, fetch);
 
   const expectedHead = options.expectedHead ?? env.INFORMANT_SHA ?? event?.pull_request?.head?.sha;
   if (expectedHead && pr.head.sha !== expectedHead) {
@@ -203,30 +208,32 @@ export async function postReview(
 
   const marker = `<!-- staff-review:${pr.head.sha} -->`;
   const legacyMarker = `<!-- informant-staff-review:${pr.head.sha} -->`;
-  const pages = JSON.parse(
-    await runGh([
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${repository}/pulls/${pr.number}/reviews?per_page=100`,
-    ]),
-  ) as Review[][];
-  if (
-    pages
-      .flat()
-      .some((review) => review.body?.includes(marker) || review.body?.includes(legacyMarker))
-  ) {
-    return {
-      posted: false,
-      findingCount: findings.length,
-      message: "Staff review already exists for this commit",
-    };
+  let reviewsUrl: string | undefined =
+    `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews?per_page=100`;
+  while (reviewsUrl) {
+    const { data: reviews, response } = await githubRequest<Review[]>(reviewsUrl, token, fetch);
+    if (
+      reviews.some((review) => review.body?.includes(marker) || review.body?.includes(legacyMarker))
+    ) {
+      return {
+        posted: false,
+        findingCount: findings.length,
+        message: "Staff review already exists for this commit",
+      };
+    }
+    reviewsUrl = nextPage(response.headers.get("link"));
   }
 
   const payload = reviewPayload(diff, pr.head.sha, marker);
-  await runGh(
-    ["api", `repos/${repository}/pulls/${pr.number}/reviews`, "--method", "POST", "--input", "-"],
-    JSON.stringify(payload),
+  await githubRequest(
+    `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews`,
+    token,
+    fetch,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
   );
   return {
     posted: true,
