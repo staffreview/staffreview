@@ -169,7 +169,10 @@ staff [serve] [<slug>] [--port <n>] [--open] [--no-open] [--repo <dir>]
                                        Open the web UI (default). <slug> like main..WT.
 staff diff [<slug>] [--base] [--head]  Create/load a diff and make it active.
 staff files [--json]                   List the file‑level changes for a diff.
-staff review post [--pr <number>]      Post active-diff comments to the current GitHub PR.
+staff review post [--pr <n>] [--github-repo <owner/name>]
+                                       Post active-diff comments to a GitHub PR.
+                                       Uses CI context when available; requires
+                                       GH_TOKEN or GITHUB_TOKEN.
 staff comment add|edit|delete|list|resolve|unresolve
                                        Post and manage review comments (used by the skills).
 staff settings [get <key>]             Read global settings (e.g. loopMaxRounds).

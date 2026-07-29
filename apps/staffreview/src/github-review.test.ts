@@ -16,6 +16,19 @@ function diff(comments: Diff["comments"]): Diff {
   };
 }
 
+type FetchCall = { url: string; init?: RequestInit };
+
+function mockFetch(
+  calls: FetchCall[],
+  handler: (url: string, init?: RequestInit) => Response,
+): typeof globalThis.fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    calls.push({ url, init });
+    return handler(url, init);
+  }) as typeof globalThis.fetch;
+}
+
 test("reviewPayload converts root comments and ignores replies", () => {
   const payload = reviewPayload(
     diff([
@@ -99,7 +112,7 @@ test("validateDiffHead requires a clean working tree at the pull request head", 
 });
 
 test("postReview resolves Informant context without changing review branding", async () => {
-  const calls: Array<{ args: string[]; input?: string }> = [];
+  const calls: FetchCall[] = [];
   const commitDiff = diff([
     {
       id: "finding",
@@ -118,15 +131,15 @@ test("postReview resolves Informant context without changing review branding", a
       INFORMANT_REPOSITORY: "owner/repo",
       INFORMANT_BRANCH: "pull/42",
       INFORMANT_SHA: "head",
+      GH_TOKEN: "token",
     },
-    runGh: async (args, input) => {
-      calls.push({ args, input });
-      if (args[1] === "repos/owner/repo/pulls/42") {
-        return JSON.stringify({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
       }
-      if (args.includes("--paginate")) return "[[]]";
-      return "{}";
-    },
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
   });
 
   expect(result).toEqual({
@@ -135,13 +148,14 @@ test("postReview resolves Informant context without changing review branding", a
     message: "Posted 1 staff review finding(s)",
   });
   const post = calls.at(-1)!;
-  expect(post.args).toContain("POST");
-  expect(JSON.parse(post.input!)).toMatchObject({
+  expect(post.init?.method).toBe("POST");
+  expect(JSON.parse(String(post.init?.body))).toMatchObject({
     commit_id: "head",
     event: "COMMENT",
     body: expect.stringContaining("Staff Review."),
   });
-  expect(post.input).not.toContain("Informant");
+  expect(post.init?.body).not.toContain("Informant");
+  expect(new Headers(calls[0]?.init?.headers).get("Authorization")).toBe("Bearer token");
 });
 
 test("postReview ignores an inherited GitHub event path in Informant context", async () => {
@@ -158,13 +172,14 @@ test("postReview ignores an inherited GitHub event path in Informant context", a
         INFORMANT_REPOSITORY: "owner/repo",
         INFORMANT_BRANCH: "pull/42",
         INFORMANT_SHA: "head",
+        GITHUB_TOKEN: "token",
       },
-      runGh: async (args) => {
-        if (args[1] === "repos/owner/repo/pulls/42") {
-          return JSON.stringify({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+      fetch: mockFetch([], (url) => {
+        if (url.endsWith("/pulls/42")) {
+          return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
         }
-        return "{}";
-      },
+        return Response.json([]);
+      }),
     });
 
     expect(result.message).toBe("Staff review found no actionable issues");
@@ -174,6 +189,7 @@ test("postReview ignores an inherited GitHub event path in Informant context", a
 });
 
 test("postReview does not post a duplicate review", async () => {
+  const calls: FetchCall[] = [];
   const commitDiff = diff([
     {
       id: "finding",
@@ -185,23 +201,31 @@ test("postReview does not post a duplicate review", async () => {
   ]);
   commitDiff.head = { kind: "commit", ref: "head" };
   const result = await postReview(commitDiff, {
-    env: {},
+    env: { GITHUB_TOKEN: "token" },
     repository: "owner/repo",
     pr: "42",
-    runGh: async (args) => {
-      if (args[1] === "repos/owner/repo/pulls/42") {
-        return JSON.stringify({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+    fetch: mockFetch(calls, (url) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
       }
-      return '[[{"body":"<!-- informant-staff-review:head -->"}]]';
-    },
+      if (url.includes("page=2")) {
+        return Response.json([{ body: "<!-- informant-staff-review:head -->" }]);
+      }
+      return Response.json([], {
+        headers: {
+          Link: '<https://api.github.com/repos/owner/repo/pulls/42/reviews?per_page=100&page=2>; rel="next", <https://api.github.com/repos/owner/repo/pulls/42/reviews?per_page=100&page=2>; rel="last"',
+        },
+      });
+    }),
   });
 
   expect(result.posted).toBe(false);
   expect(result.message).toBe("Staff review already exists for this commit");
+  expect(calls).toHaveLength(3);
 });
 
 test("postReview resolves a pull request from GitHub Actions context", async () => {
-  const calls: string[][] = [];
+  const calls: FetchCall[] = [];
   const commitDiff = diff([
     {
       id: "finding",
@@ -216,21 +240,54 @@ test("postReview resolves a pull request from GitHub Actions context", async () 
     env: {
       GITHUB_ACTIONS: "true",
       GITHUB_REPOSITORY: "actions/repo",
+      GITHUB_TOKEN: "token",
     },
     event: {
       number: 17,
       pull_request: { head: { sha: "head" }, base: { sha: "base" } },
     },
-    runGh: async (args) => {
-      calls.push(args);
-      if (args[1] === "repos/actions/repo/pulls/17") {
-        return JSON.stringify({ number: 17, head: { sha: "head" }, base: { sha: "base" } });
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/17")) {
+        return Response.json({ number: 17, head: { sha: "head" }, base: { sha: "base" } });
       }
-      if (args.includes("--paginate")) return "[[]]";
-      return "{}";
-    },
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
   });
 
-  expect(calls.some((args) => args[0] === "repo" || args[0] === "pr")).toBe(false);
-  expect(calls.at(-1)).toContain("repos/actions/repo/pulls/17/reviews");
+  expect(calls.at(-1)?.url).toContain("repos/actions/repo/pulls/17/reviews");
+});
+
+test("postReview reports GitHub API failures with the response body", async () => {
+  const commitDiff = diff([]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+
+  await expect(
+    postReview(commitDiff, {
+      env: { GH_TOKEN: "token" },
+      repository: "owner/repo",
+      pr: "42",
+      fetch: mockFetch([], () =>
+        Response.json(
+          { message: "Resource not accessible by integration" },
+          { status: 403, statusText: "Forbidden" },
+        ),
+      ),
+    }),
+  ).rejects.toThrow(
+    'GitHub API GET /repos/owner/repo/pulls/42 failed (403 Forbidden)\n{"message":"Resource not accessible by integration"}',
+  );
+});
+
+test("postReview requires explicit local GitHub context and authentication", async () => {
+  const commitDiff = diff([]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+
+  await expect(postReview(commitDiff, { env: {} })).rejects.toThrow("--github-repo");
+  await expect(postReview(commitDiff, { env: {}, repository: "owner/repo" })).rejects.toThrow(
+    "--pr",
+  );
+  await expect(
+    postReview(commitDiff, { env: {}, repository: "owner/repo", pr: "42" }),
+  ).rejects.toThrow("GH_TOKEN or GITHUB_TOKEN");
 });
