@@ -1,5 +1,5 @@
 name = "test"
 command = """
 set -euo pipefail
-bun run --cwd apps/staffreview test
+bun run test
 """

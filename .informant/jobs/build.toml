@@ -2,6 +2,6 @@ name = "build"
 command = """
 set -euo pipefail
 bun run build:binary
-bun run --cwd apps/web build --webpack
+bun run build -- --filter=@staffreview/web -- --webpack
 """
 needs = ["check", "test", "typecheck", "e2e"]

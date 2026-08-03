@@ -1,5 +1,5 @@
 name = "typecheck"
 command = """
 set -euo pipefail
-bun run --cwd apps/web types:check
+bun run typecheck
 """

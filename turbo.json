@@ -1,0 +1,16 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "test": {},
+    "test:e2e": {
+      "env": ["CI"],
+      "outputs": ["playwright-report/**", "test-results/**"]
+    },
+    "types:check": {
+      "outputs": [".next/types/**"]
+    }
+  }
+}

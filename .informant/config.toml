@@ -4,7 +4,8 @@ triggers = [
   { event = "commit", branch = { names = ["main"] } },
   { event = "commit", pull_request = { state = "open", draft = false } },
 ]
-environment = { CI = "true", NEXT_TELEMETRY_DISABLED = "1" }
+environment = { CI = "true", NEXT_TELEMETRY_DISABLED = "1", TURBO_CACHE_DIR = "/home/root/.cache/turborepo", TURBO_CACHE_MAX_AGE = "14d", TURBO_CACHE_MAX_SIZE = "10GB" }
+cache = [{ paths = ["~/.cache/turborepo"], shared = true }]
 
 [container]
 image = "oven/bun:1"
