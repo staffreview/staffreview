@@ -213,6 +213,47 @@ test("postReview falls back to a PR-level review when inline comments cannot be 
   });
 });
 
+test("postReview preserves non-anchor 422 errors without retrying", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff([
+    {
+      id: "finding",
+      threadId: "finding",
+      file: "src/a.ts",
+      line: 4,
+      side: "new",
+      body: "Issue",
+      author: "agent",
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+  ]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+
+  await expect(
+    postReview(commitDiff, {
+      env: { GH_TOKEN: "token" },
+      repository: "owner/repo",
+      pr: "42",
+      fetch: mockFetch(calls, (url, init) => {
+        if (url.endsWith("/pulls/42")) {
+          return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+        }
+        if (init?.method === "POST") {
+          return Response.json(
+            { message: "Validation Failed", errors: ["Review body is too long"] },
+            { status: 422, statusText: "Unprocessable Entity" },
+          );
+        }
+        return Response.json([]);
+      }),
+    }),
+  ).rejects.toThrow(
+    'GitHub API POST /repos/owner/repo/pulls/42/reviews failed (422 Unprocessable Entity)\n{"message":"Validation Failed","errors":["Review body is too long"]}',
+  );
+
+  expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1);
+});
+
 test("postReview ignores an inherited GitHub event path in Informant context", async () => {
   const directory = await mkdtemp(join(tmpdir(), "staffreview-event-"));
   const eventPath = join(directory, "event.json");

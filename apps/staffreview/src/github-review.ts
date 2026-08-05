@@ -32,6 +32,7 @@ class GitHubApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly responseBody: string,
   ) {
     super(message);
   }
@@ -58,6 +59,7 @@ async function githubRequest<T>(
     throw new GitHubApiError(
       `GitHub API ${init.method ?? "GET"} ${new URL(url).pathname} failed (${response.status} ${response.statusText})${body ? `\n${body}` : ""}`,
       response.status,
+      body,
     );
   }
   return {
@@ -129,6 +131,22 @@ function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
         })
         .join(""),
   };
+}
+
+function isInlineResolutionError(error: GitHubApiError): boolean {
+  if (error.status !== 422) return false;
+  try {
+    const body = JSON.parse(error.responseBody) as { errors?: unknown[] };
+    return Boolean(
+      body.errors?.some(
+        (detail) =>
+          typeof detail === "string" &&
+          /\b(path|line|side)\b.*\b(?:resolve|resolved)\b/i.test(detail),
+      ),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function validateDiffHead(
@@ -265,7 +283,7 @@ export async function postReview(
   } catch (error) {
     if (
       !(error instanceof GitHubApiError) ||
-      error.status !== 422 ||
+      !isInlineResolutionError(error) ||
       payload.comments.length === 0
     ) {
       throw error;
