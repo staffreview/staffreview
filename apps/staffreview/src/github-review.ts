@@ -28,6 +28,15 @@ export type PostReviewOptions = {
   fetch?: typeof globalThis.fetch;
 };
 
+class GitHubApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function githubRequest<T>(
   url: string,
   token: string,
@@ -46,8 +55,9 @@ async function githubRequest<T>(
   });
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(
+    throw new GitHubApiError(
       `GitHub API ${init.method ?? "GET"} ${new URL(url).pathname} failed (${response.status} ${response.statusText})${body ? `\n${body}` : ""}`,
+      response.status,
     );
   }
   return {
@@ -100,6 +110,24 @@ export function reviewPayload(diff: Diff, commit: string, marker: string) {
           : { line: comment.line }),
       };
     }),
+  };
+}
+
+function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
+  const findings = diff.comments.filter((comment) => !comment.parentId);
+  return {
+    commit_id: commit,
+    event: "COMMENT",
+    body:
+      `Staff Review.\n\n${marker}` +
+      findings
+        .map((comment) => {
+          const location = comment.file
+            ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\``
+            : "";
+          return `\n\n**${priorityLabel(comment, comment.file ? "P2" : "Finding")}**${location}\n\n${comment.body}`;
+        })
+        .join(""),
   };
 }
 
@@ -225,16 +253,25 @@ export async function postReview(
   }
 
   const payload = reviewPayload(diff, pr.head.sha, marker);
-  await githubRequest(
-    `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews`,
-    token,
-    fetch,
-    {
+  const postUrl = `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews`;
+  const post = (body: unknown) =>
+    githubRequest(postUrl, token, fetch, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
+      body: JSON.stringify(body),
+    });
+  try {
+    await post(payload);
+  } catch (error) {
+    if (
+      !(error instanceof GitHubApiError) ||
+      error.status !== 422 ||
+      payload.comments.length === 0
+    ) {
+      throw error;
+    }
+    await post(fallbackReviewPayload(diff, pr.head.sha, marker));
+  }
   return {
     posted: true,
     findingCount: findings.length,

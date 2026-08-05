@@ -158,6 +158,61 @@ test("postReview resolves Informant context without changing review branding", a
   expect(new Headers(calls[0]?.init?.headers).get("Authorization")).toBe("Bearer token");
 });
 
+test("postReview falls back to a PR-level review when inline comments cannot be resolved", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff([
+    {
+      id: "finding",
+      threadId: "finding",
+      file: "src/moved.ts",
+      line: 4,
+      endLine: 6,
+      side: "new",
+      body: "Issue on a path GitHub cannot resolve",
+      author: "agent",
+      priority: "P1",
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+  ]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+  let postCount = 0;
+
+  const result = await postReview(commitDiff, {
+    env: { GH_TOKEN: "token" },
+    repository: "owner/repo",
+    pr: "42",
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+      }
+      if (init?.method === "POST" && postCount++ === 0) {
+        return Response.json(
+          { message: "Unprocessable Entity", errors: ["Path could not be resolved"] },
+          { status: 422, statusText: "Unprocessable Entity" },
+        );
+      }
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
+  });
+
+  expect(result).toEqual({
+    posted: true,
+    findingCount: 1,
+    message: "Posted 1 staff review finding(s)",
+  });
+  const posts = calls.filter((call) => call.init?.method === "POST");
+  expect(posts).toHaveLength(2);
+  expect(JSON.parse(String(posts[0]?.init?.body)).comments).toHaveLength(1);
+  expect(JSON.parse(String(posts[1]?.init?.body))).toEqual({
+    commit_id: "head",
+    event: "COMMENT",
+    body: expect.stringContaining(
+      "**P1** — `src/moved.ts:4-6`\n\nIssue on a path GitHub cannot resolve",
+    ),
+  });
+});
+
 test("postReview ignores an inherited GitHub event path in Informant context", async () => {
   const directory = await mkdtemp(join(tmpdir(), "staffreview-event-"));
   const eventPath = join(directory, "event.json");
