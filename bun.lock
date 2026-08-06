@@ -15,7 +15,7 @@
     },
     "apps/staffreview": {
       "name": "@staffreview/staff",
-      "version": "1.10.2",
+      "version": "1.10.3",
       "bin": {
         "staff": "./dist/staff.js",
       },

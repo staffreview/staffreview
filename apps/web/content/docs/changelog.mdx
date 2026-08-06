@@ -5,6 +5,13 @@ description: Notable changes to Staff Review, newest first.
 
 # Changelog
 
+## 1.10.3 — 2026-08-06
+
+### Fixed
+- **GitHub review posting now falls back when inline anchors are invalid.** If
+  GitHub cannot resolve an inline path or line, `staff review post` retries as a
+  PR-level review with file and line context instead of losing the findings.
+
 ## 1.10.2 — 2026-07-29
 
 ### Fixed
