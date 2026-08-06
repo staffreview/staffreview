@@ -158,16 +158,16 @@ test("postReview resolves Informant context without changing review branding", a
   expect(new Headers(calls[0]?.init?.headers).get("Authorization")).toBe("Bearer token");
 });
 
-test("postReview falls back to a PR-level review when inline comments cannot be resolved", async () => {
+test("postReview falls back to a PR-level review and labels old-side anchors", async () => {
   const calls: FetchCall[] = [];
   const commitDiff = diff([
     {
       id: "finding",
       threadId: "finding",
-      file: "src/moved.ts",
+      file: "src/deleted.ts",
       line: 4,
       endLine: 6,
-      side: "new",
+      side: "old",
       body: "Issue on a path GitHub cannot resolve",
       author: "agent",
       priority: "P1",
@@ -208,7 +208,7 @@ test("postReview falls back to a PR-level review when inline comments cannot be 
     commit_id: "head",
     event: "COMMENT",
     body: expect.stringContaining(
-      "**P1** — `src/moved.ts:4-6`\n\nIssue on a path GitHub cannot resolve",
+      "**P1** — `src/deleted.ts:4-6` (old side)\n\nIssue on a path GitHub cannot resolve",
     ),
   });
 });

@@ -124,8 +124,9 @@ function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
       `Staff Review.\n\n${marker}` +
       findings
         .map((comment) => {
+          const side = comment.side === "old" ? " (old side)" : "";
           const location = comment.file
-            ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\``
+            ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\`${side}`
             : "";
           return `\n\n**${priorityLabel(comment, comment.file ? "P2" : "Finding")}**${location}\n\n${comment.body}`;
         })
