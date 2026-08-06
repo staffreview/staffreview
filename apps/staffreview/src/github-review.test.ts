@@ -158,6 +158,190 @@ test("postReview resolves Informant context without changing review branding", a
   expect(new Headers(calls[0]?.init?.headers).get("Authorization")).toBe("Bearer token");
 });
 
+test("postReview falls back to a PR-level review and labels old-side anchors", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff([
+    {
+      id: "finding",
+      threadId: "finding",
+      file: "src/deleted.ts",
+      line: 4,
+      endLine: 6,
+      side: "old",
+      body: "Issue on a path GitHub cannot resolve",
+      author: "agent",
+      priority: "P1",
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+  ]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+  let postCount = 0;
+
+  const result = await postReview(commitDiff, {
+    env: { GH_TOKEN: "token" },
+    repository: "owner/repo",
+    pr: "42",
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+      }
+      if (init?.method === "POST" && postCount++ === 0) {
+        return Response.json(
+          { message: "Unprocessable Entity", errors: ["Path could not be resolved"] },
+          { status: 422, statusText: "Unprocessable Entity" },
+        );
+      }
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
+  });
+
+  expect(result).toEqual({
+    posted: true,
+    findingCount: 1,
+    message: "Posted 1 staff review finding(s)",
+  });
+  const posts = calls.filter((call) => call.init?.method === "POST");
+  expect(posts).toHaveLength(2);
+  expect(JSON.parse(String(posts[0]?.init?.body)).comments).toHaveLength(1);
+  expect(JSON.parse(String(posts[1]?.init?.body))).toEqual({
+    commit_id: "head",
+    event: "COMMENT",
+    body: expect.stringContaining(
+      "**P1** — `src/deleted.ts:4-6` (old side)\n\nIssue on a path GitHub cannot resolve",
+    ),
+  });
+});
+
+test("postReview truncates an oversized fallback body at GitHub's limit", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff(
+    ["first", "second"].map((id, index) => ({
+      id,
+      threadId: id,
+      file: `src/${id}.ts`,
+      line: index + 1,
+      side: "new" as const,
+      body: id.repeat(8_000),
+      author: "agent",
+      createdAt: "2026-01-01T00:00:00Z",
+    })),
+  );
+  commitDiff.head = { kind: "commit", ref: "head" };
+  let postCount = 0;
+
+  await postReview(commitDiff, {
+    env: { GH_TOKEN: "token" },
+    repository: "owner/repo",
+    pr: "42",
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+      }
+      if (init?.method === "POST" && postCount++ === 0) {
+        return Response.json(
+          { message: "Unprocessable Entity", errors: ["Path could not be resolved"] },
+          { status: 422, statusText: "Unprocessable Entity" },
+        );
+      }
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
+  });
+
+  const posts = calls.filter((call) => call.init?.method === "POST");
+  const fallbackBody = JSON.parse(String(posts[1]?.init?.body)).body as string;
+  expect(fallbackBody).toHaveLength(65_535);
+  expect(fallbackBody).toEndWith(
+    "_Additional Staff Review finding content was truncated to fit GitHub's review body limit._",
+  );
+});
+
+for (const anchorError of [
+  "pull_request_review_thread.line must be part of the diff",
+  { resource: "PullRequestReviewComment", field: "comments[0].path", code: "invalid" },
+]) {
+  test(`postReview recognizes inline anchor error ${JSON.stringify(anchorError)}`, async () => {
+    const calls: FetchCall[] = [];
+    const commitDiff = diff([
+      {
+        id: "finding",
+        threadId: "finding",
+        file: "src/moved.ts",
+        line: 4,
+        side: "new",
+        body: "Issue",
+        author: "agent",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    commitDiff.head = { kind: "commit", ref: "head" };
+    let postCount = 0;
+
+    await postReview(commitDiff, {
+      env: { GH_TOKEN: "token" },
+      repository: "owner/repo",
+      pr: "42",
+      fetch: mockFetch(calls, (url, init) => {
+        if (url.endsWith("/pulls/42")) {
+          return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+        }
+        if (init?.method === "POST" && postCount++ === 0) {
+          return Response.json(
+            { message: "Validation Failed", errors: [anchorError] },
+            { status: 422, statusText: "Unprocessable Entity" },
+          );
+        }
+        if (init?.method === "POST") return Response.json({ id: 1 });
+        return Response.json([]);
+      }),
+    });
+
+    expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(2);
+  });
+}
+
+test("postReview preserves non-anchor 422 errors without retrying", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff([
+    {
+      id: "finding",
+      threadId: "finding",
+      file: "src/a.ts",
+      line: 4,
+      side: "new",
+      body: "Issue",
+      author: "agent",
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+  ]);
+  commitDiff.head = { kind: "commit", ref: "head" };
+
+  await expect(
+    postReview(commitDiff, {
+      env: { GH_TOKEN: "token" },
+      repository: "owner/repo",
+      pr: "42",
+      fetch: mockFetch(calls, (url, init) => {
+        if (url.endsWith("/pulls/42")) {
+          return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+        }
+        if (init?.method === "POST") {
+          return Response.json(
+            { message: "Validation Failed", errors: ["Review body is too long"] },
+            { status: 422, statusText: "Unprocessable Entity" },
+          );
+        }
+        return Response.json([]);
+      }),
+    }),
+  ).rejects.toThrow(
+    'GitHub API POST /repos/owner/repo/pulls/42/reviews failed (422 Unprocessable Entity)\n{"message":"Validation Failed","errors":["Review body is too long"]}',
+  );
+
+  expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1);
+});
+
 test("postReview ignores an inherited GitHub event path in Informant context", async () => {
   const directory = await mkdtemp(join(tmpdir(), "staffreview-event-"));
   const eventPath = join(directory, "event.json");

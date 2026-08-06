@@ -18,6 +18,10 @@ type GitHubEvent = {
   };
 };
 
+const GITHUB_REVIEW_BODY_LIMIT = 65_535;
+const FALLBACK_TRUNCATION_NOTICE =
+  "\n\n_Additional Staff Review finding content was truncated to fit GitHub's review body limit._";
+
 export type PostReviewOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
@@ -27,6 +31,16 @@ export type PostReviewOptions = {
   expectedHead?: string;
   fetch?: typeof globalThis.fetch;
 };
+
+class GitHubApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly responseBody: string,
+  ) {
+    super(message);
+  }
+}
 
 async function githubRequest<T>(
   url: string,
@@ -46,8 +60,10 @@ async function githubRequest<T>(
   });
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(
+    throw new GitHubApiError(
       `GitHub API ${init.method ?? "GET"} ${new URL(url).pathname} failed (${response.status} ${response.statusText})${body ? `\n${body}` : ""}`,
+      response.status,
+      body,
     );
   }
   return {
@@ -101,6 +117,69 @@ export function reviewPayload(diff: Diff, commit: string, marker: string) {
       };
     }),
   };
+}
+
+function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
+  const findings = diff.comments.filter((comment) => !comment.parentId);
+  const body =
+    `Staff Review.\n\n${marker}` +
+    findings
+      .map((comment) => {
+        const side = comment.side === "old" ? " (old side)" : "";
+        const location = comment.file
+          ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\`${side}`
+          : "";
+        return `\n\n**${priorityLabel(comment, comment.file ? "P2" : "Finding")}**${location}\n\n${comment.body}`;
+      })
+      .join("");
+  return {
+    commit_id: commit,
+    event: "COMMENT",
+    body:
+      body.length <= GITHUB_REVIEW_BODY_LIMIT
+        ? body
+        : body.slice(0, GITHUB_REVIEW_BODY_LIMIT - FALLBACK_TRUNCATION_NOTICE.length) +
+          FALLBACK_TRUNCATION_NOTICE,
+  };
+}
+
+function isInlineAnchorField(field: string): boolean {
+  const segments = field
+    .toLowerCase()
+    .split(/[.[\]]+/)
+    .filter(Boolean);
+  return ["path", "line", "side", "start_line", "start_side", "position"].includes(
+    segments.at(-1) ?? "",
+  );
+}
+
+function isInlineResolutionDetail(detail: unknown): boolean {
+  if (typeof detail === "string") {
+    return (
+      /\b(path|line|side|start_line|start_side|position)\b.*\b(?:resolve|resolved)\b/i.test(
+        detail,
+      ) ||
+      /\b(path|line|side|start_line|start_side|position)\b.*\b(?:must be part of|outside|not in)\b.*\bdiff\b/i.test(
+        detail,
+      )
+    );
+  }
+  if (!detail || typeof detail !== "object") return false;
+  const { field, message } = detail as { field?: unknown; message?: unknown };
+  return (
+    (typeof field === "string" && isInlineAnchorField(field)) ||
+    (typeof message === "string" && isInlineResolutionDetail(message))
+  );
+}
+
+function isInlineResolutionError(error: GitHubApiError): boolean {
+  if (error.status !== 422) return false;
+  try {
+    const body = JSON.parse(error.responseBody) as { errors?: unknown[] };
+    return Boolean(body.errors?.some(isInlineResolutionDetail));
+  } catch {
+    return false;
+  }
 }
 
 export function validateDiffHead(
@@ -225,16 +304,25 @@ export async function postReview(
   }
 
   const payload = reviewPayload(diff, pr.head.sha, marker);
-  await githubRequest(
-    `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews`,
-    token,
-    fetch,
-    {
+  const postUrl = `${apiUrl}/repos/${repositoryPath}/pulls/${pr.number}/reviews`;
+  const post = (body: unknown) =>
+    githubRequest(postUrl, token, fetch, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
+      body: JSON.stringify(body),
+    });
+  try {
+    await post(payload);
+  } catch (error) {
+    if (
+      !(error instanceof GitHubApiError) ||
+      !isInlineResolutionError(error) ||
+      payload.comments.length === 0
+    ) {
+      throw error;
+    }
+    await post(fallbackReviewPayload(diff, pr.head.sha, marker));
+  }
   return {
     posted: true,
     findingCount: findings.length,
