@@ -213,6 +213,50 @@ test("postReview falls back to a PR-level review when inline comments cannot be 
   });
 });
 
+for (const anchorError of [
+  "pull_request_review_thread.line must be part of the diff",
+  { resource: "PullRequestReviewComment", field: "comments[0].path", code: "invalid" },
+]) {
+  test(`postReview recognizes inline anchor error ${JSON.stringify(anchorError)}`, async () => {
+    const calls: FetchCall[] = [];
+    const commitDiff = diff([
+      {
+        id: "finding",
+        threadId: "finding",
+        file: "src/moved.ts",
+        line: 4,
+        side: "new",
+        body: "Issue",
+        author: "agent",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    commitDiff.head = { kind: "commit", ref: "head" };
+    let postCount = 0;
+
+    await postReview(commitDiff, {
+      env: { GH_TOKEN: "token" },
+      repository: "owner/repo",
+      pr: "42",
+      fetch: mockFetch(calls, (url, init) => {
+        if (url.endsWith("/pulls/42")) {
+          return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+        }
+        if (init?.method === "POST" && postCount++ === 0) {
+          return Response.json(
+            { message: "Validation Failed", errors: [anchorError] },
+            { status: 422, statusText: "Unprocessable Entity" },
+          );
+        }
+        if (init?.method === "POST") return Response.json({ id: 1 });
+        return Response.json([]);
+      }),
+    });
+
+    expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(2);
+  });
+}
+
 test("postReview preserves non-anchor 422 errors without retrying", async () => {
   const calls: FetchCall[] = [];
   const commitDiff = diff([

@@ -133,17 +133,40 @@ function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
   };
 }
 
+function isInlineAnchorField(field: string): boolean {
+  const segments = field
+    .toLowerCase()
+    .split(/[.[\]]+/)
+    .filter(Boolean);
+  return ["path", "line", "side", "start_line", "start_side", "position"].includes(
+    segments.at(-1) ?? "",
+  );
+}
+
+function isInlineResolutionDetail(detail: unknown): boolean {
+  if (typeof detail === "string") {
+    return (
+      /\b(path|line|side|start_line|start_side|position)\b.*\b(?:resolve|resolved)\b/i.test(
+        detail,
+      ) ||
+      /\b(path|line|side|start_line|start_side|position)\b.*\b(?:must be part of|outside|not in)\b.*\bdiff\b/i.test(
+        detail,
+      )
+    );
+  }
+  if (!detail || typeof detail !== "object") return false;
+  const { field, message } = detail as { field?: unknown; message?: unknown };
+  return (
+    (typeof field === "string" && isInlineAnchorField(field)) ||
+    (typeof message === "string" && isInlineResolutionDetail(message))
+  );
+}
+
 function isInlineResolutionError(error: GitHubApiError): boolean {
   if (error.status !== 422) return false;
   try {
     const body = JSON.parse(error.responseBody) as { errors?: unknown[] };
-    return Boolean(
-      body.errors?.some(
-        (detail) =>
-          typeof detail === "string" &&
-          /\b(path|line|side)\b.*\b(?:resolve|resolved)\b/i.test(detail),
-      ),
-    );
+    return Boolean(body.errors?.some(isInlineResolutionDetail));
   } catch {
     return false;
   }
