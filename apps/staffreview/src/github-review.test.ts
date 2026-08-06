@@ -213,6 +213,50 @@ test("postReview falls back to a PR-level review and labels old-side anchors", a
   });
 });
 
+test("postReview truncates an oversized fallback body at GitHub's limit", async () => {
+  const calls: FetchCall[] = [];
+  const commitDiff = diff(
+    ["first", "second"].map((id, index) => ({
+      id,
+      threadId: id,
+      file: `src/${id}.ts`,
+      line: index + 1,
+      side: "new" as const,
+      body: id.repeat(8_000),
+      author: "agent",
+      createdAt: "2026-01-01T00:00:00Z",
+    })),
+  );
+  commitDiff.head = { kind: "commit", ref: "head" };
+  let postCount = 0;
+
+  await postReview(commitDiff, {
+    env: { GH_TOKEN: "token" },
+    repository: "owner/repo",
+    pr: "42",
+    fetch: mockFetch(calls, (url, init) => {
+      if (url.endsWith("/pulls/42")) {
+        return Response.json({ number: 42, head: { sha: "head" }, base: { sha: "base" } });
+      }
+      if (init?.method === "POST" && postCount++ === 0) {
+        return Response.json(
+          { message: "Unprocessable Entity", errors: ["Path could not be resolved"] },
+          { status: 422, statusText: "Unprocessable Entity" },
+        );
+      }
+      if (init?.method === "POST") return Response.json({ id: 1 });
+      return Response.json([]);
+    }),
+  });
+
+  const posts = calls.filter((call) => call.init?.method === "POST");
+  const fallbackBody = JSON.parse(String(posts[1]?.init?.body)).body as string;
+  expect(fallbackBody).toHaveLength(65_535);
+  expect(fallbackBody).toEndWith(
+    "_Additional Staff Review finding content was truncated to fit GitHub's review body limit._",
+  );
+});
+
 for (const anchorError of [
   "pull_request_review_thread.line must be part of the diff",
   { resource: "PullRequestReviewComment", field: "comments[0].path", code: "invalid" },

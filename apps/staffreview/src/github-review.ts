@@ -18,6 +18,10 @@ type GitHubEvent = {
   };
 };
 
+const GITHUB_REVIEW_BODY_LIMIT = 65_535;
+const FALLBACK_TRUNCATION_NOTICE =
+  "\n\n_Additional Staff Review finding content was truncated to fit GitHub's review body limit._";
+
 export type PostReviewOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
@@ -117,20 +121,25 @@ export function reviewPayload(diff: Diff, commit: string, marker: string) {
 
 function fallbackReviewPayload(diff: Diff, commit: string, marker: string) {
   const findings = diff.comments.filter((comment) => !comment.parentId);
+  const body =
+    `Staff Review.\n\n${marker}` +
+    findings
+      .map((comment) => {
+        const side = comment.side === "old" ? " (old side)" : "";
+        const location = comment.file
+          ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\`${side}`
+          : "";
+        return `\n\n**${priorityLabel(comment, comment.file ? "P2" : "Finding")}**${location}\n\n${comment.body}`;
+      })
+      .join("");
   return {
     commit_id: commit,
     event: "COMMENT",
     body:
-      `Staff Review.\n\n${marker}` +
-      findings
-        .map((comment) => {
-          const side = comment.side === "old" ? " (old side)" : "";
-          const location = comment.file
-            ? ` — \`${comment.file}${comment.line == null ? "" : `:${comment.line}${comment.endLine != null && comment.endLine !== comment.line ? `-${comment.endLine}` : ""}`}\`${side}`
-            : "";
-          return `\n\n**${priorityLabel(comment, comment.file ? "P2" : "Finding")}**${location}\n\n${comment.body}`;
-        })
-        .join(""),
+      body.length <= GITHUB_REVIEW_BODY_LIMIT
+        ? body
+        : body.slice(0, GITHUB_REVIEW_BODY_LIMIT - FALLBACK_TRUNCATION_NOTICE.length) +
+          FALLBACK_TRUNCATION_NOTICE,
   };
 }
 
