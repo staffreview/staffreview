@@ -280,7 +280,7 @@ export async function startServer(opts: { port?: number; cwd?: string } = {}) {
   }
 
   const isDev = process.env.STAFF_BUILD !== "binary";
-  const devIndexHtml = isDev ? (await import("./index.html")).default : null;
+  const devIndexHtml = isDev ? (await import("./dev-index.ts")).default : null;
   const rootRoute = isDev
     ? devIndexHtml
     : async () => new Response(frontendHtml, { headers: { "content-type": "text/html" } });

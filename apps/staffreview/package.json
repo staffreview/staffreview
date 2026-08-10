@@ -2,8 +2,14 @@
   "name": "@staffreview/staff",
   "version": "1.10.3",
   "private": false,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/staffreview/staffreview.git",
+    "directory": "apps/staffreview"
+  },
   "type": "module",
-  "module": "src/cli.ts",
+  "module": "./dist/staff.js",
   "bin": {
     "staff": "./dist/staff.js"
   },
@@ -17,13 +23,17 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium",
     "eval": "bun evals/cli.ts run",
-    "build": "bun build src/cli.ts --target=bun --outfile=dist/staff.js --define process.env.STAFF_BUILD=\\\"bundled\\\"",
+    "prepack": "bun run build",
+    "build": "bun scripts/build.ts package",
     "build:binary": "bun scripts/build.ts current",
     "build:binary:darwin-arm64": "bun scripts/build.ts darwin-arm64",
     "build:binary:darwin-x64": "bun scripts/build.ts darwin-x64",
     "build:binary:linux-x64": "bun scripts/build.ts linux-x64",
     "build:binary:linux-arm64": "bun scripts/build.ts linux-arm64",
     "build:all": "bun scripts/build.ts darwin-arm64 && bun scripts/build.ts darwin-x64 && bun scripts/build.ts linux-x64 && bun scripts/build.ts linux-arm64"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
     "@clack/core": "1.4.1",

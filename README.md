@@ -38,9 +38,9 @@ staff main..WT           # open “main vs. working tree” in your browser
 
 ## Install
 
-macOS and Linux are supported. All you need on the machine is **git** — the
-released binary is **self‑contained** (it bundles its own runtime), so there’s
-nothing else to install to run it.
+macOS and Linux are supported. The Homebrew release is a **self-contained**
+binary, while the npm and Bun package requires [**Bun**](https://bun.sh) at
+runtime.
 
 ### Homebrew (prebuilt binary)
 
@@ -48,6 +48,28 @@ nothing else to install to run it.
 brew install staffreview/tap/staff
 staff --version
 ```
+
+### npm or Bun (GitHub Packages)
+
+Configure the `@staffreview` scope once. Use a GitHub personal access token
+(classic) with `read:packages` permission:
+
+```ini
+# ~/.npmrc
+@staffreview:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+Then export the token and install with either package manager:
+
+```bash
+export GITHUB_PACKAGES_TOKEN=your_classic_pat
+npm install --global @staffreview/staff
+# or: bun install --global @staffreview/staff
+staff --version
+```
+
+The package-installed CLI requires Bun, including when installed with npm.
 
 ### From source
 
