@@ -30,8 +30,10 @@ Use this checklist to publish a new Staff Review release.
 
 ## Tag and Publish
 
-The GitHub release workflow runs on `v*` tag pushes and builds binaries for
-darwin/linux on arm64/x64.
+The GitHub release workflow runs on `v*` tag pushes, builds binaries for
+darwin/linux on arm64/x64, and publishes `@staffreview/staff` to GitHub
+Packages. The tag must match the package version (for example, package version
+`1.11.0` requires tag `v1.11.0`).
 
 ```sh
 rtk git tag -a vX.Y.Z -m "vX.Y.Z"
@@ -47,6 +49,18 @@ Verify the release contains `SHA256SUMS` plus all four `staff-*` binaries:
 rtk gh api repos/staffreview/staffreview/releases/tags/vX.Y.Z \
   --jq '{tag:.tag_name, assets:[.assets[].name], url:.html_url}'
 ```
+
+Verify the package version is available from GitHub Packages:
+
+```sh
+rtk npm view @staffreview/staff@X.Y.Z version \
+  --registry=https://npm.pkg.github.com
+```
+
+The npm command must be authenticated with a GitHub token that has
+`read:packages` permission. The workflow uses `GITHUB_TOKEN` with
+`packages: write` permission to publish and safely skips a version that is
+already present when a workflow run is retried.
 
 ## Update Homebrew Tap
 
@@ -72,6 +86,9 @@ by reading `https://github.com/staffreview/homebrew-tap/blob/main/Formula/staff.
 ## Post-Release Checks
 
 - Confirm the GitHub release page is published.
+- Confirm the matching `@staffreview/staff` GitHub Package version is published.
 - Confirm `main` is clean and synced: `rtk git status --short --branch`.
 - Smoke-test install/update paths when practical:
-  `brew update && brew upgrade staffreview/tap/staff`.
+  `brew update && brew upgrade staffreview/tap/staff`, plus either
+  `npm install --global @staffreview/staff@X.Y.Z` or
+  `bun install --global @staffreview/staff@X.Y.Z`.

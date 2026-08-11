@@ -1,11 +1,11 @@
 ---
 title: Installation
-description: Install the self-contained binary with Homebrew, or build it from source with Bun.
+description: Install Staff Review with Homebrew, npm, Bun, or from source.
 ---
 
-macOS and Linux are supported. All you need on the machine is **git** — the
-released binary is **self-contained** (it bundles its own runtime), so there’s
-nothing else to install to run it.
+macOS and Linux are supported. The Homebrew release is a **self-contained**
+binary, while the npm and Bun package requires [**Bun**](https://bun.sh) at
+runtime.
 
 ## Homebrew (prebuilt binary)
 
@@ -15,6 +15,31 @@ The fastest path. Installs a standalone `staff` binary:
 brew install staffreview/tap/staff
 staff --version
 ```
+
+## npm or Bun (GitHub Packages)
+
+The `@staffreview/staff` package is published to GitHub Packages. Configure the
+`@staffreview` scope once in `~/.npmrc`, using a GitHub personal access token
+(classic) with `read:packages` permission:
+
+```ini
+@staffreview:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+Export the token in your shell, then install with either npm or Bun:
+
+```bash
+export GITHUB_PACKAGES_TOKEN=your_classic_pat
+npm install --global @staffreview/staff
+# or: bun install --global @staffreview/staff
+staff --version
+```
+
+<Callout type="info">
+  Staff Review's package entrypoint runs on Bun, including when the package is
+  installed with npm. Use Homebrew if you prefer a self-contained binary.
+</Callout>
 
 ## From source
 
@@ -39,8 +64,9 @@ bun run apps/staffreview/src/cli.ts <args>
 
 ## Requirements
 
-- **git** and macOS or Linux — that’s all you need to run the prebuilt binary.
-- [**Bun**](https://bun.sh) only if you build or run from source.
+- **git** and macOS or Linux — that’s all you need to run the Homebrew binary.
+- [**Bun**](https://bun.sh) if you install from GitHub Packages, build, or run
+  from source.
 - An **AI coding agent** for the automated review. Claude Code works out of the
   box; any harness that can read a `SKILL.md` and run shell commands works too.
 - The [**GitHub CLI (`gh`)**](https://cli.github.com) — optional, and only for
