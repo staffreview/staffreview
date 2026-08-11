@@ -64,6 +64,8 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package version $package_version" >&2
             exit 1
           fi
+      - name: Smoke-test package tarball
+        run: bun run --cwd apps/staffreview test:package
       - name: Publish to GitHub Packages
         working-directory: apps/staffreview
         env:
