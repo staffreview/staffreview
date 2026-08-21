@@ -28,6 +28,7 @@ test("Staff Review Informant job runs Pi with trusted review resources", async (
   expect(job.container.prepare).toContain("github-review-threads.ts");
   expect(job.command).toContain("apiUrl: process.env.GITHUB_API_URL");
   expect(job.command).toContain("graphqlUrl: process.env.GITHUB_GRAPHQL_URL");
+  expect(job.command).not.toContain("append-system-prompt");
   expect(job.container.prepare).toContain("@earendil-works/pi-coding-agent@0.84.1");
 });
 
@@ -41,7 +42,9 @@ test("derives GitHub Enterprise GraphQL endpoints from the configured API URL", 
       graphqlUrl: "https://graphql.example/custom",
     }),
   ).toBe("https://graphql.example/custom");
-  expect(githubGraphqlEndpoint()).toBe("https://api.github.com/graphql");
+  expect(githubGraphqlEndpoint({ apiUrl: "https://api.github.com" })).toBe(
+    "https://api.github.com/graphql",
+  );
 });
 
 test("snapshots paginated review threads through the configured GraphQL endpoint", async () => {
