@@ -21,6 +21,8 @@
       "!**/playwright-report",
       "!**/tests/e2e/.tmp",
       "!**/.staffreview",
+      "!**/informant-subagents.ts",
+      "!**/informant-footer-events.ts",
       "!apps/staffreview/src/generated/frontend-assets.ts"
     ]
   },

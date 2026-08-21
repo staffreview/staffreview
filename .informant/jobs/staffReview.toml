@@ -1,53 +1,127 @@
 name = "Staff Review"
+# Allowed mounts automatically advertise a namespaced worker capability.
+runs_on = ["container", "arm64", "mount:pi-auth"]
+optional = true
 command = """
 set -eu
 review_root="$PWD"
 review_home="$(mktemp -d)"
-printf '{}\n' > "$review_home/settings.json"
 pr_number="${INFORMANT_BRANCH#pull/}"
 if [ "$pr_number" = "$INFORMANT_BRANCH" ]; then
   echo "staff review can only run for a pull request" >&2
   exit 1
 fi
 github_token="$GITHUB_TOKEN"
+export GH_TOKEN="$github_token"
 github_api_url="${GITHUB_API_URL:-https://api.github.com}"
-pull_request="$(curl -fsSL \
+pr_json="$(curl -fsSL \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer $github_token" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "$github_api_url/repos/$INFORMANT_REPOSITORY/pulls/$pr_number")"
-head_sha="$(printf '%s' "$pull_request" | jq -r '.head.sha')"
-base_sha="$(printf '%s' "$pull_request" | jq -r '.base.sha')"
+head_sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+base_sha="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
 if [ "$head_sha" != "$INFORMANT_SHA" ]; then
   echo "pull request head changed before staff review" >&2
   exit 1
 fi
 
-staff diff --base "$base_sha" --head working-tree --json >/dev/null
-slug="$base_sha..WT"
+merge_base="$(git merge-base "$base_sha" "$head_sha")"
+staff diff --base "$merge_base" --head working-tree --json >/dev/null
+slug="$merge_base..WT"
+staff files --slug "$slug" --json > /tmp/staff-review-files.json
+bun --eval '
+import { snapshotGithubReviewThreads } from "/opt/informant/extensions/subagents.ts";
+const snapshot = await snapshotGithubReviewThreads({
+  repository: process.env.INFORMANT_REPOSITORY ?? "",
+  pullRequest: Number((process.env.INFORMANT_BRANCH ?? "").replace(/^pull\\//, "")),
+  token: process.env.GITHUB_TOKEN ?? "",
+});
+await Bun.write("/tmp/staff-review-threads.json", JSON.stringify(snapshot));
+'
+review_agents="$(staff settings get reviewAgents)"
 
 unset GITHUB_TOKEN
+unset GH_TOKEN
+unset CI
 export HOME="$review_home"
 export XDG_CONFIG_HOME="$review_home/.config"
+export INFORMANT_REVIEW_ROOT="$review_root"
+export INFORMANT_STAFF_FILES=/tmp/staff-review-files.json
+export INFORMANT_STAFF_THREADS=/tmp/staff-review-threads.json
 cd "$review_root"
-amp --settings-file "$review_home/settings.json" --mcp-config '{}' --no-ide --no-notifications \
-  --visibility unlisted --mode medium --execute "/staff-review $slug"
+pi --print \
+  --no-session \
+  --no-approve \
+  --no-extensions \
+  --extension /opt/informant/extensions/subagents.ts \
+  --no-skills \
+  --no-prompt-templates \
+  --no-context-files \
+  --tools read,grep,find,ls,staff_files,staff_threads,subagent_create,subagent_read,subagent_terminate \
+  --append-system-prompt 'Use subagent_create, subagent_read, and subagent_terminate for every find or verify worker. Require every finder to consult the immutable staff_threads snapshot and suppress issues matching either open or resolved GitHub review threads. Launch independent agents in parallel, poll active agents about every 15 seconds, and call subagent_read with completed_output=true and the specific id before consuming a completed worker JSON array. Immediately terminate it with remove=true before replacing a finder with its verifier. Use at most eight live agents and batch larger review widths. Give every agent the complete skill-based worker prompt, cwd ".", and a fresh unique name. Never review inline, execute shell commands, post comments, or let a worker delegate further. Your final response must be only the deduplicated confirmed findings JSON array specified by the Staff Review workflow; return [] when none survive.' \
+  --skill /opt/informant/skills/staff-review/SKILL.md \
+  --skill /opt/informant/skills/staff-review-find/SKILL.md \
+  --skill /opt/informant/skills/staff-review-verify/SKILL.md \
+  "/skill:staff-review $slug $review_agents" > /tmp/staff-review-findings.json
 
-export GITHUB_TOKEN="$github_token"
-staff review post
+jq -e 'type == "array"' /tmp/staff-review-findings.json >/dev/null
+jq -c '.[]' /tmp/staff-review-findings.json | while IFS= read -r finding; do
+  printf '%s' "$finding" | jq -e '
+    def positive_integer: if type == "number" then floor == . and . > 0 else false end;
+    def valid_end($line): . == null or (if type == "number" then floor == . and . >= $line else false end);
+    . as $finding |
+    type == "object" and
+    ($finding.side == "new" or $finding.side == "old") and
+    ($finding.priority == "P1" or $finding.priority == "P2" or $finding.priority == "P3") and
+    ($finding.body | type == "string" and length > 0) and
+    (($finding.file == null and $finding.line == null and $finding.endLine == null) or
+      (($finding.file | type == "string" and length > 0) and
+       ($finding.line | positive_integer) and
+       ($finding.endLine | valid_end($finding.line))))
+  ' >/dev/null
+  file="$(printf '%s' "$finding" | jq -r '.file // ""')"
+  priority="$(printf '%s' "$finding" | jq -r '.priority')"
+  body="$(printf '%s' "$finding" | jq -r '.body')"
+  set -- comment add --slug "$slug" --author "Pi Staff Review" --priority "$priority"
+  if [ -n "$file" ]; then
+    line="$(printf '%s' "$finding" | jq -r '.line')"
+    end_line="$(printf '%s' "$finding" | jq -r '.endLine // ""')"
+    side="$(printf '%s' "$finding" | jq -r '.side')"
+    case "$file" in /*|../*|*/../*|*/..) echo "invalid finding path: $file" >&2; exit 1;; esac
+    set -- "$@" --file "$file" --line "$line" --side "$side"
+    if [ -n "$end_line" ]; then set -- "$@" --end-line "$end_line"; fi
+  fi
+  printf '%s' "$body" | staff "$@" >/dev/null
+done
+
+export GH_TOKEN="$github_token"
+staff review post --slug "$slug" --pr "$pr_number" --github-repo "$INFORMANT_REPOSITORY" --commit "$head_sha"
 """
 triggers = [{ event = "commit", pull_request = { state = "open", draft = false } }]
-secrets = ["AMP_API_KEY", "GITHUB_TOKEN"]
-container = { prepare = """
+secrets = ["GITHUB_TOKEN"]
+environment = { PI_CODING_AGENT_DIR = "/mnt/informant-pi", PI_OFFLINE = "1" }
+mounts = [{ source = "pi-auth", target = "/mnt/informant-pi", write_back = true }]
+cache = [{ paths = ["~/.bun/install/cache"], shared = true }]
+container = { image = "docker.io/oven/bun:1", cpu = 2, memory_mb = 4096, trustedPrepareInputs = true, prepareInputs = [".informant/pi/informant-subagents.ts", ".informant/pi/informant-footer-events.ts", ".agents/skills/staff-review/**", ".agents/skills/staff-review-find/**", ".agents/skills/staff-review-verify/**"], prepare = """
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl git jq ripgrep
 rm -rf /var/lib/apt/lists/*
 export HOME=/root
-mkdir -p "$HOME/.bun/install/global"
-bun add --global @ampcode/cli-linux-arm64@0.0.1784917055-ge644b2
-ln -sf "$HOME/.bun/install/global/node_modules/@ampcode/cli-linux-arm64/amp" /usr/local/bin/amp
+mkdir -p "$HOME/.bun/install/global" "$HOME/.bun/bin" /opt/informant/extensions /opt/informant/skills
+cp /workspace/.informant/pi/informant-subagents.ts /opt/informant/extensions/subagents.ts
+cp /workspace/.informant/pi/informant-footer-events.ts /opt/informant/extensions/informant-footer-events.ts
+cp -R /workspace/.agents/skills/staff-review /opt/informant/skills/
+cp -R /workspace/.agents/skills/staff-review-find /opt/informant/skills/
+cp -R /workspace/.agents/skills/staff-review-verify /opt/informant/skills/
+chmod -R a-w /opt/informant/extensions /opt/informant/skills
+rm -rf /workspace/* /workspace/.[!.]* /workspace/..?*
+BUN_INSTALL_BIN="$HOME/.bun/bin" bun add --global --ignore-scripts \
+  @earendil-works/pi-coding-agent@0.84.1
+ln -sf "$HOME/.bun/bin/pi" /usr/local/bin/pi
+ln -sf "$(command -v bun)" /usr/local/bin/node
 curl -fsSL https://github.com/staffreview/staffreview/releases/download/v1.10.3/staff-linux-arm64 \
   -o /usr/local/bin/staff
 chmod +x /usr/local/bin/staff
