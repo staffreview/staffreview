@@ -3,7 +3,7 @@
   "version": "1.10.3",
   "private": false,
   "type": "module",
-  "module": "src/cli.ts",
+  "module": "./dist/staff.js",
   "bin": {
     "staff": "./dist/staff.js"
   },
