@@ -23,9 +23,6 @@ docs content is in `apps/web/content/docs`. Release automation lives in
 - `bun run --cwd apps/web dev`: run the documentation site locally.
 - `bun run --cwd apps/web types:check`: generate docs metadata and run TypeScript.
 
-Agents in this workspace should prefix shell commands with `rtk`, for example
-`rtk bun run check`.
-
 ## Coding Style & Naming Conventions
 
 Use TypeScript/TSX, ES modules, 2-space indentation, double quotes, semicolons,
