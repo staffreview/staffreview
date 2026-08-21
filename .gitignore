@@ -40,7 +40,8 @@ playwright-report/
 playwright/.cache/
 **/tests/e2e/.tmp/
 
-# Staff Review local state inside this repo
+# Pi managed worktrees and Staff Review local state inside this repo
+.pi/worktrees/
 .staffreview/
 
 # Staff Review eval scratch repos
