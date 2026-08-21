@@ -38,12 +38,54 @@ jobs:
           name: staff-${{ matrix.target }}
           path: apps/staffreview/dist/staff-${{ matrix.target }}
 
-  release:
+  publish-package:
+    name: Publish package
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: "@staffreview"
+      - run: bun install --frozen-lockfile
+      - name: Verify tag matches package version
+        run: |
+          package_version=$(node -p "require('./apps/staffreview/package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$package_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $package_version" >&2
+            exit 1
+          fi
+      - name: Smoke-test package tarball
+        run: bun run --cwd apps/staffreview test:package
+      - name: Publish to GitHub Packages
+        working-directory: apps/staffreview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          if npm view "@staffreview/staff@$package_version" version >/dev/null 2>&1; then
+            echo "@staffreview/staff@$package_version is already published"
+          else
+            npm publish
+          fi
+
+  release:
+    needs: [build, publish-package]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
