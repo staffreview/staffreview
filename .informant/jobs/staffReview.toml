@@ -36,6 +36,8 @@ const snapshot = await snapshotGithubReviewThreads({
   repository: process.env.INFORMANT_REPOSITORY ?? "",
   pullRequest: Number((process.env.INFORMANT_BRANCH ?? "").replace(/^pull\\//, "")),
   token: process.env.GITHUB_TOKEN ?? "",
+  apiUrl: process.env.GITHUB_API_URL,
+  graphqlUrl: process.env.GITHUB_GRAPHQL_URL,
 });
 await Bun.write("/tmp/staff-review-threads.json", JSON.stringify(snapshot));
 '
@@ -59,7 +61,6 @@ pi --print \
   --no-prompt-templates \
   --no-context-files \
   --tools read,grep,find,ls,staff_files,staff_threads,subagent_create,subagent_read,subagent_terminate \
-  --append-system-prompt 'Run the staff-review skill for the given slug and report only its final findings JSON array.' \
   --skill /opt/informant/skills/staff-review/SKILL.md \
   --skill /opt/informant/skills/staff-review-find/SKILL.md \
   --skill /opt/informant/skills/staff-review-verify/SKILL.md \
@@ -103,7 +104,7 @@ secrets = ["GITHUB_TOKEN"]
 environment = { PI_CODING_AGENT_DIR = "/mnt/informant-pi", PI_OFFLINE = "1" }
 mounts = [{ source = "pi-auth", target = "/mnt/informant-pi", write_back = true }]
 cache = [{ paths = ["~/.bun/install/cache"], shared = true }]
-container = { image = "docker.io/oven/bun:1", cpu = 2, memory_mb = 4096, trustedPrepareInputs = true, prepareInputs = [".informant/pi/informant-subagents.ts", ".informant/pi/informant-footer-events.ts", ".agents/skills/staff-review/**", ".agents/skills/staff-review-find/**", ".agents/skills/staff-review-verify/**"], prepare = """
+container = { image = "docker.io/oven/bun:1", cpu = 2, memory_mb = 4096, trustedPrepareInputs = true, prepareInputs = [".informant/pi/informant-subagents.ts", ".informant/pi/github-review-threads.ts", ".informant/pi/informant-footer-events.ts", ".agents/skills/staff-review/**", ".agents/skills/staff-review-find/**", ".agents/skills/staff-review-verify/**"], prepare = """
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -112,6 +113,7 @@ rm -rf /var/lib/apt/lists/*
 export HOME=/root
 mkdir -p "$HOME/.bun/install/global" "$HOME/.bun/bin" /opt/informant/extensions /opt/informant/skills
 cp /workspace/.informant/pi/informant-subagents.ts /opt/informant/extensions/subagents.ts
+cp /workspace/.informant/pi/github-review-threads.ts /opt/informant/extensions/github-review-threads.ts
 cp /workspace/.informant/pi/informant-footer-events.ts /opt/informant/extensions/informant-footer-events.ts
 cp -R /workspace/.agents/skills/staff-review /opt/informant/skills/
 cp -R /workspace/.agents/skills/staff-review-find /opt/informant/skills/
