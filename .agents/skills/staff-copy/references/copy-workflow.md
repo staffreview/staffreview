@@ -83,7 +83,6 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
           comments(first: 100) {
             pageInfo { hasNextPage endCursor }
             nodes {
-              databaseId
               url
               body
               createdAt
@@ -93,8 +92,6 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
               originalLine
               startLine
               originalStartLine
-              side
-              startSide
               author { login }
             }
           }
@@ -104,6 +101,11 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   }
 }'
 ```
+
+The anchor side fields come from `PullRequestReviewThread.diffSide` and
+`startDiffSide` above. `PullRequestReviewComment` does not expose `databaseId`
+or the REST-style `side` and `startSide` fields, so do not add them to the
+nested comment selection.
 
 Keep only `reviewThreads.nodes[]` where `isResolved == false`.
 

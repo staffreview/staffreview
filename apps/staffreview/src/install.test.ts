@@ -90,6 +90,17 @@ test("installProject writes each skill's reference files next to its SKILL.md", 
   ).toBe(true);
 });
 
+test("staff-copy GraphQL query uses review-thread schema fields", () => {
+  const workflow = SKILL_REFERENCES["staff-copy"]?.[0]?.body ?? "";
+
+  expect(workflow).toContain("diffSide");
+  expect(workflow).toContain("startDiffSide");
+  // These fields are not present on the current GraphQL types.
+  expect(workflow).not.toMatch(/^\s+databaseId$/m);
+  expect(workflow).not.toMatch(/^\s+side$/m);
+  expect(workflow).not.toMatch(/^\s+startSide$/m);
+});
+
 test("top-level skill group dependencies expand transitively", () => {
   expect(topLevelSkillGroupDependencies("staff-loop")).toEqual([
     "staff-resolve",
