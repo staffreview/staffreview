@@ -30,8 +30,8 @@ Agents in this workspace should prefix shell commands with `rtk`, for example
 
 Use TypeScript/TSX, ES modules, 2-space indentation, double quotes, semicolons,
 and trailing commas where Biome inserts them. Keep React components in PascalCase
-files, helpers in lower-case or kebab-case files, and tests beside the feature or
-under `apps/staffreview/tests/e2e`. Prefer existing utilities and UI components
+files, helpers in camelCase files, and tests beside the feature or under
+`apps/staffreview/tests/e2e`. Prefer existing utilities and UI components
 before adding new abstractions.
 
 ## Testing Guidelines
