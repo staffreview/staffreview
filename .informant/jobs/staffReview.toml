@@ -29,18 +29,6 @@ fi
 merge_base="$(git merge-base "$base_sha" "$head_sha")"
 staff diff --base "$merge_base" --head working-tree --json >/dev/null
 slug="$merge_base..WT"
-staff files --slug "$slug" --json > /tmp/staff-review-files.json
-bun --eval '
-import { snapshotGithubReviewThreads } from "/opt/informant/extensions/subagents.ts";
-const snapshot = await snapshotGithubReviewThreads({
-  repository: process.env.INFORMANT_REPOSITORY ?? "",
-  pullRequest: Number((process.env.INFORMANT_BRANCH ?? "").replace(/^pull\\//, "")),
-  token: process.env.GITHUB_TOKEN ?? "",
-  apiUrl: process.env.GITHUB_API_URL,
-  graphqlUrl: process.env.GITHUB_GRAPHQL_URL,
-});
-await Bun.write("/tmp/staff-review-threads.json", JSON.stringify(snapshot));
-'
 review_agents="$(staff settings get reviewAgents)"
 
 unset GITHUB_TOKEN
@@ -48,19 +36,29 @@ unset GH_TOKEN
 unset CI
 export HOME="$review_home"
 export XDG_CONFIG_HOME="$review_home/.config"
+export NODE_AUTH_TOKEN="$github_token"
+export NPM_CONFIG_USERCONFIG="$review_home/.npmrc"
+cat > "$NPM_CONFIG_USERCONFIG" <<'EOF'
+@vessup:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+EOF
+export PI_OFFLINE=0
+pi install npm:@vessup/pi-kit@0.1.1
+export PI_OFFLINE=1
+unset NODE_AUTH_TOKEN
 export INFORMANT_REVIEW_ROOT="$review_root"
-export INFORMANT_STAFF_FILES=/tmp/staff-review-files.json
-export INFORMANT_STAFF_THREADS=/tmp/staff-review-threads.json
 cd "$review_root"
+pi_kit_subagents="$PI_CODING_AGENT_DIR/npm/node_modules/@vessup/pi-kit/extensions/subagents.ts"
+test -f "$pi_kit_subagents"
 pi --print \
   --no-session \
   --no-approve \
   --no-extensions \
-  --extension /opt/informant/extensions/subagents.ts \
+  --extension "$pi_kit_subagents" \
   --no-skills \
   --no-prompt-templates \
   --no-context-files \
-  --tools read,grep,find,ls,staff_files,staff_threads,subagent_create,subagent_read,subagent_terminate \
+  --tools bash,read,grep,find,ls,subagent_create,subagent_read,subagent_terminate \
   --skill /opt/informant/skills/staff-review/SKILL.md \
   --skill /opt/informant/skills/staff-review-find/SKILL.md \
   --skill /opt/informant/skills/staff-review-verify/SKILL.md \
@@ -104,21 +102,18 @@ secrets = ["GITHUB_TOKEN"]
 environment = { PI_CODING_AGENT_DIR = "/mnt/informant-pi", PI_OFFLINE = "1" }
 mounts = [{ source = "pi-auth", target = "/mnt/informant-pi", write_back = true }]
 cache = [{ paths = ["~/.bun/install/cache"], shared = true }]
-container = { image = "docker.io/oven/bun:1", cpu = 2, memory_mb = 4096, trustedPrepareInputs = true, prepareInputs = [".informant/pi/informant-subagents.ts", ".informant/pi/github-review-threads.ts", ".informant/pi/informant-footer-events.ts", ".agents/skills/staff-review/**", ".agents/skills/staff-review-find/**", ".agents/skills/staff-review-verify/**"], prepare = """
+container = { image = "docker.io/oven/bun:1", cpu = 2, memory_mb = 4096, trustedPrepareInputs = true, prepareInputs = [".agents/skills/staff-review/**", ".agents/skills/staff-review-find/**", ".agents/skills/staff-review-verify/**"], prepare = """
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl git jq ripgrep
 rm -rf /var/lib/apt/lists/*
 export HOME=/root
-mkdir -p "$HOME/.bun/install/global" "$HOME/.bun/bin" /opt/informant/extensions /opt/informant/skills
-cp /workspace/.informant/pi/informant-subagents.ts /opt/informant/extensions/subagents.ts
-cp /workspace/.informant/pi/github-review-threads.ts /opt/informant/extensions/github-review-threads.ts
-cp /workspace/.informant/pi/informant-footer-events.ts /opt/informant/extensions/informant-footer-events.ts
+mkdir -p "$HOME/.bun/install/global" "$HOME/.bun/bin" /opt/informant/skills
 cp -R /workspace/.agents/skills/staff-review /opt/informant/skills/
 cp -R /workspace/.agents/skills/staff-review-find /opt/informant/skills/
 cp -R /workspace/.agents/skills/staff-review-verify /opt/informant/skills/
-chmod -R a-w /opt/informant/extensions /opt/informant/skills
+chmod -R a-w /opt/informant/skills
 rm -rf /workspace/* /workspace/.[!.]* /workspace/..?*
 BUN_INSTALL_BIN="$HOME/.bun/bin" bun add --global --ignore-scripts \
   @earendil-works/pi-coding-agent@0.84.1
