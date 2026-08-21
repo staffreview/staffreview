@@ -59,7 +59,7 @@ pi --print \
   --no-prompt-templates \
   --no-context-files \
   --tools read,grep,find,ls,staff_files,staff_threads,subagent_create,subagent_read,subagent_terminate \
-  --append-system-prompt 'Use subagent_create, subagent_read, and subagent_terminate for every find or verify worker. Require every finder to consult the immutable staff_threads snapshot and suppress issues matching either open or resolved GitHub review threads. Launch independent agents in parallel, poll active agents about every 15 seconds, and call subagent_read with completed_output=true and the specific id before consuming a completed worker JSON array. Immediately terminate it with remove=true before replacing a finder with its verifier. Use at most eight live agents and batch larger review widths. Give every agent the complete skill-based worker prompt, cwd ".", and a fresh unique name. Never review inline, execute shell commands, post comments, or let a worker delegate further. Your final response must be only the deduplicated confirmed findings JSON array specified by the Staff Review workflow; return [] when none survive.' \
+  --append-system-prompt 'Run the staff-review skill for the given slug and report only its final findings JSON array.' \
   --skill /opt/informant/skills/staff-review/SKILL.md \
   --skill /opt/informant/skills/staff-review-find/SKILL.md \
   --skill /opt/informant/skills/staff-review-verify/SKILL.md \
