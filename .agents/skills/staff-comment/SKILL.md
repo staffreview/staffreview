@@ -1,6 +1,6 @@
 ---
 name: staff-comment
-description: Add, edit, delete, list, or resolve Staff Review comments with the `staff` CLI. Use whenever posting or resolving review threads.
+description: Add, edit, delete, list, or resolve Staff Review comments with the `staff` CLI.
 ---
 
 # Staff Comment

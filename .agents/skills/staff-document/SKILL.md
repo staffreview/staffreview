@@ -1,6 +1,6 @@
 ---
 name: staff-document
-description: Write a `.staffreview/docs/` lesson from a GitHub PR review comment or Staff Review thread. Use when documenting review feedback.
+description: Write a `.staffreview/docs/` lesson from a GitHub PR review comment or Staff Review thread.
 ---
 
 # Staff Document

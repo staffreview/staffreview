@@ -1,6 +1,6 @@
 ---
 name: staff-review-verify
-description: Verify candidate Staff Review findings (diff or whole-file) and return confirm/reject JSON. Used by staff-review, staff-loop, and staff-section sub-agents.
+description: Verify candidate Staff Review findings (diff or whole-file) and return confirm/reject JSON. Sub-agent of /staff-review, /staff-loop, and /staff-section.
 ---
 
 # Staff Review Verify

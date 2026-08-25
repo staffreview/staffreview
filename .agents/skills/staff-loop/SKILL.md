@@ -1,6 +1,6 @@
 ---
 name: staff-loop
-description: Iteratively review and resolve a working-tree Staff Review diff until it converges or reaches the round cap. Use for /staff-loop.
+description: Iteratively review and resolve a working-tree Staff Review diff until it converges or reaches the round cap.
 ---
 
 # Staff Loop
