@@ -15,7 +15,7 @@ case "$pr_number" in
     exit 1
     ;;
 esac
-npm install --global @staffreview/staff@1.10.4
+npm install --global @staffreview/staff@1.10.5
 
 pr_shas() {
   gh api "repos/$INFORMANT_REPOSITORY/pulls/$pr_number" \

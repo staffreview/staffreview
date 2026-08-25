@@ -10,22 +10,20 @@ test("Staff Review Informant job runs Pi with trusted review resources", async (
     runs_on: string[];
     secrets: string[];
     environment: Record<string, string>;
-    container: { prepare: string; prepareInputs: string[]; trustedPrepareInputs: boolean };
+    mounts: { source: string; target: string; write_back: boolean }[];
+    container: { prepare: string };
   };
 
   expect(job.command).toContain("pi --print");
-  expect(job.command).toContain("pi install npm:@vessup/pi-kit@0.1.1");
+  expect(job.command).toContain("pi install npm:@vessup/pi-kit@0.1.2");
   expect(job.command).not.toMatch(/\bamp\b|AMP_API_KEY|@ampcode/);
   expect(job.command).not.toContain("/opt/informant/extensions");
   expect(job.command).not.toContain("staff_files");
   expect(job.runs_on).toContain("mount:pi-auth");
   expect(job.secrets).toEqual(["GITHUB_TOKEN"]);
-  expect(job.environment.PI_CODING_AGENT_DIR).toBe("/mnt/informant-pi");
-  expect(job.container.trustedPrepareInputs).toBe(true);
-  expect(job.container.prepareInputs).toEqual([
-    ".agents/skills/staff-review/**",
-    ".agents/skills/staff-review-find/**",
-    ".agents/skills/staff-review-verify/**",
+  expect(job.environment.PI_OFFLINE).toBe("1");
+  expect(job.mounts).toEqual([
+    { source: "pi-auth", target: "/mnt/informant-pi", write_back: false },
   ]);
   expect(job.container.prepare).not.toContain(".informant/pi");
   expect(job.container.prepare).toContain("@earendil-works/pi-coding-agent@0.84.1");
