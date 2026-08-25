@@ -1,6 +1,6 @@
 ---
 name: staff-section
-description: Review rotating sections of existing source files and post confirmed Staff Review comments. Use for /staff-section or whole-codebase review over time.
+description: Review rotating sections of existing source files and post confirmed Staff Review comments.
 ---
 
 # Staff Section

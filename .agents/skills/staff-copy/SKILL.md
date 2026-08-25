@@ -1,6 +1,6 @@
 ---
 name: staff-copy
-description: Copy unresolved GitHub PR review threads into local Staff Review diffs. Use for /staff-copy with PR URLs, PR numbers, or owner/repo#number refs.
+description: Copy unresolved GitHub PR review threads into local Staff Review diffs.
 ---
 
 # Staff Copy

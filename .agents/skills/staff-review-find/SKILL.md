@@ -1,6 +1,6 @@
 ---
 name: staff-review-find
-description: Find candidate issues in an assigned slice of a Staff Review diff (or assigned whole files) and return JSON. Used by staff-review, staff-loop, and staff-section sub-agents.
+description: Find candidate issues in an assigned slice of a Staff Review diff (or assigned whole files) and return JSON. Sub-agent of /staff-review, /staff-loop, and /staff-section.
 ---
 
 # Staff Review Find

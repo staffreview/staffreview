@@ -1,6 +1,6 @@
 ---
 name: staff-resolve
-description: Resolve open Staff Review threads by fixing, documenting, or skipping with justification. Use for /staff-resolve or addressing review feedback.
+description: Resolve open Staff Review threads by fixing, documenting, or skipping with justification.
 ---
 
 # Staff Resolve

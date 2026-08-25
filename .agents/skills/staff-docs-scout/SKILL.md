@@ -1,6 +1,6 @@
 ---
 name: staff-docs-scout
-description: Mine assigned GitHub PR refs for documentable human review comments and return candidate JSON. Used by staff-docs sub-agents.
+description: Mine assigned GitHub PR refs for documentable human review comments and return candidate JSON. Sub-agent of /staff-docs.
 ---
 
 # Staff Docs Scout

@@ -1,6 +1,6 @@
 ---
 name: staff-review
-description: Review a Staff Review diff by delegating find/verify agents and posting confirmed comments. Use for /staff-review or code review of pending changes.
+description: Review a Staff Review diff by delegating find/verify agents and posting confirmed comments.
 ---
 
 # Staff Review

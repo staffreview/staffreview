@@ -1,6 +1,6 @@
 ---
 name: staff-docs
-description: Mine GitHub PR review comments for reusable Staff Review lessons. Use for /staff-docs or growing `.staffreview/docs/` from PR history.
+description: Mine GitHub PR review comments for reusable Staff Review lessons.
 ---
 
 # Staff Docs

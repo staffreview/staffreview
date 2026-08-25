@@ -94,6 +94,23 @@ test("getDiff keeps modified files marked binary by attributes as binary rows", 
   });
 });
 
+async function initRepoWithSkillDirs() {
+  await git(["init"]);
+  await git(["config", "user.email", "test@example.com"]);
+  await git(["config", "user.name", "Test User"]);
+  mkdirSync(join(tmp, ".agents", "skills", "staff-review", "references"), { recursive: true });
+  mkdirSync(join(tmp, ".agents", "skills", "other"), { recursive: true });
+  await Bun.write(join(tmp, ".staffignore"), ".agents/skills/*\n!.agents/skills/staff-*/\n");
+  await Bun.write(join(tmp, ".agents", "skills", "staff-review", "SKILL.md"), "# staff-review\n");
+  await Bun.write(
+    join(tmp, ".agents", "skills", "staff-review", "references", "workflow.md"),
+    "# workflow\n",
+  );
+  await Bun.write(join(tmp, ".agents", "skills", "other", "SKILL.md"), "# other\n");
+  await git(["add", "."]);
+  await git(["commit", "-m", "initial"]);
+}
+
 test("getDiff excludes files matched by .staffignore", async () => {
   await initRepoWithFiles();
   await Bun.write(join(tmp, "keep.ts"), "export const keep = 2;\n");
@@ -105,4 +122,24 @@ test("getDiff excludes files matched by .staffignore", async () => {
   const files = await getDiff({ kind: "commit", ref: "HEAD" }, { kind: "working-tree" }, tmp);
 
   expect(files.map((file) => file.path).sort()).toEqual(["ignored/keep.ts", "keep.ts", "new.ts"]);
+});
+
+test("getDiff re-includes negated directories under a star exclusion in .staffignore", async () => {
+  await initRepoWithSkillDirs();
+  await Bun.write(
+    join(tmp, ".agents", "skills", "staff-review", "SKILL.md"),
+    "# staff-review v2\n",
+  );
+  await Bun.write(
+    join(tmp, ".agents", "skills", "staff-review", "references", "workflow.md"),
+    "# workflow v2\n",
+  );
+  await Bun.write(join(tmp, ".agents", "skills", "other", "SKILL.md"), "# other v2\n");
+
+  const files = await getDiff({ kind: "commit", ref: "HEAD" }, { kind: "working-tree" }, tmp);
+
+  expect(files.map((file) => file.path).sort()).toEqual([
+    ".agents/skills/staff-review/SKILL.md",
+    ".agents/skills/staff-review/references/workflow.md",
+  ]);
 });
